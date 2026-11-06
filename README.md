@@ -148,7 +148,14 @@ npm run build
 npm start           # NODE_ENV=production, serves dist/ and the API from one process
 ```
 
-**[DEPLOY.md](DEPLOY.md)** has the hosting recommendation (Oracle Cloud Always Free is the only realistic free option for a Node + ffmpeg + disk app), the full server setup, HTTPS, backups, and the optional GitHub Pages split — including why serving the site from the server is more reliable than splitting it.
+**[DEPLOY.md](DEPLOY.md)** has the hosting recommendation, the full server setup, HTTPS, backups, and the optional GitHub Pages split — including why serving the site from the server is more reliable than splitting it. There is no free host that is email-only, always-on and disk-backed at the same time; the closest options and their trade-offs are documented there.
+
+A `Dockerfile` with ffmpeg is included for hosts that build from an image:
+
+```bash
+docker build -t goatmedia .
+docker run -p 3001:3001 -v goatmedia-data:/app/.data -e APP_ORIGIN=https://your-domain.example goatmedia
+```
 
 Put it behind a TLS-terminating reverse proxy and set `APP_ORIGIN` to the public origin — cookies are `SameSite=Lax` and marked `Secure` in production, and state-changing requests are checked against the origin.
 

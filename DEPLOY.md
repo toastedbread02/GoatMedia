@@ -22,9 +22,28 @@ If you still want the split, the sections below cover it.
 
 ---
 
-## The free server
+## Free hosting, honestly
 
-There is no free PaaS tier that can host this app. Checked against current pricing pages:
+### Email-only signup (no card, no phone)
+
+I checked every current free tier. **None** offers all four of: email-only signup, an always-on process, a disk that survives restarts, and no sleeping. Two are close enough to try:
+
+**1. Northflank Sandbox — try this first.**
+
+- Their pricing page states: free, "no card needed", 2 services, up to $20/month of resources, "always on, no sleeping".
+- It builds the included [Dockerfile](Dockerfile), so ffmpeg comes with it.
+- Attach a persistent volume mounted at `/app/.data` (NVMe is $0.117/GiB-month, which fits inside the $20 credit). Set `DATA_DIR=/app/.data` and `PORT=3001`.
+- Caveat: Northflank's billing docs say a payment method is required for all users, contradicting the pricing page. If signup demands a card, stop and use option 2.
+
+**2. Codesphere — free workspace.**
+
+- Email signup, a real Node process, 500 MB of persistent workspace storage. Enough for the database and a handful of clips.
+- It turns off after roughly an hour of inactivity and wakes on the next request: a cold-start pause, not data loss.
+- Setup: create a workspace from this repo, run `npm ci && npm run build`, set the run command to `npm start`, and add `APP_ORIGIN`, `PORT=3001`. Keep `DATA_DIR=.data` so the database sits in the persistent workspace.
+
+**3. The reliable free option, if you will accept a card for identity verification** is Oracle Cloud Always Free, below. It is the only free host that behaves like a normal server: always on, 200 GB disk, 10 TB/month egress.
+
+**Dead ends, and why** — checked against current pricing pages:
 
 | Service | Why it does not work |
 | --- | --- |
@@ -36,7 +55,26 @@ There is no free PaaS tier that can host this app. Checked against current prici
 | Hugging Face Spaces | Docker/Gradio Spaces now require a paid plan; disk is not persistent. |
 | AWS new accounts | Credit-based for 6 months, then the account closes. |
 
-**Use Oracle Cloud Always Free.** As of late 2026 it gives you a real VM, free forever:
+### Running it as a container
+
+The repo includes a [Dockerfile](Dockerfile) with ffmpeg baked in, which is what Northflank and any VM build from:
+
+```bash
+docker build -t goatmedia .
+docker run -d --name goatmedia -p 3001:3001 \
+  -v goatmedia-data:/app/.data \
+  -e APP_ORIGIN=https://your-domain.example \
+  goatmedia
+
+# create the moderator account inside the running container
+docker exec -it goatmedia npm run admin:create -- --email you@example.com --username keeper
+```
+
+The `/app/.data` volume is the whole app: database, pending uploads, posters, avatars. Deploy without a volume mounted there and every deploy wipes the site.
+
+## Oracle Cloud Always Free (needs a card)
+
+As of late 2026 it gives you a real VM, free forever:
 
 - **2 OCPU / 12 GB RAM** (Ampere A1, arm64) — the allowance was cut from 4/24 in mid-2026, so plan for 2/12.
 - **200 GB** of block/boot storage in your home region — plenty for video.
