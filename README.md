@@ -12,7 +12,7 @@ appears anywhere public.
 
 | Path | What it is |
 | --- | --- |
-| `src/` | The browser app (React, TypeScript, Vite, HashRouter) |
+| `src/` | The browser app (React, TypeScript, Vite, BrowserRouter) |
 | `worker/` | The API: routing, auth, posts, feeds, moderation, media |
 | `migrations/` | D1 schema (users, posts, videos, photos, sounds, moderation, reports…) |
 | `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (86 checks) |
@@ -93,7 +93,7 @@ Worker secrets: `PASSWORD_PEPPER` (server-side pepper for password hashes) and
 `ADMIN_SETUP_TOKEN` (one-time moderator claim). Both are already set on the live
 deployment.
 
-**First moderator.** Sign up on the site with your own account, open `#/admin`,
+**First moderator.** Sign up on the site with your own account, open `/admin`,
 and paste the setup token from `.secrets/admin-code.txt` (git-ignored, mode 600).
 The claim endpoint only works while no moderator exists, and the token never
 ships in the site bundle. Alternative, if you have Wrangler access:

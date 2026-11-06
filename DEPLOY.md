@@ -27,8 +27,9 @@ toastedbread02.github.io/GoatMedia   goatmedia-api.<account>.workers.dev
 | D1 database | `goatmedia` — `99f990ab-4246-4b49-9353-9269a5ccd115` |
 | Repo variable | `API_ORIGIN` = the Worker URL (used by the Pages build) |
 
-Routing in the site is hash-based (`#/p/<id>`), so deep links and refreshes work
-on Pages without a server rewrite.
+The site uses normal paths (`/GoatMedia/v/<id>`); the build copies `index.html`
+to `404.html`, so deep links and refreshes work on Pages without a server
+rewrite.
 
 ## Pushing changes
 
@@ -55,7 +56,8 @@ using one, otherwise the browser will be refused by CORS.
 ## First moderator
 
 1. Open the site and create your own account.
-2. Go to `#/admin`.
+2. Go to `/admin` (for example
+   https://toastedbread02.github.io/GoatMedia/admin).
 3. Paste the code from `.secrets/admin-code.txt` (this file is git-ignored, mode
    600, created during setup).
 
