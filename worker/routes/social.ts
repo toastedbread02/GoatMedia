@@ -119,9 +119,12 @@ export async function search(req: Request, env: Env, origin: string, url: URL) {
   ]);
 
   const posts = await hydratePosts(env, origin, viewer?.id ?? null, postRows.results || []);
+  const creators = (userRows.results || []).map((row) => publicUser(origin, row, viewer?.id ?? null));
   return json({
     posts,
-    creators: (userRows.results || []).map((row) => publicUser(origin, row, viewer?.id ?? null)),
+    creators,
+    videos: posts,
+    people: creators,
     hashtag: tag,
     query: raw,
   });
@@ -159,23 +162,35 @@ export async function notifications(req: Request, env: Env, url: URL) {
       .run();
   }
 
+  const items = (rows.results || []).map((row) => ({
+    id: row.id,
+    type: row.type,
+    postId: row.post_id,
+    postCaption: row.post_caption,
+    videoId: row.post_id,
+    videoCaption: row.post_caption,
+    actorUsername: row.actor_username,
+    actorDisplayName: row.actor_display_name,
+    detail: row.detail,
+    createdAt: row.created_at,
+    read: Boolean(row.read_at),
+  }));
   return json({
-    notifications: (rows.results || []).map((row) => ({
-      id: row.id,
-      type: row.type,
-      postId: row.post_id,
-      postCaption: row.post_caption,
-      actorUsername: row.actor_username,
-      actorDisplayName: row.actor_display_name,
-      detail: row.detail,
-      createdAt: row.created_at,
-      read: Boolean(row.read_at),
-    })),
+    notifications: items,
+    items,
+    unread: items.filter((item) => !item.read).length,
   });
 }
 
 export async function markNotificationsRead(req: Request, env: Env) {
   const user = await requireActive(req, env);
+  const body = (await req.json().catch(() => ({}))) as { id?: string };
+  if (body.id) {
+    await env.DB.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ?')
+      .bind(now(), body.id, user.id)
+      .run();
+    return json({ ok: true });
+  }
   await env.DB.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL')
     .bind(now(), user.id)
     .run();
@@ -190,14 +205,13 @@ export async function interests(req: Request, env: Env) {
   )
     .bind(user.id)
     .all<{ kind: 'category' | 'hashtag'; value: string; weight: number; updated_at: number }>();
-  return json({
-    interests: (rows.results || []).map((row) => ({
-      kind: row.kind,
-      value: row.value,
-      weight: Math.round(row.weight * 10) / 10,
-      updatedAt: row.updated_at,
-    })),
-  });
+  const items = (rows.results || []).map((row) => ({
+    kind: row.kind,
+    value: row.value,
+    weight: Math.round(row.weight * 10) / 10,
+    updatedAt: row.updated_at,
+  }));
+  return json({ interests: items, items });
 }
 
 export async function resetInterests(req: Request, env: Env) {
@@ -230,7 +244,8 @@ export async function blockedUsers(req: Request, env: Env, origin: string) {
   )
     .bind(user.id, user.id, user.id)
     .all<UserRow>();
-  return json({ users: (rows.results || []).map((row) => publicUser(origin, row, user.id)) });
+  const items = (rows.results || []).map((row) => publicUser(origin, row, user.id));
+  return json({ users: items, items });
 }
 
 export async function reportUser(req: Request, env: Env, username: string) {

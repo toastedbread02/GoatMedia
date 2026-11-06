@@ -1,12 +1,21 @@
-// Shapes returned by the GoatMedia API. The Worker in /worker is the source of
-// truth; these mirror its DTOs so the browser build stays typed end to end.
+// Types shared by the API and the browser app.
 
-export type PostStatus = 'pending' | 'approved' | 'rejected' | 'removed';
+export type VideoStatus = 'pending' | 'approved' | 'rejected' | 'removed';
 
 export interface Category {
   id: string;
   label: string;
   blurb: string;
+}
+
+export interface CreatorSummary {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  isFollowing: boolean;
+  isSelf: boolean;
+  isBlocked: boolean;
 }
 
 export interface PhotoRef {
@@ -25,43 +34,49 @@ export interface SoundRef {
   owner: { id: string; username: string; displayName: string };
 }
 
-export interface CreatorSummary {
-  id: string;
-  username: string;
-  displayName: string;
-  avatarUrl: string | null;
-  isSelf: boolean;
-  isFollowing: boolean;
-  isBlocked: boolean;
-}
+/** A post is a goat video or an album of goat photos. */
+export type MediaKind = 'video' | 'photos';
 
-export interface PostDTO {
+export interface VideoDTO {
   id: string;
+  kind: MediaKind;
   caption: string;
   category: string;
   categoryLabel: string;
   hashtags: string[];
+  duration: number;
   createdAt: number;
   publishedAt: number | null;
   viewCount: number;
   likeCount: number;
   commentCount: number;
   liked: boolean;
-  notInterested: boolean;
-  status: PostStatus;
+  status: VideoStatus;
   rejectReason: string | null;
   removedReason: string | null;
+  posterUrl: string | null;
+  videoUrl: string | null;
   photos: PhotoRef[];
   sound: SoundRef | null;
+  width: number | null;
+  height: number | null;
   creator: CreatorSummary;
   reason: string | null;
+  credit: string | null;
+  watchProgress: number | null;
+  notInterested: boolean;
 }
 
 export interface CommentDTO {
   id: string;
   body: string;
   createdAt: number;
-  author: { id: string; username: string; displayName: string; avatarUrl: string | null };
+  author: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
   canDelete: boolean;
 }
 
@@ -74,7 +89,7 @@ export interface PublicUser {
   createdAt: number;
   followerCount: number;
   followingCount: number;
-  postCount: number;
+  videoCount: number;
   isFollowing: boolean;
   isSelf: boolean;
   isBlocked: boolean;
@@ -89,7 +104,7 @@ export interface MeDTO extends PublicUser {
 }
 
 export interface FeedResponse {
-  items: PostDTO[];
+  items: VideoDTO[];
   hasMore: boolean;
   page: number;
   requiresSignIn?: boolean;
@@ -98,23 +113,47 @@ export interface FeedResponse {
 
 export interface AppConfigDTO {
   limits: {
+    maxUploadMb: number;
+    maxVideoMb: number;
+    maxDurationSeconds: number;
+    minDurationSeconds: number;
     maxPhotos: number;
     maxPhotoMb: number;
     maxAudioMb: number;
     maxAvatarMb: number;
     maxCaptionLength: number;
-    maxBioLength: number;
     maxCommentsPerMinute: number;
   };
   categories: Category[];
   moderation: 'manual';
-  reportReasons: { post: string[]; comment: string[] };
+  resetLinkExposed: boolean;
+  reportReasons: { video: string[]; post: string[]; comment: string[] };
   rejectReasons: string[];
   guidelines: string[];
-  passwordReset: 'link-on-screen';
 }
 
-export interface ModerationEvent {
+export type NotificationType = 'approved' | 'rejected' | 'follow' | 'comment' | 'removed';
+
+export interface NotificationDTO {
+  id: string;
+  type: NotificationType;
+  createdAt: number;
+  read: boolean;
+  videoId: string | null;
+  videoCaption: string | null;
+  actorUsername: string | null;
+  actorDisplayName: string | null;
+  detail: string | null;
+}
+
+export interface AdminQueueItem extends VideoDTO {
+  creatorEmail: string;
+  creatorJoinedAt: number;
+  creatorUploads: number;
+  moderationHistory: ModerationEventDTO[];
+}
+
+export interface ModerationEventDTO {
   id: string;
   action: 'submit' | 'approve' | 'reject' | 'remove' | 'resubmit';
   reason: string | null;
@@ -122,24 +161,44 @@ export interface ModerationEvent {
   adminUsername: string | null;
 }
 
-export interface AdminQueueItem extends PostDTO {
-  creatorEmail: string;
-  creatorJoinedAt: number;
-  creatorPostCount: number;
+export interface ReportDTO {
+  id: string;
+  targetType: 'video' | 'comment' | 'user';
+  targetId: string;
+  reason: string;
+  note: string | null;
+  createdAt: number;
+  status: 'open' | 'dismissed' | 'actioned';
+  reporterUsername: string;
+  video: {
+    id: string;
+    caption: string;
+    kind: MediaKind;
+    posterUrl: string | null;
+    videoUrl: string | null;
+    status: VideoStatus;
+    creatorUsername: string;
+  } | null;
+  post: {
+    id: string;
+    caption: string;
+    status: VideoStatus;
+    creatorUsername: string;
+  } | null;
+  comment: { id: string; body: string; authorUsername: string; videoId: string; status: string } | null;
 }
 
-export interface AdminPostDetail {
-  post: AdminQueueItem;
-  history: ModerationEvent[];
-  reports: {
-    id: string;
-    reason: string;
-    note: string | null;
-    createdAt: number;
-    status: string;
-    reporterUsername: string;
-  }[];
-  rejectionReasons: string[];
+export interface AdminUserRow {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  role: string;
+  status: 'active' | 'suspended';
+  suspendedReason: string | null;
+  createdAt: number;
+  videoCount: number;
+  followerCount: number;
 }
 
 export interface ModerationCounts {
@@ -152,43 +211,29 @@ export interface ModerationCounts {
   newUsersThisWeek: number;
 }
 
-export interface AdminReport {
-  id: string;
-  targetType: 'post' | 'comment' | 'user';
-  targetId: string;
-  reason: string;
-  note: string | null;
-  createdAt: number;
-  status: string;
-  reporterUsername: string;
-  post: { id: string; caption: string; status: string; creatorUsername: string } | null;
-  comment: { body: string; postId: string; authorUsername: string } | null;
-  userTarget: string | null;
+export interface ModerationHistoryEntry extends ModerationEventDTO {
+  adminId: string | null;
 }
 
-export interface AdminUserRow {
-  id: string;
-  username: string;
-  displayName: string;
-  email: string;
-  role: string;
-  status: string;
-  suspendedReason: string | null;
-  createdAt: number;
-  postCount: number;
-  followerCount: number;
+export interface AdminVideoDetail {
+  video: AdminQueueItem;
+  history: ModerationEventDTO[];
+  reports: {
+    id: string;
+    reason: string;
+    note: string | null;
+    createdAt: number;
+    status: string;
+    reporterUsername: string;
+  }[];
+  rejectionReasons: string[];
 }
 
-export interface NotificationDTO {
-  id: string;
-  type: 'approved' | 'rejected' | 'removed' | 'follow' | 'comment';
-  postId: string | null;
-  postCaption: string | null;
-  actorUsername: string | null;
-  actorDisplayName: string | null;
-  detail: string | null;
-  createdAt: number;
-  read: boolean;
+export interface SearchResults {
+  videos: VideoDTO[];
+  creators: PublicUser[];
+  hashtag: string | null;
+  query: string;
 }
 
 export interface InterestView {
@@ -198,13 +243,13 @@ export interface InterestView {
   updatedAt: number;
 }
 
-export interface SearchResults {
-  posts: PostDTO[];
-  creators: PublicUser[];
-  hashtag: string | null;
-  query: string;
-}
-
-export interface SoundLibraryItem extends SoundRef {
-  isMine: boolean;
+export interface SoundLibraryItem {
+  id: string;
+  title: string;
+  url: string;
+  durationMs: number;
+  useCount: number;
+  postCount: number;
+  createdAt: number;
+  owner: { id: string; username: string; displayName: string };
 }

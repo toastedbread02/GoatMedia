@@ -1,70 +1,98 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { InterestView, PostDTO, PublicUser } from '../../shared/types';
-import { Avatar } from '../components/Avatar';
-import { Icon } from '../components/Icon';
-import { api } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { useConfig } from '../lib/config';
-import { count, fullDate } from '../lib/format';
-import { resizePhoto } from '../lib/image';
-import { useToast } from '../lib/toast';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import type { InterestView, MeDTO, PublicUser, VideoDTO } from '../../shared/types.ts';
+import { api, ApiError, uploadWithProgress } from '../lib/api.ts';
+import { useAuth } from '../lib/auth.tsx';
+import { useConfig } from '../lib/config.tsx';
+import { useToast } from '../lib/toast.tsx';
+import { useDocumentTitle } from '../lib/hooks.ts';
+import { compactNumber, formatDate } from '../lib/format.ts';
+import { Avatar } from '../components/Avatar.tsx';
+import { Icon } from '../components/Icon.tsx';
 
-type Tab = 'profile' | 'feed' | 'account';
+function useUsernameCheck(username: string, current: string) {
+  const [state, setState] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
+  useEffect(() => {
+    const value = username.trim().toLowerCase();
+    if (!value || value === current) {
+      setState('idle');
+      return;
+    }
+    if (!/^[a-z0-9_]{3,20}$/.test(value)) {
+      setState('invalid');
+      return;
+    }
+    setState('checking');
+    const timer = setTimeout(() => {
+      api
+        .get<{ available: boolean }>(`/api/usernames/${encodeURIComponent(value)}/available`)
+        .then((data) => setState(data.available ? 'available' : 'taken'))
+        .catch(() => setState('idle'));
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [username, current]);
+  return state;
+}
 
 export function SettingsPage() {
-  const { me, loading, setMe, signOut } = useAuth();
+  useDocumentTitle('Settings');
+  const { user, loading, setUser, signOut, refresh } = useAuth();
   const config = useConfig();
-  const toast = useToast();
+  const { notify } = useToast();
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const tab = (['profile', 'feed', 'account'].includes(params.get('tab') || '')
-    ? params.get('tab')
-    : 'profile') as Tab;
+  const avatarInput = useRef<HTMLInputElement>(null);
 
-  const [displayName, setDisplayName] = useState(me?.displayName || '');
-  const [username, setUsername] = useState(me?.username || '');
-  const [bio, setBio] = useState(me?.bio || '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
+  const [bio, setBio] = useState('');
+  const [profileFields, setProfileFields] = useState<Record<string, string>>({});
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const [interests, setInterests] = useState<InterestView[]>([]);
-  const [hidden, setHidden] = useState<PostDTO[]>([]);
+  const [hidden, setHidden] = useState<VideoDTO[]>([]);
   const [blocked, setBlocked] = useState<PublicUser[]>([]);
-  const [feedBusy, setFeedBusy] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
+  const usernameState = useUsernameCheck(username, user?.username ?? '');
 
   useEffect(() => {
-    if (!me) return;
-    setDisplayName(me.displayName);
-    setUsername(me.username);
-    setBio(me.bio);
-  }, [me]);
+    if (!user) return;
+    setDisplayName(user.displayName);
+    setUsername(user.username);
+    setBio(user.bio);
+  }, [user]);
 
   useEffect(() => {
-    if (!me || tab !== 'feed') return;
-    let cancelled = false;
-    Promise.all([api.interests(), api.hidden(), api.blocked()])
-      .then(([interestResult, hiddenResult, blockedResult]) => {
-        if (cancelled) return;
-        setInterests(interestResult.interests);
-        setHidden(hiddenResult.items);
-        setBlocked(blockedResult.users);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [me, tab]);
+    if (!user) return;
+    api.get<{ items: InterestView[] }>('/api/me/interests').then((data) => setInterests(data.items)).catch(() => {});
+    api.get<{ items: VideoDTO[] }>('/api/me/hidden').then((data) => setHidden(data.items)).catch(() => {});
+    api.get<{ items: PublicUser[] }>('/api/me/blocked').then((data) => setBlocked(data.items)).catch(() => {});
+  }, [user]);
 
-  if (loading) return <div className="column" aria-busy="true" />;
-
-  if (!me) {
+  if (loading) {
     return (
-      <div className="column column--reading">
-        <div className="empty">
-          <p className="empty__title">Settings need an account</p>
-          <p>Sign in to change your profile, avatar or recommendations.</p>
-          <Link to="/signin" className="button">
+      <div className="page">
+        <div className="feed-empty">
+          <div className="spinner spinner--dark" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="page">
+        <div className="empty-state" style={{ paddingTop: 48 }}>
+          <Icon name="settings" size={26} />
+          <h2>Sign in to manage your account</h2>
+          <Link className="btn btn--primary" to="/login?next=/settings">
             Sign in
           </Link>
         </div>
@@ -72,300 +100,456 @@ export function SettingsPage() {
     );
   }
 
-  const saveProfile = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await api.updateProfile({ displayName, username, bio });
-      setMe(result.user);
-      toast('Profile saved', 'success');
-      if (result.user.username !== me.username) navigate(`/u/${result.user.username}`);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const changeAvatar = async (file: File | null) => {
+  const uploadAvatar = async (file: File | undefined) => {
     if (!file) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
+      notify('Use a JPEG, PNG or WEBP photo.', { tone: 'error' });
+      return;
+    }
+    if (file.size > (config?.limits.maxAvatarMb ?? 4) * 1024 * 1024) {
+      notify(`Keep the photo under ${config?.limits.maxAvatarMb ?? 4} MB.`, { tone: 'error' });
+      return;
+    }
+    setAvatarBusy(true);
+    const form = new FormData();
+    form.append('avatar', file);
     try {
-      const blob = await resizePhoto(file, { maxDimension: 600, maxBytes: 380_000 });
-      const result = await api.uploadAvatar(blob);
-      setMe(result.user);
-      toast('Profile photo updated', 'success');
-    } catch (err) {
-      toast((err as Error).message, 'error');
+      const data = await uploadWithProgress<{ user: MeDTO }>('/api/me/avatar', form, () => {});
+      setUser(data.user);
+      notify('New photo saved.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'The photo did not upload.', { tone: 'error' });
+    } finally {
+      setAvatarBusy(false);
+      if (avatarInput.current) avatarInput.current.value = '';
     }
   };
 
   return (
-    <div className="column column--reading">
-      <header className="page-head">
-        <h1 className="page-title">Settings</h1>
-        <p className="page-blurb">Your profile, your recommendations, your account.</p>
-      </header>
-
-      <div className="segmented" role="tablist" aria-label="Settings sections">
-        {(
-          [
-            ['profile', 'Profile'],
-            ['feed', 'Feed'],
-            ['account', 'Account'],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            className={tab === value ? 'is-active' : ''}
-            onClick={() => setParams({ tab: value })}
-          >
-            {label}
-          </button>
-        ))}
+    <div className="page settings-page">
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-sub">Your profile, sign-in details and what the feed has learned.</p>
+        </div>
+        <Link className="btn btn--quiet btn--sm" to={`/u/${user.username}`}>
+          View profile
+        </Link>
       </div>
 
-      {tab === 'profile' ? (
-        <section className="settings-section" aria-label="Profile">
-          <div className="avatar-edit">
-            <Avatar user={me} size={76} />
-            <div className="avatar-edit__actions">
-              <label className="button button--quiet">
-                Change photo
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="visually-hidden"
-                  onChange={(event) => changeAvatar(event.target.files?.[0] || null)}
-                />
-              </label>
-              {me.avatarUrl ? (
+      <section className="settings-section" aria-labelledby="settings-profile">
+        <div className="settings-section__intro">
+          <h2 id="settings-profile">Profile</h2>
+          <p>This is what people see on your profile and under your videos.</p>
+        </div>
+        <div className="settings-section__body">
+          <div className="avatar-row">
+            <Avatar
+              displayName={user.displayName}
+              username={user.username}
+              avatarUrl={user.avatarUrl}
+              size={68}
+            />
+            <div className="avatar-row__actions">
+              <button
+                type="button"
+                className="btn btn--quiet btn--sm"
+                onClick={() => avatarInput.current?.click()}
+                disabled={avatarBusy}
+              >
+                {avatarBusy ? <span className="btn__spinner" /> : <Icon name="camera" size={16} />}
+                {avatarBusy ? 'Saving…' : 'Change photo'}
+              </button>
+              {user.avatarUrl ? (
                 <button
                   type="button"
-                  className="text-button"
+                  className="btn btn--ghost btn--sm"
                   onClick={async () => {
-                    const result = await api.deleteAvatar();
-                    setMe(result.user);
-                    toast('Profile photo removed');
+                    const data = await api.delete<{ user: MeDTO }>('/api/me/avatar');
+                    setUser(data.user);
+                    notify('Photo removed.');
                   }}
                 >
                   Remove
                 </button>
               ) : null}
+              <span className="field__hint">JPEG, PNG or WEBP · square works best.</span>
             </div>
-            <p className="hint">Square-ish photos look best. Resized to 600 px before upload.</p>
+            <input
+              ref={avatarInput}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="visually-hidden"
+              aria-label="Choose profile photo"
+              onChange={(event) => uploadAvatar(event.target.files?.[0])}
+            />
           </div>
 
-          <label className="field">
-            <span className="field__label">Display name</span>
-            <input
-              className="input"
-              value={displayName}
-              maxLength={40}
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">Username</span>
-            <input
-              className="input"
-              value={username}
-              maxLength={20}
-              onChange={(event) => setUsername(event.target.value.toLowerCase())}
-            />
-            <span className="field__hint">
-              Changing this changes your profile link. Old links will stop working.
-            </span>
-          </label>
-          <label className="field">
-            <span className="field__label">Bio</span>
-            <textarea
-              className="textarea"
-              rows={3}
-              maxLength={config.limits.maxBioLength}
-              value={bio}
-              onChange={(event) => setBio(event.target.value)}
-              placeholder="A sentence about you and your goats."
-            />
-            <span className="field__hint">
-              {bio.length}/{config.limits.maxBioLength}
-            </span>
-          </label>
+          <form
+            className="form-stack"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSavingProfile(true);
+              setProfileFields({});
+              try {
+                const data = await api.patch<{ user: MeDTO; message: string }>('/api/me', {
+                  displayName,
+                  username,
+                  bio,
+                });
+                setUser(data.user);
+                notify(data.message);
+                if (data.user.username !== user.username) navigate(`/u/${data.user.username}`);
+              } catch (error) {
+                if (error instanceof ApiError) setProfileFields(error.fields ?? {});
+                notify(error instanceof Error ? error.message : 'Could not save the profile.', { tone: 'error' });
+              } finally {
+                setSavingProfile(false);
+              }
+            }}
+          >
+            <div className="form-row">
+              <div className="field">
+                <label className="field__label" htmlFor="displayName">
+                  Display name
+                </label>
+                <input
+                  id="displayName"
+                  className="input"
+                  value={displayName}
+                  maxLength={40}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  aria-invalid={Boolean(profileFields.displayName)}
+                />
+                {profileFields.displayName ? <span className="field__error">{profileFields.displayName}</span> : null}
+              </div>
+              <div className="field">
+                <label className="field__label" htmlFor="username">
+                  Username
+                </label>
+                <input
+                  id="username"
+                  className="input"
+                  value={username}
+                  maxLength={20}
+                  onChange={(event) => setUsername(event.target.value.toLowerCase())}
+                  aria-invalid={Boolean(profileFields.username) || usernameState === 'taken'}
+                  aria-describedby="username-state"
+                />
+                <span className="field__hint" id="username-state">
+                  {usernameState === 'checking'
+                    ? 'Checking…'
+                    : usernameState === 'taken'
+                      ? 'That username is taken.'
+                      : usernameState === 'available'
+                        ? 'Available.'
+                        : usernameState === 'invalid'
+                          ? 'Letters, numbers and underscores only.'
+                          : 'Changing this changes your profile link.'}
+                </span>
+                {profileFields.username ? <span className="field__error">{profileFields.username}</span> : null}
+              </div>
+            </div>
+            <div className="field">
+              <label className="field__label" htmlFor="bio">
+                Bio
+              </label>
+              <textarea
+                id="bio"
+                className="textarea"
+                value={bio}
+                maxLength={200}
+                onChange={(event) => setBio(event.target.value)}
+                placeholder="A sentence about you and your goats."
+              />
+              <span className="field__hint">{bio.length}/200 · Shown publicly.</span>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="btn btn--primary" disabled={savingProfile}>
+                {savingProfile ? <span className="btn__spinner" /> : null}
+                Save profile
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
 
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button type="button" className="button" onClick={saveProfile} disabled={saving}>
-            {saving ? 'Saving…' : 'Save profile'}
-          </button>
-        </section>
-      ) : null}
+      <section className="settings-section" aria-labelledby="settings-account">
+        <div className="settings-section__intro">
+          <h2 id="settings-account">Account</h2>
+          <p>Sign-in details are never shown on your public profile.</p>
+        </div>
+        <div className="settings-section__body">
+          <div className="settings-line">
+            <span className="field__label">Email</span>
+            <span>{user.email}</span>
+            <span className="field__hint">Used for sign-in and password recovery.</span>
+          </div>
+          <div className="settings-line">
+            <span className="field__label">Role</span>
+            <span>{user.role === 'admin' ? 'Moderator' : 'Member'}</span>
+            {user.role === 'admin' ? (
+              <Link className="textlink" to="/admin">
+                Open moderation
+              </Link>
+            ) : null}
+          </div>
+          <div className="settings-line">
+            <span className="field__label">Joined</span>
+            <span>{formatDate(user.createdAt)}</span>
+          </div>
 
-      {tab === 'feed' ? (
-        <section className="settings-section" aria-label="Feed">
-          <h2 className="settings-title">What your feed has learned</h2>
-          <p className="aside-text">
-            Every like, comment, follow, completed post and skip adjusts these numbers. They fade
-            over time, so a phase of baby-goat posts does not define you forever.
-          </p>
+          <form
+            className="form-stack"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setPasswordError(null);
+              if (newPassword !== confirmPassword) {
+                setPasswordError('The new passwords do not match.');
+                return;
+              }
+              setSavingPassword(true);
+              try {
+                await api.post('/api/auth/password/change', { currentPassword, newPassword });
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+                notify('Password updated.');
+                await refresh();
+              } catch (error) {
+                setPasswordError(error instanceof Error ? error.message : 'Could not change the password.');
+              } finally {
+                setSavingPassword(false);
+              }
+            }}
+          >
+            <h3>Change password</h3>
+            <div className="form-row">
+              <div className="field">
+                <label className="field__label" htmlFor="current-password">
+                  Current password
+                </label>
+                <input
+                  id="current-password"
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label className="field__label" htmlFor="new-password-settings">
+                  New password
+                </label>
+                <input
+                  id="new-password-settings"
+                  className="input"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div className="field" style={{ maxWidth: 320 }}>
+              <label className="field__label" htmlFor="confirm-new-password">
+                Repeat new password
+              </label>
+              <input
+                id="confirm-new-password"
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                required
+              />
+            </div>
+            {passwordError ? <p className="field__error">{passwordError}</p> : null}
+            <div className="form-actions">
+              <button type="submit" className="btn btn--primary" disabled={savingPassword}>
+                {savingPassword ? <span className="btn__spinner" /> : null}
+                Update password
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={async () => {
+                  await signOut();
+                  navigate('/');
+                }}
+              >
+                <Icon name="logout" size={17} /> Sign out
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
 
+      <section className="settings-section" aria-labelledby="settings-feed">
+        <div className="settings-section__intro">
+          <h2 id="settings-feed">Your feed</h2>
+          <p>GoatMedia starts with simple, explainable signals. This is what yours look like.</p>
+        </div>
+        <div className="settings-section__body">
           {interests.length === 0 ? (
-            <p className="hint">Nothing learned yet. Watch, like or skip a few posts.</p>
+            <p className="section-note">
+              Nothing learned yet. Watch a few videos, like something, or follow a creator and this will fill in.
+            </p>
           ) : (
-            <ul className="interest-list">
-              {interests.map((interest) => (
-                <li key={`${interest.kind}-${interest.value}`}>
-                  <span className="interest-list__name">
-                    {interest.kind === 'hashtag' ? `#${interest.value}` : interest.value.replace(/-/g, ' ')}
-                  </span>
-                  <span className={`interest-list__value ${interest.weight < 0 ? 'is-negative' : ''}`}>
-                    {interest.weight > 0 ? '+' : ''}
-                    {interest.weight}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="interest-groups">
+              <div>
+                <h3 className="interest-group__title">More of</h3>
+                {interests.filter((item) => item.weight > 0).length === 0 ? (
+                  <p className="section-note">Nothing yet.</p>
+                ) : (
+                  <ul className="interest-list">
+                    {interests
+                      .filter((item) => item.weight > 0)
+                      .map((item) => (
+                        <li key={`${item.kind}-${item.value}`}>
+                          <span>{item.value}</span>
+                          <span className="interest-weight">+{item.weight}</span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h3 className="interest-group__title">Less of</h3>
+                {interests.filter((item) => item.weight < 0).length === 0 ? (
+                  <p className="section-note">Nothing yet. Swiping past a video quickly counts.</p>
+                ) : (
+                  <ul className="interest-list">
+                    {interests
+                      .filter((item) => item.weight < 0)
+                      .map((item) => (
+                        <li key={`${item.kind}-${item.value}`}>
+                          <span>{item.value}</span>
+                          <span className="interest-weight">{item.weight}</span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            </div>
           )}
 
           <div className="settings-actions">
-            <button
-              type="button"
-              className="button button--quiet"
-              disabled={feedBusy}
-              onClick={async () => {
-                setFeedBusy(true);
-                try {
-                  await api.resetInterests();
-                  setInterests([]);
-                  setHidden([]);
-                  toast('Recommendations reset');
-                } catch (err) {
-                  toast((err as Error).message, 'error');
-                } finally {
-                  setFeedBusy(false);
-                }
-              }}
-            >
-              Reset recommendations
-            </button>
+            {confirmReset ? (
+              <div className="inline-confirm">
+                <p>Clear everything the feed has learned? Your likes, follows and hidden videos stay as they are.</p>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={async () => {
+                      try {
+                        await api.post('/api/me/reset-interests');
+                        setInterests([]);
+                        setConfirmReset(false);
+                        notify('Recommendations reset.');
+                      } catch {
+                        notify('Could not reset recommendations.', { tone: 'error' });
+                      }
+                    }}
+                  >
+                    Reset recommendations
+                  </button>
+                  <button type="button" className="btn btn--quiet btn--sm" onClick={() => setConfirmReset(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setConfirmReset(true)} disabled={!interests.length}>
+                Reset recommendations
+              </button>
+            )}
           </div>
 
-          <h2 className="settings-title">Posts you hid</h2>
-          {hidden.length === 0 ? (
-            <p className="hint">None. “Not interested” hides a post from your feed.</p>
-          ) : (
-            <ul className="mini-grid">
-              {hidden.map((post) => (
-                <li key={post.id}>
-                  <div className="mini-grid__item">
-                    {post.photos[0] ? <img src={post.photos[0].url} alt="" loading="lazy" /> : null}
+          <div className="settings-subsection">
+            <h3>Hidden videos</h3>
+            {hidden.length === 0 ? (
+              <p className="section-note">Videos you mark as not interested will be listed here so you can undo it.</p>
+            ) : (
+              <ul className="mini-list">
+                {hidden.map((video) => (
+                  <li key={video.id} className="mini-video">
+                    <div className="mini-video__thumb">
+                      {video.posterUrl ? <img src={video.posterUrl} alt="" loading="lazy" /> : null}
+                    </div>
+                    <div className="mini-video__body">
+                      <Link to={`/v/${video.id}`}>{video.caption}</Link>
+                      <span className="field__hint">
+                        {video.creator.displayName} · {compactNumber(video.viewCount)} views
+                      </span>
+                    </div>
                     <button
                       type="button"
-                      className="mini-grid__action"
+                      className="btn btn--quiet btn--sm"
                       onClick={async () => {
-                        await api.notInterested(post.id, false);
-                        setHidden((current) => current.filter((item) => item.id !== post.id));
-                        toast('Post will appear again');
+                        try {
+                          await api.delete(`/api/me/hidden/${video.id}`);
+                          setHidden((items) => items.filter((item) => item.id !== video.id));
+                          notify('That video can appear in your feed again.');
+                        } catch {
+                          notify('Could not undo that.', { tone: 'error' });
+                        }
                       }}
                     >
                       Show again
                     </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-          <h2 className="settings-title">Blocked accounts</h2>
-          {blocked.length === 0 ? (
-            <p className="hint">You have not blocked anyone.</p>
-          ) : (
-            <ul className="creator-list">
-              {blocked.map((user) => (
-                <li key={user.id}>
-                  <div className="creator-row creator-row--static">
-                    <Avatar user={user} size={38} />
-                    <span className="creator-row__text">
-                      <strong>{user.displayName}</strong>
-                      <span className="muted">@{user.username}</span>
-                    </span>
+          <div className="settings-subsection">
+            <h3>Blocked accounts</h3>
+            {blocked.length === 0 ? (
+              <p className="section-note">No one is blocked. You can block someone from their profile.</p>
+            ) : (
+              <ul className="mini-list">
+                {blocked.map((person) => (
+                  <li key={person.id} className="mini-video">
+                    <Avatar displayName={person.displayName} username={person.username} avatarUrl={person.avatarUrl} size={36} />
+                    <div className="mini-video__body">
+                      <Link to={`/u/${person.username}`}>{person.displayName}</Link>
+                      <span className="field__hint">@{person.username}</span>
+                    </div>
                     <button
                       type="button"
-                      className="button button--quiet button--small"
+                      className="btn btn--quiet btn--sm"
                       onClick={async () => {
-                        await api.block(user.username, false);
-                        setBlocked((current) => current.filter((item) => item.id !== user.id));
-                        toast('Unblocked');
+                        try {
+                          await api.delete(`/api/users/${person.id}/block`);
+                          setBlocked((items) => items.filter((item) => item.id !== person.id));
+                          notify(`Unblocked @${person.username}.`);
+                        } catch {
+                          notify('Could not unblock that account.', { tone: 'error' });
+                        }
                       }}
                     >
                       Unblock
                     </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
-
-      {tab === 'account' ? (
-        <section className="settings-section" aria-label="Account">
-          <dl className="fact-list">
-            <div>
-              <dt>Email</dt>
-              <dd>{me.email}</dd>
-            </div>
-            <div>
-              <dt>Username</dt>
-              <dd>@{me.username}</dd>
-            </div>
-            <div>
-              <dt>Joined</dt>
-              <dd>{fullDate(me.createdAt)}</dd>
-            </div>
-            <div>
-              <dt>Role</dt>
-              <dd>{me.role === 'admin' ? 'Moderator' : 'Member'}</dd>
-            </div>
-            <div>
-              <dt>Posts</dt>
-              <dd>{count(me.postCount)} approved</dd>
-            </div>
-          </dl>
-
-          <div className="settings-actions">
-            {me.role === 'admin' ? (
-              <Link to="/admin" className="button button--quiet">
-                <Icon name="shield" size={17} />
-                Moderation dashboard
-              </Link>
-            ) : null}
-            <button
-              type="button"
-              className="button button--quiet"
-              onClick={async () => {
-                await signOut();
-                toast('Signed out');
-                navigate('/');
-              }}
-            >
-              <Icon name="logout" size={17} />
-              Sign out
-            </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
-          <h2 className="settings-title">Deleting your account</h2>
-          <p className="aside-text">
-            There is no self-service deletion yet. Ask the moderator and it will be removed along
-            with your posts, photos and audio. You can delete individual posts from the post menu in
-            the meantime.
+          <p className="section-note">
+            Read the <Link className="textlink" to="/guidelines">community guidelines</Link> or the{' '}
+            <Link className="textlink" to="/privacy">privacy notes</Link>.
           </p>
-        </section>
-      ) : null}
+        </div>
+      </section>
     </div>
   );
 }

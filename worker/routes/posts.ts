@@ -18,6 +18,7 @@ import { categoryById, limits, postReportReasons } from '../config';
 import { hydratePosts, PostRow, POST_SELECT } from '../models';
 import { followingFeed, forYouFeed, trendingFeed, invalidateTrending } from '../recommend';
 import { applySignal, recordEvent, undoEvent } from '../interests';
+import { completeUpload, dimensionFromForm, durationFromForm } from './uploads';
 
 const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/wav']);
@@ -126,32 +127,48 @@ export async function createPost(req: Request, env: Env, origin: string) {
   const category = String(form.get('category') || '');
   if (!categoryById.has(category)) throw bad('Pick a category for your post.');
 
-  const files = form.getAll('photos').filter((entry): entry is File => entry instanceof File);
-  if (!files.length) throw bad('Add at least one photo.');
-  if (files.length > limits.maxPhotos) {
-    throw bad(`You can add up to ${limits.maxPhotos} photos to one post.`);
-  }
-  if (files.length > 1 && files.some((f) => f.size === 0)) throw bad('One of those photos was empty.');
+  const kind = String(form.get('kind') || 'photos') === 'video' ? 'video' : 'photos';
 
+  let video: { uploadId: string; durationMs: number; width: number | null; height: number | null } | null = null;
   const photos: { id: string; bytes: ArrayBuffer; mime: string; size: number; position: number }[] = [];
-  for (const [index, file] of files.entries()) {
-    const type = file.type || 'image/jpeg';
-    if (!PHOTO_TYPES.has(type)) {
-      throw bad('Photos need to be JPEG, PNG or WebP. iPhone HEIC files should be converted first.');
+
+  if (kind === 'video') {
+    const uploadId = String(form.get('uploadId') || '');
+    if (!uploadId) throw bad('The video upload did not finish. Try again.');
+    const upload = await completeUpload(env, user.id, uploadId);
+    video = {
+      uploadId,
+      durationMs: durationFromForm(form, upload.duration_ms),
+      width: dimensionFromForm(form, 'width'),
+      height: dimensionFromForm(form, 'height'),
+    };
+  } else {
+    const files = form.getAll('photos').filter((entry): entry is File => entry instanceof File);
+    if (!files.length) throw bad('Add at least one photo.');
+    if (files.length > limits.maxPhotos) {
+      throw bad(`You can add up to ${limits.maxPhotos} photos to one post.`);
     }
-    if (file.size > MAX_PHOTO_BYTES) {
-      throw bad(
-        `Photo ${index + 1} is ${(file.size / (1024 * 1024)).toFixed(2)} MB. Keep each photo under ${limits.maxPhotoMb} MB.`,
-      );
+    if (files.length > 1 && files.some((f) => f.size === 0)) throw bad('One of those photos was empty.');
+
+    for (const [index, file] of files.entries()) {
+      const type = file.type || 'image/jpeg';
+      if (!PHOTO_TYPES.has(type)) {
+        throw bad('Photos need to be JPEG, PNG or WebP. iPhone HEIC files should be converted first.');
+      }
+      if (file.size > MAX_PHOTO_BYTES) {
+        throw bad(
+          `Photo ${index + 1} is ${(file.size / (1024 * 1024)).toFixed(2)} MB. Keep each photo under ${limits.maxPhotoMb} MB.`,
+        );
+      }
+      const bytes = await file.arrayBuffer();
+      if (!looksLikeImage(new Uint8Array(bytes.slice(0, 12)), type)) {
+        throw bad(`Photo ${index + 1} does not look like a real image file.`);
+      }
+      photos.push({ id: uid('pho'), bytes, mime: type, size: file.size, position: index });
     }
-    const bytes = await file.arrayBuffer();
-    if (!looksLikeImage(new Uint8Array(bytes.slice(0, 12)), type)) {
-      throw bad(`Photo ${index + 1} does not look like a real image file.`);
-    }
-    photos.push({ id: uid('pho'), bytes, mime: type, size: file.size, position: index });
   }
 
-  const soundMode = String(form.get('soundMode') || 'none');
+  const soundMode = kind === 'video' ? 'none' : String(form.get('soundMode') || 'none');
   let soundId: string | null = null;
   let newSound: { id: string; title: string; mime: string; bytes: ArrayBuffer; size: number; durationMs: number } | null =
     null;
@@ -213,9 +230,25 @@ export async function createPost(req: Request, env: Env, origin: string) {
 
   statements.push(
     env.DB.prepare(
-      `INSERT INTO posts (id, owner_id, caption, category, hashtags, sound_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-    ).bind(postId, user.id, caption, category, JSON.stringify(hashtags), soundId, createdAt, createdAt),
+      `INSERT INTO posts (
+         id, owner_id, caption, category, hashtags, sound_id, kind, duration_ms, width, height,
+         video_upload_id, status, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+    ).bind(
+      postId,
+      user.id,
+      caption,
+      category,
+      JSON.stringify(hashtags),
+      soundId,
+      kind,
+      video?.durationMs ?? 0,
+      video?.width ?? null,
+      video?.height ?? null,
+      video?.uploadId ?? null,
+      createdAt,
+      createdAt,
+    ),
   );
 
   for (const photo of photos) {
@@ -237,7 +270,14 @@ export async function createPost(req: Request, env: Env, origin: string) {
 
   const row = await env.DB.prepare(`${POST_SELECT} WHERE p.id = ?`).bind(postId).first<PostRow>();
   const [post] = await hydratePosts(env, origin, user.id, [row!]);
-  return json({ post }, 201);
+  return json(
+    {
+      post,
+      video: post,
+      message: 'Sent for review. A person will watch this one before it goes live.',
+    },
+    201,
+  );
 }
 
 export async function updatePost(req: Request, env: Env, origin: string, id: string) {
@@ -284,7 +324,7 @@ export async function updatePost(req: Request, env: Env, origin: string, id: str
 
   const updated = await env.DB.prepare(`${POST_SELECT} WHERE p.id = ?`).bind(id).first<PostRow>();
   const [post] = await hydratePosts(env, origin, user.id, [updated!]);
-  return json({ post, needsReview });
+  return json({ post, video: post, needsReview });
 }
 
 export async function deletePost(req: Request, env: Env, id: string) {
@@ -471,57 +511,70 @@ export async function deleteComment(req: Request, env: Env, id: string) {
   return json({ ok: true });
 }
 
+async function countView(req: Request, env: Env, id: string, viewerId: string | null) {
+  const seenSince = now() - 3 * 60 * 60 * 1000;
+  if (viewerId) {
+    const recent = await env.DB.prepare(
+      `SELECT 1 AS n FROM post_events WHERE user_id = ? AND post_id = ? AND kind = 'view' AND created_at > ?`,
+    )
+      .bind(viewerId, id, seenSince)
+      .first<{ n: number }>();
+    if (recent) return;
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO post_events (id, post_id, user_id, kind, value, created_at) VALUES (?, ?, ?, ?, 0, ?)',
+      ).bind(uid('ev'), id, viewerId, 'view', now()),
+      env.DB.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(id),
+    ]);
+    return;
+  }
+
+  // Signed-out visitors are counted once per browser-ish fingerprint per post,
+  // so a refresh loop cannot inflate trending.
+  const visitorKey = await sha256(`${ip(req)}:${req.headers.get('user-agent') || ''}`);
+  const recent = await env.DB.prepare(
+    'SELECT 1 AS n FROM guest_views WHERE post_id = ? AND visitor_key = ? AND created_at > ?',
+  )
+    .bind(id, visitorKey, seenSince)
+    .first<{ n: number }>();
+  if (recent) return;
+  await env.DB.batch([
+    env.DB.prepare(
+      'INSERT OR REPLACE INTO guest_views (post_id, visitor_key, created_at) VALUES (?, ?, ?)',
+    ).bind(id, visitorKey, now()),
+    env.DB.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(id),
+  ]);
+}
+
 export async function postEvent(req: Request, env: Env, id: string) {
   const viewer = await currentUser(req, env);
-  const body = await readJson(req);
-  const kind = String(body.kind || '');
+  const body = await readJson<Record<string, unknown>>(req);
   const post = await env.DB.prepare('SELECT id, status FROM posts WHERE id = ?')
     .bind(id)
     .first<{ id: string; status: string }>();
   if (!post || post.status !== 'approved') throw missing();
 
-  if (kind === 'view') {
-    const seenSince = now() - 3 * 60 * 60 * 1000;
-    if (viewer) {
-      const recent = await env.DB.prepare(
-        `SELECT 1 AS n FROM post_events WHERE user_id = ? AND post_id = ? AND kind = 'view' AND created_at > ?`,
-      )
-        .bind(viewer.id, id, seenSince)
-        .first<{ n: number }>();
-      if (!recent) {
-        await env.DB.batch([
-          env.DB.prepare(
-            'INSERT INTO post_events (id, post_id, user_id, kind, value, created_at) VALUES (?, ?, ?, ?, 0, ?)',
-          ).bind(uid('ev'), id, viewer.id, 'view', now()),
-          env.DB.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(id),
-        ]);
-      }
-      return json({ ok: true });
-    }
+  const kind = typeof body.kind === 'string' ? body.kind : '';
 
-    // Signed-out visitors are counted once per browser-ish fingerprint per post,
-    // so a refresh loop cannot inflate trending.
-    const visitorKey = await sha256(`${ip(req)}:${req.headers.get('user-agent') || ''}`);
-    const recent = await env.DB.prepare(
-      'SELECT 1 AS n FROM guest_views WHERE post_id = ? AND visitor_key = ? AND created_at > ?',
-    )
-      .bind(id, visitorKey, seenSince)
-      .first<{ n: number }>();
-    if (!recent) {
-      await env.DB.batch([
-        env.DB.prepare(
-          'INSERT OR REPLACE INTO guest_views (post_id, visitor_key, created_at) VALUES (?, ?, ?)',
-        ).bind(id, visitorKey, now()),
-        env.DB.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(id),
-      ]);
-    }
+  // Older clients send one summary per watch instead of named events.
+  if (!kind) {
+    const watchSeconds = Number(body.watchSeconds || 0);
+    if (Number.isFinite(watchSeconds) && watchSeconds > 0.5) await countView(req, env, id, viewer?.id ?? null);
+    if (!viewer) return json({ ok: true });
+    if (body.completed) await recordEvent(env, viewer.id, id, 'complete');
+    if (body.rewatched) await recordEvent(env, viewer.id, id, 'rewatch');
+    if (body.skipped) await recordEvent(env, viewer.id, id, 'skip');
+    return json({ ok: true });
+  }
+
+  if (kind === 'view') {
+    await countView(req, env, id, viewer?.id ?? null);
     return json({ ok: true });
   }
 
   if (!viewer) return json({ ok: true });
   if (kind === 'complete' || kind === 'rewatch' || kind === 'skip') {
-    // Watching a post's photos: dwell time decides whether it counted or was a skip.
-    await recordEvent(env, viewer.id, id, kind as 'complete' | 'rewatch' | 'skip');
+    await recordEvent(env, viewer.id, id, kind);
     return json({ ok: true });
   }
   throw bad('Unknown event.');
@@ -670,25 +723,38 @@ export async function myPosts(req: Request, env: Env, origin: string, url: URL, 
     ? await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first<{ id: string }>()
     : viewer;
   if (!target) throw missing('No creator with that username.');
-  const isSelf = viewer?.id === target.id;
+  const isSelf = viewer?.id === target.id || viewer?.role === 'admin';
+  const tab = url.searchParams.get('tab') || 'published';
+  const status =
+    tab === 'pending' ? 'pending' : tab === 'rejected' ? 'rejected' : tab === 'removed' ? 'removed' : 'approved';
 
   const rows = await env.DB.prepare(
     `${POST_SELECT}
       WHERE p.owner_id = ?
-        AND (p.status = 'approved' OR (p.owner_id = ? AND ? = 1))
+        AND p.status = ?
+        AND (? = 1 OR p.status = 'approved')
       ORDER BY p.created_at DESC
       LIMIT ? OFFSET ?`,
   )
-    .bind(
-      target.id,
-      viewer?.id ?? '',
-      isSelf || viewer?.role === 'admin' ? 1 : 0,
-      13,
-      offset,
-    )
+    .bind(target.id, isSelf ? status : 'approved', isSelf ? 1 : 0, 13, offset)
     .all<PostRow>();
+
+  const counts = isSelf
+    ? await env.DB.prepare(
+        `SELECT status, COUNT(*) AS n FROM posts WHERE owner_id = ? GROUP BY status`,
+      )
+        .bind(target.id)
+        .all<{ status: string; n: number }>()
+    : null;
+  const countMap: Record<string, number> = { approved: 0, pending: 0, rejected: 0, removed: 0 };
+  for (const row of counts?.results || []) countMap[row.status] = Number(row.n);
 
   const list = rows.results || [];
   const items = await hydratePosts(env, origin, viewer?.id ?? null, list.slice(0, 12));
-  return json({ items, hasMore: list.length > 12, page });
+  return json({
+    items,
+    hasMore: list.length > 12,
+    page,
+    counts: isSelf ? countMap : null,
+  });
 }

@@ -4,6 +4,7 @@
 
 import { Env, missing } from '../lib';
 import { currentUser } from '../session';
+import { VIDEO_CHUNK_BYTES } from '../config';
 
 /**
  * D1 hands BLOBs back as an array of byte values rather than an ArrayBuffer,
@@ -68,6 +69,132 @@ export async function sound(req: Request, env: Env, id: string) {
     return blobResponse(row.bytes, row.mime, 'private, no-store');
   }
   return blobResponse(row.bytes, row.mime, 'public, max-age=604800');
+}
+
+interface VideoRow {
+  mime: string;
+  size: number;
+  status: string;
+  owner_id: string;
+  upload_id: string;
+}
+
+async function videoRow(env: Env, postId: string): Promise<VideoRow> {
+  const row = await env.DB.prepare(
+    `SELECT up.mime, up.size, p.status, p.owner_id, up.id AS upload_id
+       FROM posts p JOIN uploads up ON up.id = p.video_upload_id
+      WHERE p.id = ? AND p.kind = 'video'`,
+  )
+    .bind(postId)
+    .first<VideoRow>();
+  if (!row) throw missing('That video is gone.');
+  return row;
+}
+
+async function assertMediaVisible(req: Request, env: Env, row: { status: string; owner_id: string }) {
+  if (row.status === 'approved') return true;
+  const user = await currentUser(req, env);
+  if (!user || (user.id !== row.owner_id && user.role !== 'admin')) throw missing();
+  return false;
+}
+
+/** Reads just the chunks a byte range touches, then trims the edges. */
+async function readRange(env: Env, uploadId: string, start: number, end: number) {
+  const firstChunk = Math.floor(start / VIDEO_CHUNK_BYTES);
+  const lastChunk = Math.floor(end / VIDEO_CHUNK_BYTES);
+  const rows = await env.DB.prepare(
+    'SELECT idx, bytes FROM upload_chunks WHERE upload_id = ? AND idx BETWEEN ? AND ? ORDER BY idx',
+  )
+    .bind(uploadId, firstChunk, lastChunk)
+    .all<{ idx: number; bytes: unknown }>();
+
+  const wanted = end - start + 1;
+  const out = new Uint8Array(wanted);
+  let written = 0;
+  for (const row of rows.results || []) {
+    const bytes = toBytes(row.bytes);
+    if (!bytes) continue;
+    const chunkStart = row.idx * VIDEO_CHUNK_BYTES;
+    const from = Math.max(0, start - chunkStart);
+    const to = Math.min(bytes.byteLength, end - chunkStart + 1);
+    if (to <= from) continue;
+    const slice = bytes.subarray(from, to);
+    out.set(slice, written);
+    written += slice.byteLength;
+  }
+  if (written === 0) throw missing('That video is incomplete.');
+  return written === out.byteLength ? out : out.subarray(0, written);
+}
+
+export async function video(req: Request, env: Env, postId: string) {
+  const row = await videoRow(env, postId);
+  const isPublic = await assertMediaVisible(req, env, row);
+  const cache = isPublic ? 'public, max-age=604800' : 'private, no-store';
+  const headers: Record<string, string> = {
+    'content-type': row.mime,
+    'accept-ranges': 'bytes',
+    'cache-control': cache,
+    'x-content-type-options': 'nosniff',
+  };
+
+  const range = req.headers.get('range');
+  if (req.method === 'HEAD') {
+    return new Response(null, {
+      status: 200,
+      headers: { ...headers, 'content-length': String(row.size) },
+    });
+  }
+
+  if (range) {
+    const match = /bytes=(\d*)-(\d*)/.exec(range);
+    if (!match) throw missing('That range cannot be read.');
+    let start = match[1] ? Number(match[1]) : 0;
+    let end = match[2] ? Number(match[2]) : row.size - 1;
+    if (!match[1] && match[2]) {
+      // Suffix range: the last N bytes of the file.
+      start = Math.max(0, row.size - Number(match[2]));
+      end = row.size - 1;
+    }
+    end = Math.min(end, row.size - 1);
+    if (!Number.isFinite(start) || start > end || start >= row.size) {
+      return new Response(null, {
+        status: 416,
+        headers: { ...headers, 'content-range': `bytes */${row.size}` },
+      });
+    }
+    const body = await readRange(env, row.upload_id, start, end);
+    return new Response(body, {
+      status: 206,
+      headers: {
+        ...headers,
+        'content-range': `bytes ${start}-${end}/${row.size}`,
+        'content-length': String(body.byteLength),
+      },
+    });
+  }
+
+  const body = await readRange(env, row.upload_id, 0, row.size - 1);
+  return new Response(body, {
+    status: 200,
+    headers: { ...headers, 'content-length': String(body.byteLength) },
+  });
+}
+
+export async function poster(req: Request, env: Env, postId: string) {
+  const row = await env.DB.prepare(
+    `SELECT up.poster_bytes, up.poster_mime, p.status, p.owner_id
+       FROM posts p JOIN uploads up ON up.id = p.video_upload_id
+      WHERE p.id = ? AND p.kind = 'video'`,
+  )
+    .bind(postId)
+    .first<{ poster_bytes: unknown; poster_mime: string | null; status: string; owner_id: string }>();
+  if (!row || !row.poster_bytes) throw missing('No preview frame for this post.');
+  const isPublic = await assertMediaVisible(req, env, row);
+  return blobResponse(
+    row.poster_bytes,
+    row.poster_mime || 'image/jpeg',
+    isPublic ? 'public, max-age=604800' : 'private, no-store',
+  );
 }
 
 export async function avatar(req: Request, env: Env, userId: string) {

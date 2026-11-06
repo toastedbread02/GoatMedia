@@ -11,6 +11,12 @@ export interface PostRow {
   category: string;
   hashtags: string;
   sound_id: string | null;
+  kind: 'video' | 'photos';
+  duration_ms: number;
+  width: number | null;
+  height: number | null;
+  video_upload_id: string | null;
+  has_poster: number;
   status: 'pending' | 'approved' | 'rejected' | 'removed';
   reject_reason: string | null;
   removed_reason: string | null;
@@ -29,8 +35,10 @@ export interface PostRow {
 
 export const POST_SELECT = `
   SELECT p.id, p.owner_id, p.caption, p.category, p.hashtags, p.sound_id, p.status,
+         p.kind, p.duration_ms, p.width, p.height, p.video_upload_id,
          p.reject_reason, p.removed_reason, p.created_at, p.updated_at, p.published_at,
          p.view_count, p.like_count, p.comment_count,
+         (SELECT 1 FROM uploads up WHERE up.id = p.video_upload_id AND up.poster_bytes IS NOT NULL) AS has_poster,
          u.username, u.display_name, u.avatar_version,
          (u.avatar_bytes IS NOT NULL) AS has_avatar, u.status AS owner_status
     FROM posts p JOIN users u ON u.id = p.owner_id`;
@@ -65,10 +73,12 @@ interface SoundJoinRow {
 
 export interface PostDTO {
   id: string;
+  kind: 'video' | 'photos';
   caption: string;
   category: string;
   categoryLabel: string;
   hashtags: string[];
+  duration: number;
   createdAt: number;
   publishedAt: number | null;
   viewCount: number;
@@ -79,6 +89,12 @@ export interface PostDTO {
   status: string;
   rejectReason: string | null;
   removedReason: string | null;
+  videoUrl: string | null;
+  posterUrl: string | null;
+  width: number | null;
+  height: number | null;
+  credit: string | null;
+  watchProgress: number | null;
   photos: { id: string; url: string; width: number | null; height: number | null }[];
   sound: {
     id: string;
@@ -188,13 +204,24 @@ export async function hydratePosts(
 
   return rows.map((row) => {
     const category = categoryById.get(row.category);
-    const sound = row.sound_id ? sounds.get(row.sound_id) : undefined;
+    const kind: 'video' | 'photos' = row.kind === 'video' ? 'video' : 'photos';
+    const photos = photosByPost.get(row.id) || [];
+    // A borrowed sound belongs to photo albums; a video carries its own audio.
+    const sound = kind === 'photos' && row.sound_id ? sounds.get(row.sound_id) : undefined;
+    const posterUrl =
+      kind === 'video'
+        ? row.has_poster
+          ? `${origin}/media/posters/${row.id}`
+          : null
+        : photos[0]?.url ?? null;
     return {
       id: row.id,
+      kind,
       caption: row.caption,
       category: row.category,
       categoryLabel: category?.label || row.category,
       hashtags: parseHashtags(row.hashtags),
+      duration: Math.round((row.duration_ms || 0) / 100) / 10,
       createdAt: row.created_at,
       publishedAt: row.published_at,
       viewCount: row.view_count,
@@ -205,7 +232,13 @@ export async function hydratePosts(
       status: row.status,
       rejectReason: row.reject_reason,
       removedReason: row.removed_reason,
-      photos: photosByPost.get(row.id) || [],
+      videoUrl: kind === 'video' ? `${origin}/media/videos/${row.id}` : null,
+      posterUrl,
+      width: row.width ?? photos[0]?.width ?? null,
+      height: row.height ?? photos[0]?.height ?? null,
+      credit: null,
+      watchProgress: null,
+      photos,
       sound: sound
         ? {
             id: sound.id,
@@ -263,6 +296,7 @@ export function publicUser(origin: string, row: UserRow, viewerId: string | null
     createdAt: row.created_at,
     followerCount: row.follower_count,
     followingCount: row.following_count,
+    videoCount: row.post_count,
     postCount: row.post_count,
     isFollowing: Boolean(row.is_following),
     isSelf: viewerId === row.id,

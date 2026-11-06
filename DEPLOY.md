@@ -15,7 +15,7 @@ GitHub Pages                         Cloudflare
 toastedbread02.github.io/GoatMedia   goatmedia-api.<account>.workers.dev
         │                                     │
         └──── fetch + Bearer token ───────────┤ Worker (auth, feeds, moderation)
-                                              └ D1: users, posts, photos, audio
+                                              └ D1: users, posts, videos, photos, audio
 ```
 
 ## Live deployment
@@ -99,9 +99,9 @@ real multipart uploads and media streaming.
 
 - Workers free: 100,000 requests/day, 10 ms CPU per request. Password hashing is
   tuned to fit; avoid expensive per-request work.
-- D1 free: 5 million rows read/day, 100,000 written/day, ~10 GB total. Photos and
-  audio are blobs in D1 because R2 requires a card. That is fine for a small
-  community; R2 is the upgrade when media volume grows.
+- D1 free: 5 million rows read/day, 100,000 written/day, ~10 GB total. Photos,
+  audio and 768 KB video chunks are blobs in D1 because R2 requires a card. That
+  is fine for a small community; R2 is the upgrade when media volume grows.
 - Cloudflare has no email sending here, so password resets surface the link on
   screen. Add an email provider before opening sign-ups to the public.
 - GitHub Pages is free for public repositories.

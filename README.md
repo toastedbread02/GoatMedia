@@ -1,8 +1,9 @@
 # GoatMedia
 
-A small social network for goat photos. Multiple photos in one post become a
-sideways carousel; sounds are shared and reusable; every post waits for a human
-moderator before it appears anywhere public.
+A small social network for goat videos and photo albums. Videos autoplay in a
+vertical reel; multiple photos in one post become a sideways carousel; sounds
+are shared and reusable; every post waits for a human moderator before it
+appears anywhere public.
 
 - **Site:** https://toastedbread02.github.io/GoatMedia/ — static React build on GitHub Pages
 - **API:** https://goatmedia-api.dominikkoba22.workers.dev — Cloudflare Worker + D1
@@ -13,25 +14,31 @@ moderator before it appears anywhere public.
 | --- | --- |
 | `src/` | The browser app (React, TypeScript, Vite, HashRouter) |
 | `worker/` | The API: routing, auth, posts, feeds, moderation, media |
-| `migrations/` | D1 schema (users, posts, photos, sounds, moderation, reports…) |
-| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (64 checks) |
+| `migrations/` | D1 schema (users, posts, videos, photos, sounds, moderation, reports…) |
+| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (86 checks) |
 | `scripts/live-check.mjs` | End-to-end checks against the deployed Worker (31 checks) |
 | `wrangler.jsonc` | Worker config, D1 binding, allowed site origins |
 
-Photos and audio are stored as blobs in D1 rather than R2/R2 requires a payment
-method on Cloudflare, and this deployment is deliberately card-free. Each blob
-is capped well under D1's 2 MB row limit, and the browser re-encodes photos
-before upload (which also strips EXIF/GPS).
+Photos and audio are stored as blobs in D1 rather than R2, because R2 requires a
+payment method on Cloudflare and this deployment is deliberately card-free.
+Videos take a different route: they are uploaded in 768 KB chunks, and the API
+reads back only the chunks a byte range touches, so clips stream with normal
+seeking. Each blob is capped well under D1's 2 MB row limit, and the browser
+re-encodes photos before upload (which also strips EXIF/GPS).
 
 ## Features
 
 **Feeds** — For You (personalized), Trending, Following, category pages, search
-for captions/hashtags/sounds/creators. Photos lazy-load, feeds paginate, and a
-post is only in a feed when its status is `approved` and its owner is active.
+for captions/hashtags/sounds/creators. A vertical reel snaps from one post to
+the next and plays exactly one video at a time. Photos lazy-load, feeds paginate,
+and a post is only in a feed when its status is `approved` and its owner is
+active.
 
-**Posts** — 1–6 photos, swipeable carousel with dots, arrows, counter and
-keyboard support; caption with hashtags; one category; optional shared sound.
-Likes, comments, follows, sharing, not-interested, reporting, blocking.
+**Posts** — Videos (MP4/MOV/WEBM/M4V) play full-screen in the reel with sound and
+playback controls; photo albums hold 1–6 photos in a swipeable carousel with
+dots, arrows, counter and keyboard support. Caption with hashtags; one category;
+optional shared sound on photo albums. Likes, comments, follows, sharing,
+not-interested, reporting, blocking.
 
 **Sounds** — Upload an MP3/M4A/AAC/OGG/WAV with a post, or borrow any sound from
 the shared library. Sound credits stay with the original creator and reuse is
@@ -39,7 +46,7 @@ counted. Posts can also have no audio at all.
 
 **Moderation** — Nothing is published automatically. Uploads are `pending` and
 visible only to their author and the moderator. The dashboard reviews pending,
-approved, rejected and removed posts with photo preview and audio playback,
+approved, rejected and removed posts with video playback and photo preview,
 creator details, moderation history and reports. Editing the caption of a live
 post puts it back in the queue. The moderator can remove live posts, suspend
 accounts, and handle video/comment/account reports.
@@ -99,6 +106,7 @@ npx wrangler d1 execute goatmedia --remote \
 ## Limits and configuration
 
 - 6 photos per post, 1.8 MB each after browser resizing
+- 25 MB video, 1–60 s, MP4/MOV/WEBM/M4V
 - 1.5 MB audio, 60 s name field, 400-character comments, 300-character captions
 - 0.4 MB avatars
 - 8 posts/hour, 12 comments/minute, 12 sign-in attempts per 10 minutes per IP
@@ -108,7 +116,7 @@ npx wrangler d1 execute goatmedia --remote \
 
 ```bash
 npm run typecheck     # app + Worker
-npm run api:check     # 64 checks: auth, privacy, moderation, feeds, sounds, CORS
+npm run api:check     # 86 checks: auth, privacy, moderation, feeds, media, video streaming, CORS
 API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev node scripts/live-check.mjs
 ```
 
@@ -123,7 +131,8 @@ and posts. It is a smoke test, not a load test.
 - **Manual moderation is one person, one queue.** A backlog is a feature of the
   design, not a bug, but it has no SLA.
 - **D1 blob storage** is a pragmatic answer to a card-free requirement, not the
-  cheapest way to serve media at scale. R2 with a payment method is the upgrade
+  cheapest way to serve media at scale. Videos are read chunk-by-chunk on demand,
+  but a popular clip still costs D1 reads. R2 with a payment method is the upgrade
   path; media URLs are stable, so only `worker/routes/media.ts` and the upload
   path change.
 - **Free-plan CPU.** Password hashing uses PBKDF2 with 6,000 iterations plus a
@@ -132,4 +141,4 @@ and posts. It is a smoke test, not a load test.
 - **Local workerd** cannot run on this machine (macOS 12.6); the API harness in
   `scripts/api-check.ts` exists for that reason.
 - No direct messages, no self-service account deletion yet (ask the moderator),
-  photos are immutable after posting (edit the caption or repost).
+  media is immutable after posting (edit the caption or repost).

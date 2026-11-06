@@ -1,5 +1,5 @@
 // Browser-side photo preparation. Re-encoding is what keeps uploads inside the
-// D1 row limit and strips EXIF metadata (including GPS) before it leaves the
+// storage limit and strips EXIF metadata (including GPS) before it leaves the
 // device.
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
@@ -37,4 +37,56 @@ export async function resizePhoto(
     if (blob && blob.size <= options.maxBytes) return blob;
   }
   throw new Error('That photo is too large even after resizing. Try a smaller one.');
+}
+
+/**
+ * Grabs one frame from a local video for the feed and the moderation queue.
+ * Nothing is uploaded for this: the frame is drawn on a canvas in the browser.
+ */
+export async function capturePoster(
+  file: File,
+  duration: number,
+): Promise<{ poster: Blob | null; width: number; height: number }> {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.preload = 'auto';
+  video.muted = true;
+  video.playsInline = true;
+  video.src = url;
+
+  const ready = new Promise<void>((resolve, reject) => {
+    video.onloadeddata = () => resolve();
+    video.onerror = () => reject(new Error('This browser could not read that video.'));
+  });
+
+  try {
+    await ready;
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    try {
+      video.currentTime = Math.min(1, Math.max(0.05, duration / 3));
+    } catch {
+      /* some browsers refuse seeking before playback; the first frame is fine */
+    }
+    await new Promise<void>((resolve) => {
+      video.onseeked = () => resolve();
+      window.setTimeout(resolve, 900);
+    });
+
+    const scale = Math.min(1, 1280 / Math.max(width, height, 1));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) return { poster: null, width, height };
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const poster = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((value) => resolve(value), 'image/jpeg', 0.74),
+    );
+    return { poster, width, height };
+  } catch {
+    return { poster: null, width: 0, height: 0 };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

@@ -79,12 +79,44 @@ export async function queue(req: Request, env: Env, origin: string, url: URL) {
 
   const list = rows.results || [];
   const items = await hydratePosts(env, origin, null, list.slice(0, 12), { showStatus: true });
+  const ids = list.slice(0, 12).map((row) => row.id);
+  const historyByPost = new Map<string, unknown[]>();
+  if (ids.length) {
+    const historyRows = await env.DB.prepare(
+      `SELECT m.id, m.post_id, m.action, m.reason, m.created_at, a.username
+         FROM moderation_events m LEFT JOIN users a ON a.id = m.admin_id
+        WHERE m.post_id IN (${ids.map(() => '?').join(',')})
+        ORDER BY m.created_at DESC`,
+    )
+      .bind(...ids)
+      .all<{
+        id: string;
+        post_id: string;
+        action: string;
+        reason: string | null;
+        created_at: number;
+        username: string | null;
+      }>();
+    for (const event of historyRows.results || []) {
+      const bucket = historyByPost.get(event.post_id) || [];
+      bucket.push({
+        id: event.id,
+        action: event.action,
+        reason: event.reason,
+        createdAt: event.created_at,
+        adminUsername: event.username,
+      });
+      historyByPost.set(event.post_id, bucket);
+    }
+  }
   return json({
     items: items.map((item, index) => ({
       ...item,
       creatorEmail: list[index].creator_email,
       creatorJoinedAt: list[index].creator_joined_at,
+      creatorUploads: list[index].creator_posts,
       creatorPostCount: list[index].creator_posts,
+      moderationHistory: historyByPost.get(item.id) || [],
     })),
     hasMore: list.length > 12,
     page,
@@ -210,7 +242,16 @@ export async function decide(
 
   await env.DB.batch(statements);
   invalidateTrending();
-  return json({ ok: true, status });
+  return json({
+    ok: true,
+    status,
+    message:
+      action === 'approve'
+        ? 'Approved. It is live in the feed now.'
+        : action === 'reject'
+          ? 'Rejected. The creator can read your reason.'
+          : 'Removed from public view.',
+  });
 }
 
 export async function reports(req: Request, env: Env, url: URL) {
@@ -221,9 +262,14 @@ export async function reports(req: Request, env: Env, url: URL) {
             u.username AS reporter,
             (SELECT id FROM posts p WHERE p.id = r.target_id) AS post_id,
             (SELECT caption FROM posts p WHERE p.id = r.target_id) AS post_caption,
+            (SELECT kind FROM posts p WHERE p.id = r.target_id) AS post_kind,
+            (SELECT '/media/posters/' || p.id FROM posts p WHERE p.id = r.target_id AND p.kind = 'video') AS post_poster,
+            (SELECT '/media/photos/' || ph.id FROM post_photos ph WHERE ph.post_id = r.target_id ORDER BY ph.position LIMIT 1) AS post_photo,
             (SELECT status FROM posts p WHERE p.id = r.target_id) AS post_status,
             (SELECT username FROM users u2 JOIN posts p ON p.owner_id = u2.id WHERE p.id = r.target_id) AS post_owner,
             (SELECT body FROM comments c WHERE c.id = r.target_id) AS comment_body,
+            (SELECT id FROM comments c WHERE c.id = r.target_id) AS comment_id,
+            (SELECT status FROM comments c WHERE c.id = r.target_id) AS comment_status,
             (SELECT c.post_id FROM comments c WHERE c.id = r.target_id) AS comment_post,
             (SELECT username FROM users u3 JOIN comments c ON c.user_id = u3.id WHERE c.id = r.target_id) AS comment_author,
             (SELECT username FROM users u4 WHERE u4.id = r.target_id AND r.target_type = 'user') AS user_target
@@ -234,10 +280,12 @@ export async function reports(req: Request, env: Env, url: URL) {
     .bind(status, status)
     .all<Record<string, unknown>>();
 
-  return json({
-    reports: (rows.results || []).map((row) => ({
+  const items = (rows.results || []).map((row) => {
+    const targetType = String(row.target_type);
+    return {
       id: String(row.id),
-      targetType: String(row.target_type),
+      targetType: targetType === 'post' ? 'video' : targetType,
+      rawTargetType: targetType,
       targetId: String(row.target_id),
       reason: String(row.reason),
       note: (row.note as string | null) ?? null,
@@ -253,24 +301,42 @@ export async function reports(req: Request, env: Env, url: URL) {
               creatorUsername: String(row.post_owner ?? ''),
             }
           : null,
+      video:
+        row.post_id != null
+          ? {
+              id: String(row.post_id),
+              caption: String(row.post_caption ?? ''),
+              kind: String(row.post_kind ?? 'photos'),
+              posterUrl: row.post_poster || row.post_photo
+                ? `${new URL(req.url).origin}${String(row.post_poster || row.post_photo)}`
+                : null,
+              videoUrl: row.post_kind === 'video' ? `${new URL(req.url).origin}/media/videos/${row.post_id}` : null,
+              status: String(row.post_status ?? ''),
+              creatorUsername: String(row.post_owner ?? ''),
+            }
+          : null,
       comment:
         row.comment_body != null
           ? {
+              id: String(row.comment_id ?? ''),
               body: String(row.comment_body),
               postId: String(row.comment_post ?? ''),
               authorUsername: String(row.comment_author ?? ''),
+              status: String(row.comment_status ?? 'visible'),
+              videoId: String(row.comment_post ?? ''),
             }
           : null,
       userTarget: (row.user_target as string | null) ?? null,
-    })),
+    };
   });
+  return json({ reports: items, items });
 }
 
 export async function resolveReport(req: Request, env: Env, id: string) {
   await requireAdmin(req, env);
   const body = await readJson(req);
   const action = String(body.action || '');
-  if (!['dismiss', 'action'].includes(action)) throw bad('Unknown report action.');
+  if (!['dismiss', 'action', 'remove_content'].includes(action)) throw bad('Unknown report action.');
   await env.DB.prepare('UPDATE reports SET status = ?, resolved_at = ? WHERE id = ?')
     .bind(action === 'dismiss' ? 'dismissed' : 'actioned', now(), id)
     .run();
@@ -292,20 +358,20 @@ export async function users(req: Request, env: Env, url: URL) {
     .bind(q, like, like, like)
     .all<Record<string, unknown>>();
 
-  return json({
-    users: (rows.results || []).map((row) => ({
-      id: String(row.id),
-      username: String(row.username),
-      displayName: String(row.display_name),
-      email: String(row.email),
-      role: String(row.role),
-      status: String(row.status),
-      suspendedReason: (row.suspended_reason as string | null) ?? null,
-      createdAt: Number(row.created_at),
-      postCount: Number(row.post_count),
-      followerCount: Number(row.follower_count),
-    })),
-  });
+  const items = (rows.results || []).map((row) => ({
+    id: String(row.id),
+    username: String(row.username),
+    displayName: String(row.display_name),
+    email: String(row.email),
+    role: String(row.role),
+    status: String(row.status),
+    suspendedReason: (row.suspended_reason as string | null) ?? null,
+    createdAt: Number(row.created_at),
+    postCount: Number(row.post_count),
+    videoCount: Number(row.post_count),
+    followerCount: Number(row.follower_count),
+  }));
+  return json({ users: items, items });
 }
 
 export async function suspendUser(req: Request, env: Env, id: string, on: boolean) {

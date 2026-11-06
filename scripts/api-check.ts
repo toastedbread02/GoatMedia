@@ -97,7 +97,7 @@ async function call(
   const type = response.headers.get('content-type') || '';
   const body = type.includes('application/json')
     ? await response.json()
-    : type.startsWith('image/') || type.startsWith('audio/')
+    : type.startsWith('image/') || type.startsWith('audio/') || type.startsWith('video/')
       ? await response.arrayBuffer()
       : await response.text();
   return { status: response.status, body, headers: response.headers };
@@ -446,6 +446,106 @@ async function run() {
     headers: { origin: 'https://evil.example' },
   });
   ok(blockedOrigin.status === 403, 'CORS refuses unknown origins');
+
+  console.log('\n[video posts]');
+  // A tiny MP4 header is enough for the magic-byte check; the bytes still
+  // travel through the real chunk pipeline and back out of the Range reader.
+  const MP4 = new Uint8Array(4096);
+  MP4.set([0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d], 4); // "ftypisom"
+
+  const badUpload = await call('/api/uploads', {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mime: 'video/avi', size: 4096, durationMs: 6000 }),
+  });
+  ok(badUpload.status === 400, 'unsupported video types are refused', badUpload.body);
+
+  const started = await call('/api/uploads', {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mime: 'video/mp4', size: MP4.byteLength, durationMs: 6000 }),
+  });
+  ok(started.status === 201 && started.body.uploadId, 'a video upload starts', started.body);
+  const uploadId = started.body.uploadId;
+
+  const chunkForm = new FormData();
+  chunkForm.append('chunk', new File([MP4], 'clip.mp4', { type: 'video/mp4' }));
+  const chunk = await call(`/api/uploads/${uploadId}/chunks?index=0`, {
+    method: 'POST',
+    token: tokenA,
+    body: chunkForm,
+  });
+  ok(chunk.status === 200, 'the video chunk is stored', chunk.body);
+
+  const posterForm = new FormData();
+  posterForm.append('poster', new File([JPEG], 'poster.jpg', { type: 'image/jpeg' }));
+  const poster = await call(`/api/uploads/${uploadId}/poster`, {
+    method: 'POST',
+    token: tokenA,
+    body: posterForm,
+  });
+  ok(poster.status === 200, 'the preview frame is stored');
+
+  const videoForm = new FormData();
+  videoForm.append('kind', 'video');
+  videoForm.append('uploadId', uploadId);
+  videoForm.append('caption', 'First clip up the hill #babygoats');
+  videoForm.append('category', 'baby-goats');
+  videoForm.append('durationMs', '6000');
+  videoForm.append('width', '1280');
+  videoForm.append('height', '720');
+  const videoPost = await call('/api/posts', { method: 'POST', token: tokenA, body: videoForm });
+  ok(videoPost.status === 201 && videoPost.body.post.kind === 'video', 'a video post is created', videoPost.body);
+  const videoId = videoPost.body.post?.id;
+  ok(videoPost.body.post?.status === 'pending', 'a video post starts pending');
+  ok(typeof videoPost.body.post?.videoUrl === 'string', 'the video has a stream url');
+  ok(videoPost.body.post?.posterUrl?.includes('/media/posters/'), 'the video has a poster');
+
+  const anonVideo = await call(`/media/videos/${videoId}`);
+  ok(anonVideo.status === 404, 'pending video bytes are unreachable when guessed');
+  const anonPoster = await call(`/media/posters/${videoId}`);
+  ok(anonPoster.status === 404, 'pending poster bytes are unreachable too');
+  const pendingDetail = await call(`/api/posts/${videoId}`);
+  ok(pendingDetail.status === 404, 'a pending video is invisible to guests');
+
+  const approveVideo = await call(`/api/admin/posts/${videoId}/approve`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  ok(approveVideo.status === 200, 'the moderator can approve a video');
+
+  const liveVideo = await call(`/api/posts/${videoId}`);
+  ok(liveVideo.status === 200 && liveVideo.body.post.kind === 'video', 'the approved video is public');
+  const stream = await call(`/media/videos/${videoId}`, { headers: { range: 'bytes=0-99' } });
+  ok(stream.status === 206, 'video streaming answers a range request', stream.status);
+  ok(stream.headers.get('content-range') === `bytes 0-99/${MP4.byteLength}`, 'the range header describes the clip');
+  const streamBytes = new Uint8Array(stream.body as ArrayBuffer);
+  ok(streamBytes.byteLength === 100, 'the range returns exactly the requested bytes');
+  ok(String.fromCharCode(...streamBytes.slice(4, 8)) === 'ftyp', 'the streamed bytes are the uploaded video');
+  const wholeVideo = await call(`/media/videos/${videoId}`);
+  ok(wholeVideo.status === 200 && (wholeVideo.body as ArrayBuffer).byteLength === MP4.byteLength, 'the full video streams');
+  const livePoster = await call(`/media/posters/${videoId}`);
+  ok(livePoster.status === 200 && livePoster.headers.get('content-type') === 'image/jpeg', 'the approved poster is public');
+
+  // The caption edit earlier sent the photo album back to the queue, so put it
+  // live again before checking that one feed can serve both kinds.
+  await call(`/api/admin/posts/${postId}/approve`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  const mixedFeed = await call('/api/feed?tab=foryou&page=1');
+  ok(
+    mixedFeed.body.items.some((item: any) => item.kind === 'video') &&
+      mixedFeed.body.items.some((item: any) => item.kind === 'photos'),
+    'the feed carries both videos and photo albums',
+    mixedFeed.body.items.map((item: any) => item.kind),
+  );
 
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);

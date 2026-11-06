@@ -60,7 +60,9 @@ import {
   search,
 } from './routes/social';
 import * as admin from './routes/admin';
-import { avatar, photo, sound } from './routes/media';
+import { avatar, photo, poster, sound, video } from './routes/media';
+import { putChunk, putPoster, startUpload } from './routes/uploads';
+import { changePassword, usernameAvailable } from './routes/auth';
 
 const CONFIG_CACHE = 'public, max-age=300';
 
@@ -103,6 +105,10 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     return json(
       {
         limits: {
+          maxUploadMb: limits.maxVideoMb,
+          maxVideoMb: limits.maxVideoMb,
+          maxDurationSeconds: limits.maxDurationSeconds,
+          minDurationSeconds: limits.minDurationSeconds,
           maxPhotos: limits.maxPhotos,
           maxPhotoMb: limits.maxPhotoMb,
           maxAudioMb: limits.maxAudioMb,
@@ -113,7 +119,12 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
         },
         categories,
         moderation,
-        reportReasons: { post: postReportReasons, comment: commentReportReasons },
+        resetLinkExposed: true,
+        reportReasons: {
+          video: postReportReasons,
+          post: postReportReasons,
+          comment: commentReportReasons,
+        },
         rejectReasons: rejectionReasons,
         guidelines,
         passwordReset: 'link-on-screen',
@@ -124,11 +135,22 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   }
 
   // ---- media -------------------------------------------------------------
-  if (parts[0] === 'media' && method === 'GET') {
+  if (parts[0] === 'media' && (method === 'GET' || method === 'HEAD')) {
     if (parts[1] === 'photos' && parts[2]) return photo(req, env, parts[2]);
     if (parts[1] === 'sounds' && parts[2]) return sound(req, env, parts[2]);
     if (parts[1] === 'avatars' && parts[2]) return avatar(req, env, parts[2]);
+    if (parts[1] === 'videos' && parts[2]) return video(req, env, parts[2]);
+    if (parts[1] === 'posters' && parts[2]) return poster(req, env, parts[2]);
     return json({ error: 'Not found.' }, 404);
+  }
+
+  // ---- chunked video uploads ---------------------------------------------
+  if (parts[0] === 'api' && parts[1] === 'uploads') {
+    if (parts.length === 2 && method === 'POST') return startUpload(req, env);
+    if (parts[2] && parts[3] === 'chunks' && method === 'POST') {
+      return putChunk(req, env, url, parts[2]);
+    }
+    if (parts[2] && parts[3] === 'poster' && method === 'POST') return putPoster(req, env, parts[2]);
   }
 
   if (parts[0] !== 'api') return text('GoatMedia API. The app lives on GitHub Pages.', 404);
@@ -145,7 +167,12 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
       return requestReset(req, env, origin);
     }
     if (second === 'password' && third === 'reset' && method === 'POST') return resetPassword(req, env);
+    if (second === 'password' && third === 'change' && method === 'POST') return changePassword(req, env);
     return json({ error: 'Not found.' }, 404);
+  }
+
+  if (root === 'usernames' && second && third === 'available' && method === 'GET') {
+    return usernameAvailable(env, second);
   }
 
   // ---- me ----------------------------------------------------------------
@@ -156,12 +183,21 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (second === 'avatar' && method === 'DELETE') return deleteAvatar(req, env, origin);
     if (second === 'interests' && !third && method === 'GET') return interests(req, env);
     if (second === 'interests' && third === 'reset' && method === 'POST') return resetInterests(req, env);
-    if (second === 'hidden' && method === 'GET') return hiddenPosts(req, env, origin);
+    if (second === 'reset-interests' && method === 'POST') return resetInterests(req, env);
+    if (second === 'hidden' && !third && method === 'GET') return hiddenPosts(req, env, origin);
+    if (second === 'hidden' && third && method === 'DELETE') return setNotInterested(req, env, third, false);
     if (second === 'blocked' && method === 'GET') return blockedUsers(req, env, origin);
     if (second === 'notifications' && !third && method === 'GET') return notifications(req, env, url);
     if (second === 'notifications' && third === 'read' && method === 'POST') {
       return markNotificationsRead(req, env);
     }
+    return json({ error: 'Not found.' }, 404);
+  }
+
+  // ---- notifications (original route names) -------------------------------
+  if (root === 'notifications') {
+    if (!second && method === 'GET') return notifications(req, env, url);
+    if (second === 'read' && method === 'POST') return markNotificationsRead(req, env);
     return json({ error: 'Not found.' }, 404);
   }
 
@@ -171,8 +207,8 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   if (root === 'search' && method === 'GET') return search(req, env, origin, url);
   if (root === 'sounds' && method === 'GET') return soundLibrary(req, env, url);
 
-  // ---- posts -------------------------------------------------------------
-  if (root === 'posts') {
+  // ---- posts (and the original /api/videos names) -------------------------
+  if (root === 'posts' || root === 'videos') {
     if (!second && method === 'POST') return createPost(req, env, origin);
     if (second && parts.length === 3) {
       if (method === 'GET') return postDetail(req, env, origin, second);
@@ -206,6 +242,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
       return publicProfile(env, origin, second, viewer?.id ?? null);
     }
     if (third === 'posts' && method === 'GET') return myPosts(req, env, origin, url, second);
+    if (third === 'videos' && method === 'GET') return myPosts(req, env, origin, url, second);
     if (third === 'follow' && method === 'POST') return follow(req, env, second, true);
     if (third === 'follow' && method === 'DELETE') return follow(req, env, second, false);
     if (third === 'block' && method === 'POST') return block(req, env, second, true);
@@ -228,8 +265,14 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
       if (method === 'POST') return admin.suspendUser(req, env, third, true);
       if (method === 'DELETE') return admin.suspendUser(req, env, third, false);
     }
+    if (second === 'users' && third && fourth === 'unsuspend' && method === 'POST') {
+      return admin.suspendUser(req, env, third, false);
+    }
     if (second === 'sounds' && method === 'GET') return admin.adminSounds(req, env, url);
-    if (second === 'posts' && third) {
+    if ((second === 'posts' || second === 'videos') && !third && method === 'GET') {
+      return admin.queue(req, env, origin, url);
+    }
+    if ((second === 'posts' || second === 'videos') && third) {
       if (!fourth && method === 'GET') return admin.detail(req, env, origin, third);
       if (fourth === 'approve' && method === 'POST') return admin.decide(req, env, third, 'approve');
       if (fourth === 'reject' && method === 'POST') return admin.decide(req, env, third, 'reject');

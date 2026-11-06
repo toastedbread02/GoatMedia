@@ -1,27 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
-import type { PhotoRef } from '../../shared/types';
-import { Icon } from './Icon';
+import type { PhotoRef } from '../../shared/types.ts';
+import { Icon } from './Icon.tsx';
 
-interface PhotoCarouselProps {
+interface PhotoAlbumProps {
   photos: PhotoRef[];
   caption: string;
-  eager?: boolean;
   className?: string;
+  eager?: boolean;
 }
 
 /**
- * Photos scroll sideways with scroll-snap, so the gesture inside the carousel
- * belongs to the carousel and the page keeps its normal vertical scroll.
+ * Photos move sideways with scroll-snap, so a vertical swipe still belongs to
+ * the feed and a horizontal one turns the page. One photo renders as a plain
+ * image with no controls at all.
  */
-export function PhotoCarousel({ photos, caption, eager = false, className = '' }: PhotoCarouselProps) {
+export function PhotoAlbum({ photos, caption, className = '', eager = false }: PhotoAlbumProps) {
   const track = useRef<HTMLDivElement | null>(null);
   const [index, setIndex] = useState(0);
-  const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   const [failed, setFailed] = useState<Record<string, boolean>>({});
-  // A single photo keeps close to its real shape; a set shares one frame so the
-  // track does not jump height while you swipe. Both stay within sane bounds.
-  const [ratio, setRatio] = useState<number | null>(null);
   const multiple = photos.length > 1;
 
   const goTo = useCallback(
@@ -56,45 +52,39 @@ export function PhotoCarousel({ photos, caption, eager = false, className = '' }
 
   return (
     <div
-      className={`carousel ${multiple ? 'carousel--multi' : ''} ${className}`}
-      data-index={index}
-      style={!multiple && ratio ? ({ '--photo-ratio': ratio } as CSSProperties) : undefined}
+      className={`album ${multiple ? 'album--multi' : ''} ${className}`}
       onKeyDown={(event) => {
         if (!multiple) return;
         if (event.key === 'ArrowRight') {
           event.preventDefault();
           goTo(index + 1);
-        }
-        if (event.key === 'ArrowLeft') {
+        } else if (event.key === 'ArrowLeft') {
           event.preventDefault();
           goTo(index - 1);
         }
       }}
     >
       <div
-        className="carousel__track"
+        className="album__track"
         ref={track}
         tabIndex={multiple ? 0 : -1}
         role={multiple ? 'group' : 'img'}
         aria-label={
-          multiple ? `Photos, ${index + 1} of ${photos.length}: ${caption || 'goat post'}` : caption || 'Goat photo'
+          multiple
+            ? `Photos, ${index + 1} of ${photos.length}: ${caption || 'goat post'}`
+            : caption || 'Goat photo'
         }
       >
         {photos.map((photo, position) => (
-          <figure className="carousel__slide" key={photo.id}>
-            {!loaded[photo.id] && !failed[photo.id] ? (
-              <div className="photo-skeleton" aria-hidden="true" />
-            ) : null}
+          <figure className="album__slide" key={photo.id}>
             {failed[photo.id] ? (
-              <div className="photo-failed">
-                <Icon name="alert" size={22} />
+              <div className="album__failed">
+                <Icon name="alert" size={20} />
                 <p>This photo did not load.</p>
                 <button
                   type="button"
-                  className="button button--quiet"
-                  onClick={() => {
-                    setFailed((current) => ({ ...current, [photo.id]: false }));
-                  }}
+                  className="btn btn--quiet btn--sm"
+                  onClick={() => setFailed((current) => ({ ...current, [photo.id]: false }))}
                 >
                   Try again
                 </button>
@@ -106,17 +96,6 @@ export function PhotoCarousel({ photos, caption, eager = false, className = '' }
                 loading={eager && position === 0 ? 'eager' : 'lazy'}
                 decoding="async"
                 draggable={false}
-                className={loaded[photo.id] ? 'is-loaded' : ''}
-                onLoad={(event) => {
-                  setLoaded((current) => ({ ...current, [photo.id]: true }));
-                  if (!multiple && position === 0) {
-                    const image = event.currentTarget;
-                    const shape = image.naturalWidth / image.naturalHeight;
-                    if (Number.isFinite(shape) && shape > 0) {
-                      setRatio(Math.min(1.6, Math.max(0.8, shape)));
-                    }
-                  }
-                }}
                 onError={() => setFailed((current) => ({ ...current, [photo.id]: true }))}
               />
             )}
@@ -128,23 +107,23 @@ export function PhotoCarousel({ photos, caption, eager = false, className = '' }
         <>
           <button
             type="button"
-            className="carousel__arrow carousel__arrow--prev"
+            className="album__arrow album__arrow--prev"
             aria-label="Previous photo"
             onClick={() => goTo(index - 1)}
             disabled={index === 0}
           >
-            <Icon name="chevron-left" size={19} />
+            <Icon name="chevron-left" size={18} />
           </button>
           <button
             type="button"
-            className="carousel__arrow carousel__arrow--next"
+            className="album__arrow album__arrow--next"
             aria-label="Next photo"
             onClick={() => goTo(index + 1)}
             disabled={index === photos.length - 1}
           >
-            <Icon name="chevron-right" size={19} />
+            <Icon name="chevron-right" size={18} />
           </button>
-          <div className="carousel__dots" role="tablist" aria-label="Choose a photo">
+          <div className="album__dots" role="tablist" aria-label="Choose a photo">
             {photos.map((photo, position) => (
               <button
                 key={photo.id}
@@ -152,12 +131,12 @@ export function PhotoCarousel({ photos, caption, eager = false, className = '' }
                 role="tab"
                 aria-selected={position === index}
                 aria-label={`Photo ${position + 1}`}
-                className={`carousel__dot ${position === index ? 'is-active' : ''}`}
+                className={`album__dot${position === index ? ' is-active' : ''}`}
                 onClick={() => goTo(position)}
               />
             ))}
           </div>
-          <span className="carousel__counter" aria-hidden="true">
+          <span className="album__counter" aria-hidden="true">
             {index + 1}/{photos.length}
           </span>
         </>

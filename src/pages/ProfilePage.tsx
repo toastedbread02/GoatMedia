@@ -1,288 +1,362 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { PostDTO, PublicUser } from '../../shared/types';
-import { Avatar } from '../components/Avatar';
-import { Icon } from '../components/Icon';
-import { Menu } from '../components/Menu';
-import { api } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { count, fullDate, plural } from '../lib/format';
-import { useToast } from '../lib/toast';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import type { PublicUser, VideoDTO, VideoStatus } from '../../shared/types.ts';
+import { api } from '../lib/api.ts';
+import { useAuth } from '../lib/auth.tsx';
+import { useToast } from '../lib/toast.tsx';
+import { monthYear, plural } from '../lib/format.ts';
+import { useDocumentTitle } from '../lib/hooks.ts';
+import { Avatar } from '../components/Avatar.tsx';
+import { Icon } from '../components/Icon.tsx';
+import { Popover } from '../components/Popover.tsx';
+import { VideoCard } from '../components/VideoCard.tsx';
+
+type Tab = 'published' | 'pending' | 'rejected' | 'removed';
+
+const TAB_LABEL: Record<Tab, string> = {
+  published: 'Published',
+  pending: 'In review',
+  rejected: 'Not approved',
+  removed: 'Removed',
+};
+
+const EMPTY_COPY: Record<Tab, string> = {
+  published: 'Nothing published yet. The first approved video will show up here.',
+  pending: 'Nothing waiting for review right now.',
+  rejected: 'No videos have been turned down.',
+  removed: 'No videos have been removed.',
+};
 
 export function ProfilePage() {
   const { username = '' } = useParams();
-  const { me } = useAuth();
-  const toast = useToast();
+  const { user, loading: authLoading } = useAuth();
+  const { notify } = useToast();
   const navigate = useNavigate();
-  const [user, setUser] = useState<PublicUser | null>(null);
-  const [posts, setPosts] = useState<PostDTO[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'live' | 'review'>('live');
+  const location = useLocation();
 
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [profile, list] = await Promise.all([api.profile(username), api.userPosts(username, 1)]);
-      setUser(profile.user);
-      setPosts(list.items);
-      setHasMore(list.hasMore);
-      setPage(1);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
+  const [profile, setProfile] = useState<PublicUser | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [videos, setVideos] = useState<VideoDTO[] | null>(null);
+  const [counts, setCounts] = useState<Record<VideoStatus, number> | null>(null);
+  const [tab, setTab] = useState<Tab>('published');
+  const [followPending, setFollowPending] = useState(false);
+  const [confirmBlock, setConfirmBlock] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+
+  useDocumentTitle(profile ? `${profile.displayName} (@${profile.username})` : 'Profile');
+
+  useEffect(() => {
+    let cancelled = false;
+    setProfile(null);
+    setProfileError(null);
+    setVideos(null);
+    setCounts(null);
+    setTab('published');
+    setConfirmBlock(false);
+    api
+      .get<{ user: PublicUser }>(`/api/users/${username}`)
+      .then((data) => {
+        if (cancelled) return;
+        setProfile(data.user);
+        setBlocked(data.user.isBlocked);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setProfileError(loadError instanceof Error ? loadError.message : 'That profile could not be loaded.');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [username]);
 
   useEffect(() => {
-    void loadProfile();
-  }, [loadProfile]);
+    if (!profile) return;
+    let cancelled = false;
+    setVideos(null);
+    api
+      .get<{ items: VideoDTO[]; counts: Record<VideoStatus, number> | null }>(
+        `/api/users/${username}/videos?tab=${tab}`,
+      )
+      .then((data) => {
+        if (cancelled) return;
+        setVideos(data.items);
+        setCounts(data.counts);
+      })
+      .catch(() => {
+        if (!cancelled) setVideos([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, username, tab]);
 
-  const loadMore = async () => {
-    try {
-      const list = await api.userPosts(username, page + 1);
-      setPosts((current) => [...current, ...list.items]);
-      setHasMore(list.hasMore);
-      setPage(page + 1);
-    } catch (err) {
-      toast((err as Error).message, 'error');
-    }
-  };
-
-  if (loading) {
+  if (profileError) {
     return (
-      <div className="column" aria-busy="true">
-        <div className="profile-skeleton">
-          <div className="profile-skeleton__avatar" />
-          <div className="profile-skeleton__lines" />
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !user) {
-    return (
-      <div className="column">
-        <div className="empty">
-          <p className="empty__title">No creator by that name</p>
-          <p>{error || 'Check the spelling, or search for someone else.'}</p>
-          <Link to="/search" className="button">
-            Search creators
+      <div className="page">
+        <div className="empty-state" style={{ paddingTop: 48 }}>
+          <Icon name="user" size={26} />
+          <h2>Profile not found</h2>
+          <p>{profileError}</p>
+          <Link className="btn btn--primary" to="/">
+            Back to the feed
           </Link>
         </div>
       </div>
     );
   }
 
-  const isSelf = user.isSelf || me?.username === user.username;
-  const visible = posts.filter((post) =>
-    filter === 'live' ? post.status === 'approved' : post.status !== 'approved',
-  );
-  const reviewCount = posts.filter((post) => post.status !== 'approved').length;
+  if (!profile || authLoading) {
+    return (
+      <div className="page">
+        <div className="feed-empty">
+          <div className="spinner spinner--dark" />
+          <p>Loading profile…</p>
+        </div>
+      </div>
+    );
+  }
+
+  const isSelf = user?.id === profile.id;
+
+  const toggleFollow = async () => {
+    if (!user) {
+      notify('Sign in to follow this creator.', {
+        actionLabel: 'Sign in',
+        onAction: () => navigate(`/login?next=${encodeURIComponent(location.pathname)}`),
+      });
+      return;
+    }
+    const next = !profile.isFollowing;
+    setFollowPending(true);
+    setProfile({
+      ...profile,
+      isFollowing: next,
+      followerCount: Math.max(0, profile.followerCount + (next ? 1 : -1)),
+    });
+    try {
+      if (next) await api.post(`/api/users/${profile.id}/follow`);
+      else await api.delete(`/api/users/${profile.id}/follow`);
+    } catch {
+      setProfile(profile);
+      notify('Could not update that follow.', { tone: 'error' });
+    } finally {
+      setFollowPending(false);
+    }
+  };
+
+  const block = async () => {
+    try {
+      await api.post(`/api/users/${profile.id}/block`);
+      setBlocked(true);
+      setConfirmBlock(false);
+      setProfile({ ...profile, isFollowing: false });
+      notify(`Blocked @${profile.username}. You can undo this in settings.`);
+    } catch {
+      notify('Could not block that account.', { tone: 'error' });
+    }
+  };
+
+  const unblock = async () => {
+    try {
+      await api.delete(`/api/users/${profile.id}/block`);
+      setBlocked(false);
+      notify(`Unblocked @${profile.username}.`);
+    } catch {
+      notify('Could not unblock that account.', { tone: 'error' });
+    }
+  };
+
+  const tabs: Tab[] = ['published', 'pending', 'rejected', ...(counts?.removed ? (['removed'] as Tab[]) : [])];
 
   return (
-    <div className="column">
-      <header className="profile">
-        <Avatar user={user} size={88} />
-        <div className="profile__main">
-          <div className="profile__top">
-            <div>
-              <h1 className="profile__name">{user.displayName}</h1>
-              <p className="profile__handle">@{user.username}</p>
-            </div>
-            <div className="profile__actions">
-              {isSelf ? (
-                <Link to="/settings" className="button button--quiet">
-                  Edit profile
-                </Link>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className={`button ${user.isFollowing ? 'button--quiet' : ''}`}
-                    onClick={async () => {
-                      if (!me) {
-                        navigate('/signin');
-                        return;
-                      }
-                      try {
-                        const result = await api.follow(user.username, !user.isFollowing);
-                        setUser({
-                          ...user,
-                          isFollowing: result.following,
-                          followerCount: result.followerCount,
-                        });
-                      } catch (err) {
-                        toast((err as Error).message, 'error');
-                      }
-                    }}
-                  >
-                    {user.isFollowing ? 'Following' : 'Follow'}
-                  </button>
-                  <Menu
-                    label="Profile options"
-                    items={[
-                      ...(user.isBlocked
-                        ? [
-                            {
-                              label: 'Unblock',
-                              icon: 'users' as const,
-                              onSelect: async () => {
-                                await api.block(user.username, false);
-                                setUser({ ...user, isBlocked: false });
-                                toast('Unblocked');
-                              },
-                            },
-                          ]
-                        : [
-                            {
-                              label: 'Block',
-                              icon: 'eye-off' as const,
-                              onSelect: async () => {
-                                await api.block(user.username, true);
-                                setUser({ ...user, isBlocked: true, isFollowing: false });
-                                toast('Blocked. Their posts are hidden from your feeds.');
-                              },
-                            },
-                          ]),
-                      {
-                        label: 'Report account',
-                        icon: 'flag' as const,
-                        tone: 'danger' as const,
-                        onSelect: () => navigate(`/report/user/${user.username}`),
-                      },
-                    ]}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-
-          <p className="profile__bio">{user.bio || (isSelf ? 'Add a short bio in settings.' : 'No bio yet.')}</p>
-
-          <dl className="profile__stats">
-            <div>
-              <dt>Posts</dt>
-              <dd>{count(user.postCount)}</dd>
-            </div>
-            <div>
-              <dt>Followers</dt>
-              <dd>{count(user.followerCount)}</dd>
-            </div>
-            <div>
-              <dt>Following</dt>
-              <dd>{count(user.followingCount)}</dd>
-            </div>
-            <div>
-              <dt>Joined</dt>
-              <dd>{new Date(user.createdAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</dd>
-            </div>
-          </dl>
-          <p className="profile__note">
-            {plural(user.postCount, 'approved post', 'approved posts')}
-            {isSelf ? ` · ${fullDate(user.createdAt)}` : ''}
+    <div className="page">
+      <header className="profile-head">
+        <Avatar
+          displayName={profile.displayName}
+          username={profile.username}
+          avatarUrl={profile.avatarUrl}
+          size={92}
+          className="profile-avatar"
+        />
+        <div className="profile-head__body">
+          <h1 className="profile-name">{profile.displayName}</h1>
+          <p className="profile-username">@{profile.username}</p>
+          <p className="profile-bio">{profile.bio || (isSelf ? 'Add a short bio in settings.' : 'No bio yet.')}</p>
+          <p className="profile-counts">
+            <strong>{profile.followerCount}</strong> {plural(profile.followerCount, 'follower')}
+            <span className="meta-sep" aria-hidden="true">
+              ·
+            </span>
+            <strong>{profile.followingCount}</strong> following
+            <span className="meta-sep" aria-hidden="true">
+              ·
+            </span>
+            <strong>{profile.videoCount}</strong> {plural(profile.videoCount, 'video')}
           </p>
+          <p className="profile-joined">Joined {monthYear(profile.createdAt)}</p>
+        </div>
+        <div className="profile-actions">
+          {isSelf ? (
+            <>
+              <Link className="btn btn--quiet" to="/settings">
+                Edit profile
+              </Link>
+              <Link className="btn btn--primary" to="/upload">
+                <Icon name="plus" size={17} /> Upload
+              </Link>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={`btn ${profile.isFollowing ? 'btn--quiet is-following' : 'btn--primary'}`}
+                onClick={toggleFollow}
+                disabled={followPending}
+                aria-pressed={profile.isFollowing}
+              >
+                {profile.isFollowing ? 'Following' : 'Follow'}
+              </button>
+              <Popover
+                label="Profile options"
+                trigger={
+                  <button type="button" className="iconbtn" aria-label="More profile options">
+                    <Icon name="more" size={19} />
+                  </button>
+                }
+              >
+                {(close) => (
+                  <>
+                    <button
+                      type="button"
+                      className="menu-item"
+                      onClick={() => {
+                        close();
+                        void navigator.clipboard.writeText(`${window.location.origin}/u/${profile.username}`).then(
+                          () => notify('Profile link copied.'),
+                          () => notify('Could not copy the link.', { tone: 'error' }),
+                        );
+                      }}
+                    >
+                      <Icon name="link" size={17} /> Copy profile link
+                    </button>
+                    {blocked ? (
+                      <button
+                        type="button"
+                        className="menu-item"
+                        onClick={() => {
+                          close();
+                          void unblock();
+                        }}
+                      >
+                        <Icon name="user" size={17} /> Unblock @{profile.username}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="menu-item menu-item--danger"
+                        onClick={() => {
+                          close();
+                          if (!user) {
+                            notify('Sign in to block this account.', {
+                              actionLabel: 'Sign in',
+                              onAction: () => navigate(`/login?next=${encodeURIComponent(location.pathname)}`),
+                            });
+                            return;
+                          }
+                          setConfirmBlock(true);
+                        }}
+                      >
+                        <Icon name="eye-off" size={17} /> Block @{profile.username}
+                      </button>
+                    )}
+                  </>
+                )}
+              </Popover>
+            </>
+          )}
         </div>
       </header>
 
-      {user.status === 'suspended' ? (
-        <div className="notice notice--warning">
-          <Icon name="alert" size={18} />
-          This account is suspended. Its posts are not shown anywhere.
-        </div>
-      ) : null}
-
-      {user.isBlocked && !isSelf ? (
+      {blocked ? (
         <div className="notice">
           <Icon name="eye-off" size={18} />
-          You blocked this account. Unblock from the menu to see their posts.
-        </div>
-      ) : null}
-
-      {isSelf ? (
-        <div className="segmented" role="tablist" aria-label="Your posts">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === 'live'}
-            className={filter === 'live' ? 'is-active' : ''}
-            onClick={() => setFilter('live')}
-          >
-            Live
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === 'review'}
-            className={filter === 'review' ? 'is-active' : ''}
-            onClick={() => setFilter('review')}
-          >
-            In review{reviewCount ? ` (${reviewCount})` : ''}
+          <p>You blocked this account, so their videos and comments are hidden for you.</p>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={unblock}>
+            Unblock
           </button>
         </div>
       ) : null}
 
-      {visible.length === 0 ? (
-        <div className="empty">
-          <p className="empty__title">
-            {isSelf && filter === 'review'
-              ? 'Nothing waiting for review'
-              : isSelf
-                ? 'You have not posted a goat yet'
-                : 'No approved posts yet'}
-          </p>
+      {confirmBlock ? (
+        <div className="inline-confirm">
           <p>
-            {isSelf
-              ? 'Every post is looked at by a human before it appears here.'
-              : 'When a post is approved it will show up here.'}
+            Block @{profile.username}? Their videos and comments will be hidden from your feed and you will stop
+            following each other.
           </p>
-          {isSelf ? (
-            <Link to="/upload" className="button">
-              Post a goat
-            </Link>
+          <div className="form-actions">
+            <button type="button" className="btn btn--danger btn--sm" onClick={block}>
+              Block account
+            </button>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setConfirmBlock(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="profile-tabs" role="tablist" aria-label={isSelf ? 'Your videos' : 'Videos'}>
+        {(isSelf ? tabs : (['published'] as Tab[])).map((item) => (
+          <button
+            key={item}
+            type="button"
+            role="tab"
+            aria-selected={tab === item}
+            className={`profile-tab${tab === item ? ' is-active' : ''}`}
+            onClick={() => setTab(item)}
+          >
+            {TAB_LABEL[item]}
+            {isSelf && counts ? <span className="profile-tab__count">{counts[item === 'published' ? 'approved' : item] ?? 0}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'pending' && isSelf ? (
+        <p className="section-note profile-note">
+          Every upload is watched by a person before it goes public. Nothing here is visible to anyone else.
+        </p>
+      ) : null}
+
+      {videos === null ? (
+        <div className="video-grid" aria-busy="true">
+          {[0, 1, 2].map((index) => (
+            <div className="video-skeleton" key={index} />
+          ))}
+        </div>
+      ) : videos.length === 0 ? (
+        <div className="empty-state">
+          <h2>{tab === 'published' && isSelf ? 'No videos yet' : EMPTY_COPY[tab]}</h2>
+          <p>
+            {tab === 'published' && isSelf
+              ? 'Upload a video of your goats. It will appear here after the moderator approves it.'
+              : tab === 'published'
+                ? 'This creator has not had a video approved yet.'
+                : 'That is a good sign.'}
+          </p>
+          {isSelf && tab === 'published' ? (
+            <div className="empty-state__actions">
+              <Link className="btn btn--primary" to="/upload">
+                Upload a video
+              </Link>
+            </div>
           ) : null}
         </div>
       ) : (
-        <ul className="post-grid">
-          {visible.map((post, index) => (
-            <li key={post.id} style={{ '--i': Math.min(index, 11) } as CSSProperties}>
-              <Link to={`/p/${post.id}`} className="post-grid__tile" aria-label={post.caption || 'Goat post'}>
-                {post.photos[0] ? (
-                  <img src={post.photos[0].url} alt="" loading="lazy" decoding="async" />
-                ) : (
-                  <span className="post-grid__missing">No photo</span>
-                )}
-                {post.photos.length > 1 ? (
-                  <span className="post-grid__count" aria-label={`${post.photos.length} photos`}>
-                    <Icon name="grid" size={13} />
-                    {post.photos.length}
-                  </span>
-                ) : null}
-                {post.status !== 'approved' ? (
-                  <span className={`post-grid__status post-grid__status--${post.status}`}>
-                    {post.status === 'pending'
-                      ? 'In review'
-                      : post.status === 'rejected'
-                        ? 'Not approved'
-                        : 'Removed'}
-                  </span>
-                ) : null}
-              </Link>
-            </li>
+        <div className="video-grid">
+          {videos.map((video, index) => (
+            <VideoCard key={video.id} video={video} showStatus={isSelf && tab !== 'published'} index={index} />
           ))}
-        </ul>
+        </div>
       )}
-
-      {hasMore ? (
-        <button type="button" className="button button--quiet profile__more" onClick={loadMore}>
-          Load more
-        </button>
-      ) : null}
     </div>
   );
 }

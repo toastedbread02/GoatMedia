@@ -180,7 +180,14 @@ export async function requestReset(req: Request, env: Env, origin: string) {
   // No mail provider is configured for this deployment, so the link is returned
   // to the browser and shown to the person who requested it. It is single use
   // and expires in 30 minutes.
-  return json({ ok: true, resetPath: `/reset?token=${token}`, origin });
+  const site = (req.headers.get('origin') || origin).replace(/\/+$/, '');
+  const resetPath = `/reset-password?token=${token}`;
+  return json({
+    ok: true,
+    resetPath,
+    resetUrl: `${site}/#${resetPath}`,
+    origin,
+  });
 }
 
 export async function resetPassword(req: Request, env: Env) {
@@ -205,7 +212,33 @@ export async function resetPassword(req: Request, env: Env) {
     env.DB.prepare('UPDATE password_resets SET used_at = ? WHERE id = ?').bind(now(), row.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(row.user_id),
   ]);
+  const session = await createSession(env, row.user_id);
+  return json({ ok: true, token: session.token, user: await meFor(env, new URL(req.url).origin, row.user_id) });
+}
+
+export async function changePassword(req: Request, env: Env) {
+  const user = await requireUser(req, env);
+  const body = await readJson(req);
+  const problem = passwordProblem(body.newPassword);
+  if (problem) throw bad(problem);
+  const row = await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?')
+    .bind(user.id)
+    .first<{ password_hash: string }>();
+  if (!row) throw missing('That account is gone.');
+  const current = typeof body.currentPassword === 'string' ? body.currentPassword : '';
+  if (!(await verifyPassword(env, current, row.password_hash))) {
+    throw bad('That current password is not right.');
+  }
+  const passwordHash = await hashPassword(env, body.newPassword as string);
+  await env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(passwordHash, user.id).run();
   return json({ ok: true });
+}
+
+export async function usernameAvailable(env: Env, raw: string) {
+  const value = raw.trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(value)) return json({ available: false, reason: 'Usernames use 3 to 20 lowercase letters, numbers or underscores.' });
+  const row = await env.DB.prepare('SELECT 1 AS n FROM users WHERE username = ?').bind(value).first<{ n: number }>();
+  return json({ available: !row });
 }
 
 export async function updateProfile(req: Request, env: Env, origin: string) {

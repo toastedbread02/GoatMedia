@@ -9,3 +9,4 @@ seed-media
 screenshots
 .data-smoke-*
 .secrets/
+.old-ui/

@@ -1,169 +1,198 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useConfig } from '../lib/config';
+import { useDocumentTitle } from '../lib/hooks.ts';
+import { Logo } from '../components/Logo.tsx';
 
-function Doc({ title, intro, children }: { title: string; intro: string; children: ReactNode }) {
+function DocLayout({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <article className="column column--reading doc">
-      <header className="page-head">
-        <Link to="/" className="back-link">
+    <div className="doc-page">
+      <header className="doc-top">
+        <Logo />
+        <Link className="btn btn--quiet btn--sm" to="/">
           Back to the feed
         </Link>
-        <h1 className="page-title">{title}</h1>
-        <p className="page-blurb">{intro}</p>
       </header>
-      <div className="doc__body">{children}</div>
-      <footer className="doc__foot">
-        <p>
-          Questions go to the moderator through the report form or the contact address on the
-          repository.
-        </p>
+      <main className="doc-main">
+        <h1 className="page-title">{title}</h1>
+        <div className="prose">{children}</div>
+      </main>
+      <footer className="doc-foot">
+        <Link to="/guidelines">Community guidelines</Link>
+        <Link to="/privacy">Privacy</Link>
+        <Link to="/terms">Terms</Link>
+        <Link to="/about">About GoatMedia</Link>
       </footer>
-    </article>
+    </div>
   );
 }
 
 export function GuidelinesPage() {
-  const config = useConfig();
+  useDocumentTitle('Community guidelines');
   return (
-    <Doc
-      title="Community guidelines"
-      intro="Short version: goats, treated well, posted honestly. Everything here is enforced by a person reading each post."
-    >
-      <h2>The five rules</h2>
-      <ol className="doc__list">
-        {config.guidelines.map((rule) => (
-          <li key={rule}>{rule}</li>
-        ))}
-      </ol>
-
-      <h2>What gets a post rejected</h2>
-      <ul className="doc__list">
-        <li>No goat in the photos, or a goat so incidental the post is really about something else.</li>
-        <li>Handling that frightens or hurts the animal, including baiting for a reaction.</li>
-        <li>Photos taken from another account or a stock site without credit.</li>
-        <li>Captions that insult people, or that reveal someone’s address, workplace or school.</li>
-        <li>Spam: the same post again, or a caption that is mostly links.</li>
+    <DocLayout title="Community guidelines">
+      <p>
+        GoatMedia exists for one narrow, happy thing: watching goats. These rules are short because the platform is
+        small and every upload is reviewed by a person.
+      </p>
+      <h2>What belongs here</h2>
+      <ul>
+        <li>Goats, goats with other animals, goats ignoring you, goats standing on things they should not.</li>
+        <li>Footage you filmed yourself, or footage you have the right to share.</li>
+        <li>Clips that show animals being handled calmly and safely.</li>
       </ul>
-
-      <h2>How review works</h2>
+      <h2>What does not</h2>
+      <ul>
+        <li>Animal mistreatment, distress, baiting, injury or unsafe handling. This is an immediate rejection.</li>
+        <li>Content where a goat is not really the subject.</li>
+        <li>Harassment, hate, spam, scams or footage of other people without their consent.</li>
+        <li>Personal information about anyone, including yourself.</li>
+        <li>Advertising, referral links or political campaigning.</li>
+      </ul>
+      <h2>Review</h2>
       <p>
-        Uploads sit in a queue. The moderator opens each one, looks at every photo, listens to the
-        audio if there is any, and approves or rejects it with a reason. Nothing is published
-        automatically, and the queue does not change when the site grows past a thousand accounts —
-        that is a decision for the owner, not a threshold.
+        Every video enters a manual queue. Nothing is published automatically, and no account can skip review. The
+        moderator watches the clip, reads the caption and approves or rejects it. You can see the status of your
+        uploads on your profile, and rejected videos include a reason.
       </p>
-
-      <h2>Reports</h2>
       <p>
-        Reporting a post or a comment sends it to the same queue. Reports are read by a human. If a
-        post breaks the rules after it was approved, it is removed and the creator is told why.
+        Approved videos can still be removed later if a report is upheld. Accounts that repeatedly break these rules
+        can be suspended, which hides their videos and comments.
       </p>
-
-      <h2>Accounts</h2>
+      <h2>Comments</h2>
       <p>
-        Accounts can be suspended for repeat uploads that break these rules, for harassment, or for
-        using the site to sell things. A suspension hides the account’s posts from every feed.
+        Be decent. Comments can be deleted by their author or the moderator, and reported by anyone signed in. Keep
+        links out of comments; they are not needed to talk about a goat.
       </p>
-    </Doc>
+      <h2>Reporting</h2>
+      <p>
+        Use the report action on a video or comment. Reports go into the same moderation queue. Include context if it
+        helps; the moderator sees your username but the reported person does not.
+      </p>
+    </DocLayout>
   );
 }
 
 export function PrivacyPage() {
+  useDocumentTitle('Privacy');
   return (
-    <Doc
-      title="Privacy"
-      intro="What this deployment actually stores, and what it does not."
-    >
-      <h2>What is stored</h2>
-      <ul className="doc__list">
-        <li>Your email address, username, display name and a hashed password.</li>
-        <li>Your bio and profile photo, if you add them.</li>
-        <li>The photos, captions, categories and sounds you post.</li>
-        <li>Interactions: views, likes, comments, follows, skips and “not interested”.</li>
-        <li>Moderation notes and the reason a post was approved, rejected or removed.</li>
+    <DocLayout title="Privacy">
+      <p>
+        GoatMedia collects as little as it can while still working as an account-based video site. This page explains
+        exactly what is stored and who can see it.
+      </p>
+      <h2>What we store</h2>
+      <ul>
+        <li>Your email address, username, display name and password hash. Passwords are never stored in plain text.</li>
+        <li>Your bio, profile photo and the videos and captions you upload.</li>
+        <li>Which videos you watched, how long for, and the likes, comments and follows you make. This powers your feed.</li>
+        <li>A session cookie so you stay signed in. It is HTTP-only and cannot be read by page scripts.</li>
+        <li>
+          An anonymous viewer cookie, if you watch without an account, so a refresh does not count as a new view. It
+          contains a random number, not a profile.
+        </li>
       </ul>
-
-      <h2>What is not stored</h2>
-      <ul className="doc__list">
-        <li>No precise location. Photos are re-encoded in your browser before upload, which strips EXIF metadata including GPS.</li>
-        <li>No advertising identifiers, and no third-party analytics scripts on this site.</li>
-        <li>No private messages — this version has none.</li>
-      </ul>
-
-      <h2>Where it lives</h2>
+      <h2>What is public</h2>
       <p>
-        The site is static files served by GitHub Pages. The API, database and media files run on
-        Cloudflare Workers and D1. Authentication tokens are stored in your browser’s local storage;
-        the site sets no advertising cookies.
+        Your username, display name, bio, photo, approved videos and follower counts are public. Your email address,
+        hidden videos, watch history and moderation reasons are not shown on your profile. Email addresses are visible
+        only to the moderator, for account support.
       </p>
-
-      <h2>Who can see what</h2>
+      <h2>Location metadata</h2>
       <p>
-        Approved content is public. Pending and rejected posts, and their photos and audio, are
-        visible only to the person who posted them and the moderator. Emails are never shown on
-        public profiles.
+        Uploaded videos are re-processed on the server, which removes embedded metadata including location tags. The
+        original file is not kept.
       </p>
-
-      <h2>Email</h2>
+      <h2>Pending and rejected uploads</h2>
       <p>
-        This deployment has no mail provider connected. Password reset links are shown on screen
-        after you request one instead of being emailed. When a provider is added, that note will
-        change.
+        Unapproved videos are stored privately and served only to their creator and the moderator. They are excluded
+        from search, feeds and share pages.
       </p>
-
-      <h2>Deleting your data</h2>
+      <h2>Retention and control</h2>
       <p>
-        You can delete any of your posts from the post menu. To remove an account and everything
-        attached to it, ask the moderator — there is no self-service account deletion in this
-        version yet.
+        You can delete a comment, remove one of your videos and reset the interests the feed has learned. Blocking an
+        account hides its content from you. To close an account, contact the moderator account that runs this
+        installation.
       </p>
-    </Doc>
+      <h2>Services</h2>
+      <p>
+        This installation stores its database and media on the server that runs it. It does not load third-party
+        analytics, advertising or tracking scripts.
+      </p>
+    </DocLayout>
   );
 }
 
 export function TermsPage() {
+  useDocumentTitle('Terms');
   return (
-    <Doc title="Terms of use" intro="The agreement, in plain language.">
+    <DocLayout title="Terms of use">
+      <p>
+        By using GoatMedia you agree to these terms and the community guidelines. If you do not agree, do not use the
+        site.
+      </p>
       <h2>Your account</h2>
       <p>
-        You need an account to post. Keep your password to yourself, and use an address you can
-        actually receive mail at. One person, one account; do not impersonate other people or
-        animals you do not own.
+        You are responsible for what happens under your account and for keeping your password private. You must be old
+        enough to consent to using an online service in your country. One person, one account.
       </p>
-
-      <h2>Your posts</h2>
+      <h2>Your uploads</h2>
       <p>
-        You keep ownership of your photos and audio. By posting, you give GoatMedia permission to
-        store and display them on this site. Only post work you have the right to share.
+        You keep ownership of the videos you upload. You give GoatMedia permission to store, process and display them
+        on the platform, including thumbnail generation and moderation review. Only upload footage you have the right
+        to share.
       </p>
-
       <h2>Moderation</h2>
       <p>
-        Every post is reviewed by a human before it appears publicly. The moderator may approve,
-        reject or later remove a post, and may suspend accounts that break the guidelines. There is
-        no appeal queue in this version; ask directly and a person will answer.
+        Every upload is reviewed manually before publication. The moderator may reject, remove or leave a video
+        unpublished, and may suspend accounts that break the rules. Moderation decisions are made by a person and can
+        be appealed by contacting the moderator.
       </p>
-
-      <h2>Costs and availability</h2>
+      <h2>Availability</h2>
       <p>
-        GoatMedia is free to use and runs on free-tier infrastructure. That means it can be slow,
-        or briefly unavailable, and features may change. Do not rely on it as a backup for your
-        photos.
+        This is an independent project. The service is provided as-is, without guarantees of uptime or permanent
+        storage. Do not use it as your only copy of a video.
       </p>
-
-      <h2>Age</h2>
+      <h2>Changes</h2>
       <p>
-        If you are under the age of majority where you live, only use GoatMedia with a parent or
-        guardian involved, especially because public moderation and hosting accounts are managed by
-        the site owner.
+        These terms may change as the platform grows. Significant changes will be noted on the About page.
       </p>
+    </DocLayout>
+  );
+}
 
-      <h2>Animal welfare</h2>
+export function AboutPage() {
+  useDocumentTitle('About');
+  return (
+    <DocLayout title="About GoatMedia">
       <p>
-        Content that shows distress, injury or dangerous handling of animals is removed. That rule
-        outranks anything else on this page.
+        GoatMedia is a video community with a deliberately narrow subject: goats. No livestreams, no direct messages,
+        no algorithmic volume. Just clips of goats, submitted by people and approved by a person.
       </p>
-    </Doc>
+      <h2>Why manual review</h2>
+      <p>
+        Every single upload is watched before it becomes public. This is intentionally inefficient. Manual review
+        stays the default while the community is small, and it will not switch to automatic approval just because the
+        site reaches a particular number of accounts. Any future change to that policy will be an explicit decision,
+        announced here.
+      </p>
+      <h2>How the feed works</h2>
+      <p>
+        The For You feed is a transparent scoring system, not a trained model. It combines what you have watched,
+        finished, rewatched, liked, commented on and followed with freshness and recent popularity, while avoiding
+        creators you see too often and videos you have already watched. You can inspect what it has learned in
+        settings and reset it at any time.
+      </p>
+      <h2>Development sample data</h2>
+      <p>
+        This installation may include clearly labelled sample clips from Wikimedia Commons, used under their Creative
+        Commons licences and credited on each video. They exist so the feed and moderation queue can be tried with
+        real footage. Real uploads replace them; they are not real community activity.
+      </p>
+      <h2>Running it</h2>
+      <p>
+        GoatMedia is a small self-hosted application. The operator is responsible for hosting, backups, moderation and
+        the legal requirements that apply where it is run.
+      </p>
+    </DocLayout>
   );
 }

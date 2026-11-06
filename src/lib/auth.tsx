@@ -1,41 +1,28 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
-import type { MeDTO } from '../../shared/types';
-import { api, tokenStore } from './api';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { MeDTO } from '../../shared/types.ts';
+import { api } from './api.ts';
+import { clearFeedCache } from './feedCache.ts';
 
-interface AuthValue {
-  me: MeDTO | null;
+interface AuthContextValue {
+  user: MeDTO | null;
   loading: boolean;
   refresh: () => Promise<void>;
-  signIn: (identifier: string, password: string) => Promise<void>;
-  signUp: (input: {
-    email: string;
-    username: string;
-    displayName: string;
-    password: string;
-  }) => Promise<void>;
+  setUser: (user: MeDTO | null) => void;
   signOut: () => Promise<void>;
-  setMe: (me: MeDTO | null) => void;
 }
 
-const AuthContext = createContext<AuthValue | null>(null);
+const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [me, setMe] = useState<MeDTO | null>(null);
+  const [user, setUserState] = useState<MeDTO | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!tokenStore.get()) {
-      setMe(null);
-      setLoading(false);
-      return;
-    }
     try {
-      const { user } = await api.me();
-      setMe(user);
+      const data = await api.get<{ user: MeDTO | null }>('/api/auth/me');
+      setUserState(data.user);
     } catch {
-      tokenStore.set(null);
-      setMe(null);
+      setUserState(null);
     } finally {
       setLoading(false);
     }
@@ -45,40 +32,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  const signIn = useCallback(async (identifier: string, password: string) => {
-    const { token, user } = await api.login(identifier, password);
-    tokenStore.set(token);
-    setMe(user);
+  const setUser = useCallback((next: MeDTO | null) => {
+    setUserState((previous) => {
+      if (previous?.id !== next?.id) clearFeedCache();
+      return next;
+    });
   }, []);
-
-  const signUp = useCallback(
-    async (input: { email: string; username: string; displayName: string; password: string }) => {
-      const { token, user } = await api.register(input);
-      tokenStore.set(token);
-      setMe(user);
-    },
-    [],
-  );
 
   const signOut = useCallback(async () => {
-    try {
-      await api.logout();
-    } catch {
-      /* the token is dropped either way */
-    }
-    tokenStore.set(null);
-    setMe(null);
+    await api.post('/api/auth/logout');
+    setUserState(null);
+    clearFeedCache();
   }, []);
 
-  return (
-    <AuthContext.Provider value={{ me, loading, refresh, signIn, signUp, signOut, setMe }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, loading, refresh, setUser, signOut }),
+    [user, loading, refresh, setUser, signOut],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth(): AuthValue {
-  const value = useContext(AuthContext);
-  if (!value) throw new Error('Auth is not ready yet.');
-  return value;
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used inside AuthProvider');
+  return context;
 }

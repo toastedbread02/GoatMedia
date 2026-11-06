@@ -1,259 +1,312 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
-import type { PostDTO, SoundLibraryItem } from '../../shared/types';
-import { api } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { useConfig } from '../lib/config';
-import { duration, plural } from '../lib/format';
-import { CommentsPanel } from '../components/CommentsPanel';
-import { Icon } from '../components/Icon';
-import { PostCard } from '../components/PostCard';
-import { SoundSheet } from '../components/SoundSheet';
+import type { FeedResponse, VideoDTO } from '../../shared/types.ts';
+import { api, ApiError } from '../lib/api.ts';
+import { useAuth } from '../lib/auth.tsx';
+import { getCachedFeed, patchCachedFeed, setCachedFeed } from '../lib/feedCache.ts';
+import { useToast } from '../lib/toast.tsx';
+import { useDocumentTitle } from '../lib/hooks.ts';
+import { FeedItem } from '../components/FeedItem.tsx';
+import { Icon } from '../components/Icon.tsx';
 
 type Tab = 'foryou' | 'trending' | 'following';
 
-const headings: Record<Tab, { title: string; blurb: string }> = {
-  foryou: {
-    title: 'For You',
-    blurb: 'Picked from what you spend time on, with room for goats you have not met.',
-  },
-  trending: {
-    title: 'Trending',
-    blurb: 'What goat people have been looking at, liking and arguing about this week.',
-  },
-  following: {
-    title: 'Following',
-    blurb: 'The newest posts from the creators you follow.',
-  },
+const TITLES: Record<Tab, string> = {
+  foryou: 'For You',
+  trending: 'Trending',
+  following: 'Following',
 };
 
-export function FeedPage({ tab }: { tab: Tab }) {
-  const { me } = useAuth();
-  const config = useConfig();
-  const [items, setItems] = useState<PostDTO[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+interface FeedPageProps {
+  tab: Tab;
+}
+
+export function FeedPage({ tab }: FeedPageProps) {
+  const { user, loading: authLoading } = useAuth();
+  const { notify } = useToast();
+  const cacheKey = `${tab}:${user?.id ?? 'guest'}`;
+  const [items, setItems] = useState<VideoDTO[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [requiresSignIn, setRequiresSignIn] = useState(false);
-  const [suspended, setSuspended] = useState(false);
-  const [commentsFor, setCommentsFor] = useState<PostDTO | null>(null);
-  const [sounds, setSounds] = useState<SoundLibraryItem[]>([]);
-  const [soundOpen, setSoundOpen] = useState<SoundLibraryItem | null>(null);
-  const sentinel = useRef<HTMLDivElement | null>(null);
-  const requestId = useRef(0);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [hidden, setHidden] = useState<Record<string, boolean>>({});
+
+  const scroller = useRef<HTMLDivElement>(null);
+  const itemsRef = useRef(items);
+  const pageRef = useRef(page);
+  const hasMoreRef = useRef(hasMore);
+  const loadingMoreRef = useRef(false);
+  const loadedKey = useRef<string | null>(null);
+  const activeIndexRef = useRef(activeIndex);
+  const frame = useRef(0);
+
+  useDocumentTitle(TITLES[tab]);
+
+  itemsRef.current = items;
+  pageRef.current = page;
+  hasMoreRef.current = hasMore;
+  activeIndexRef.current = activeIndex;
 
   const load = useCallback(
     async (nextPage: number, replace: boolean) => {
-      const id = ++requestId.current;
-      if (replace) {
-        setLoading(true);
-        setError(null);
-      } else {
-        setLoadingMore(true);
-      }
       try {
-        const result = await api.feed(tab, nextPage);
-        if (id !== requestId.current) return;
-        setItems((current) => (replace ? result.items : [...current, ...result.items]));
-        setHasMore(result.hasMore);
+        const data = await api.get<FeedResponse>(`/api/feed?tab=${tab}&page=${nextPage}`);
+        const seen = new Set(replace ? [] : itemsRef.current.map((item) => item.id));
+        const nextItems = replace ? data.items : [...itemsRef.current, ...data.items.filter((item) => !seen.has(item.id))];
+        setItems(nextItems);
         setPage(nextPage);
-        setRequiresSignIn(Boolean(result.requiresSignIn));
-        setSuspended(Boolean(result.suspended));
-      } catch (err) {
-        if (id !== requestId.current) return;
-        setError((err as Error).message);
-      } finally {
-        if (id === requestId.current) {
-          setLoading(false);
-          setLoadingMore(false);
+        setHasMore(data.hasMore);
+        setCachedFeed(cacheKey, {
+          items: nextItems,
+          page: nextPage,
+          hasMore: data.hasMore,
+          activeIndex: replace ? 0 : Math.max(0, activeIndexRef.current),
+          scrollTop: replace ? 0 : (scroller.current?.scrollTop ?? 0),
+        });
+        setError(null);
+        setNeedsSignIn(false);
+      } catch (loadError) {
+        if (loadError instanceof ApiError && loadError.status === 401) {
+          setNeedsSignIn(true);
+        } else {
+          setError(loadError instanceof Error ? loadError.message : 'The feed could not load.');
         }
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        loadingMoreRef.current = false;
       }
     },
-    [tab],
+    [tab, cacheKey],
   );
 
   useEffect(() => {
+    if (loadedKey.current === cacheKey) return;
+    if (authLoading) return;
+    loadedKey.current = cacheKey;
+    const cached = getCachedFeed(cacheKey);
+    setHidden({});
+    setError(null);
+    setNeedsSignIn(false);
+
+    if (tab === 'following' && !user) {
+      setItems([]);
+      setLoading(false);
+      setNeedsSignIn(true);
+      return;
+    }
+    if (cached && cached.items.length) {
+      setItems(cached.items);
+      setPage(cached.page);
+      setHasMore(cached.hasMore);
+      setActiveIndex(Math.max(0, cached.activeIndex));
+      setLoading(false);
+      requestAnimationFrame(() => {
+        if (scroller.current) scroller.current.scrollTop = cached.scrollTop;
+      });
+      return;
+    }
     setItems([]);
-    setPage(1);
+    setPage(0);
+    setHasMore(true);
+    setActiveIndex(0);
+    setLoading(true);
     void load(1, true);
-  }, [load]);
+  }, [cacheKey, authLoading, user, tab, load]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMoreRef.current || !hasMoreRef.current || needsSignIn) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    void load(pageRef.current + 1, false);
+  }, [load, needsSignIn]);
+
+  const handleScroll = () => {
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const element = scroller.current;
+      if (!element) return;
+      const height = element.clientHeight;
+      if (!height) return;
+      const rawIndex = Math.round(element.scrollTop / height);
+      const nextActive = rawIndex >= itemsRef.current.length ? -1 : Math.max(0, rawIndex);
+      setActiveIndex(nextActive);
+      patchCachedFeed(cacheKey, { activeIndex: nextActive, scrollTop: element.scrollTop });
+      if (nextActive >= itemsRef.current.length - 2) loadMore();
+    });
+  };
 
   useEffect(() => {
-    if (tab !== 'foryou') return;
-    let cancelled = false;
-    api
-      .sounds('', 1)
-      .then((result) => {
-        if (!cancelled) setSounds(result.sounds.slice(0, 4));
-      })
-      .catch(() => undefined);
     return () => {
-      cancelled = true;
+      if (frame.current) cancelAnimationFrame(frame.current);
+      if (scroller.current) {
+        patchCachedFeed(cacheKey, { scrollTop: scroller.current.scrollTop, activeIndex });
+      }
     };
-  }, [tab]);
+  }, [cacheKey, activeIndex]);
 
-  useEffect(() => {
-    const node = sentinel.current;
-    if (!node || !hasMore || loading || loadingMore) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) void load(page + 1, false);
-      },
-      { rootMargin: '600px' },
+  const handleNotInterested = async (video: VideoDTO) => {
+    setHidden((current) => ({ ...current, [video.id]: true }));
+    try {
+      await api.post(`/api/videos/${video.id}/not-interested`);
+      notify('Hidden. Your feed will show fewer posts like this.', {
+        actionLabel: 'Undo',
+        onAction: async () => {
+          try {
+            await api.delete(`/api/videos/${video.id}/not-interested`);
+          } catch {
+            /* if the undo fails the video stays hidden, which is recoverable in settings */
+          }
+          setHidden((current) => ({ ...current, [video.id]: false }));
+        },
+      });
+    } catch {
+      setHidden((current) => ({ ...current, [video.id]: false }));
+      notify('That did not save. Try again.', { tone: 'error' });
+    }
+  };
+
+  if (needsSignIn) {
+    return (
+      <div className="feed-empty">
+        <Icon name="users" size={26} />
+        <h2>Follow a few goats first</h2>
+        <p>Sign in to see posts from the people you follow, collected in one place.</p>
+        <div className="empty-state__actions">
+          <Link className="btn btn--primary" to={`/login?next=/following`}>
+            Sign in
+          </Link>
+          <Link className="btn btn--quiet" to="/trending">
+            Browse trending
+          </Link>
+        </div>
+      </div>
     );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [hasMore, loading, loadingMore, load, page]);
+  }
 
-  const update = (id: string, patch: Partial<PostDTO>) =>
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  if (loading && items.length === 0) {
+    return (
+      <div className="feed-empty">
+        <div className="spinner spinner--dark" />
+        <p>Finding goats you might like…</p>
+      </div>
+    );
+  }
 
-  const heading = headings[tab];
+  if (error && items.length === 0) {
+    return (
+      <div className="feed-empty">
+        <Icon name="alert" size={26} />
+        <h2>The feed did not load</h2>
+        <p>{error}</p>
+        <button type="button" className="btn btn--primary" onClick={() => load(1, true)}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="feed-empty">
+        <Icon name="play" size={26} />
+        <h2>{tab === 'following' ? 'The goats are quiet' : 'No approved goats yet'}</h2>
+        <p>
+          {tab === 'following'
+            ? 'The creators you follow have not posted anything approved yet. Find someone new while you wait.'
+            : 'Every post is reviewed by a person before it appears here. Once the first one is approved, it will be waiting.'}
+        </p>
+        <div className="empty-state__actions">
+          <Link className="btn btn--primary" to="/trending">
+            Browse trending
+          </Link>
+          <Link className="btn btn--quiet" to={user ? '/upload' : '/login?next=/upload'}>
+            Upload something
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="layout">
-      <div className="column">
-        <header className="page-head">
-          <h1 className="page-title">{heading.title}</h1>
-          <p className="page-blurb">{heading.blurb}</p>
-        </header>
-
-        {suspended ? (
-          <div className="empty">
-            <Icon name="alert" size={26} />
-            <p className="empty__title">This account is on hold</p>
-            <p>The moderator needs a word before you can browse. Check your email or get in touch.</p>
-          </div>
-        ) : requiresSignIn && !me ? (
-          <div className="empty">
-            <p className="empty__title">Following is a signed-in feed</p>
-            <p>Create an account to follow goat creators and keep track of their new posts.</p>
-            <div className="empty__actions">
-              <Link to="/register" className="button">
-                Create an account
-              </Link>
-              <Link to="/signin" className="button button--quiet">
-                Sign in
-              </Link>
-            </div>
-          </div>
-        ) : loading ? (
-          <div className="feed" aria-busy="true">
-            {[0, 1].map((row) => (
-              <div className="post-skeleton" key={row} style={{ '--i': row } as CSSProperties}>
-                <div className="post-skeleton__head" />
-                <div className="post-skeleton__media" />
-                <div className="post-skeleton__line" />
-                <div className="post-skeleton__line post-skeleton__line--short" />
+    <div className="feed-page">
+      <div
+        className="feed-scroller"
+        ref={scroller}
+        onScroll={handleScroll}
+        tabIndex={0}
+        aria-label={`${TITLES[tab]} feed`}
+        onKeyDown={(event) => {
+          const element = scroller.current;
+          if (!element) return;
+          const height = element.clientHeight;
+          const index = Math.max(0, activeIndex);
+          if (event.key === 'ArrowDown' || event.key === 'PageDown') {
+            event.preventDefault();
+            element.scrollTo({ top: (index + 1) * height, behavior: 'smooth' });
+          } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
+            event.preventDefault();
+            element.scrollTo({ top: Math.max(0, index - 1) * height, behavior: 'smooth' });
+          } else if (event.key === 'Home') {
+            event.preventDefault();
+            element.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+        }}
+      >
+        {items.map((video, index) =>
+          hidden[video.id] ? (
+            <div className="feed-item feed-item--hidden" key={video.id}>
+              <div className="hidden-slide">
+                <Icon name="eye-off" size={24} />
+                <p>You will see fewer posts like this one.</p>
+                <button
+                  type="button"
+                  className="btn btn--quiet btn--sm"
+                  onClick={async () => {
+                    await api.delete(`/api/videos/${video.id}/not-interested`).catch(() => {});
+                    setHidden((current) => ({ ...current, [video.id]: false }));
+                  }}
+                >
+                  Undo
+                </button>
               </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div className="empty">
-            <p className="empty__title">That feed did not load</p>
-            <p>{error}</p>
-            <button type="button" className="button" onClick={() => load(1, true)}>
-              Try again
-            </button>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="empty">
-            <p className="empty__title">
-              {tab === 'following' ? 'Nothing from your people yet' : 'No approved goats here yet'}
-            </p>
-            <p>
-              {tab === 'following'
-                ? 'Follow a few creators and their new posts will land here.'
-                : 'Every post is reviewed by a human first. Check back shortly, or add the first one.'}
-            </p>
-            <div className="empty__actions">
-              <Link to="/upload" className="button">
-                Post a goat
+            </div>
+          ) : (
+            <FeedItem
+              key={video.id}
+              video={video}
+              index={index}
+              activeIndex={activeIndex}
+              onNotInterested={handleNotInterested}
+            />
+          ),
+        )}
+
+        {!hasMore ? (
+          <div className="feed-item feed-end">
+            <strong>That is every goat for now</strong>
+            <p>New posts appear after a person has watched and approved them.</p>
+            <div className="empty-state__actions">
+              <Link className="btn btn--quiet btn--sm" to="/trending">
+                Try trending
               </Link>
-              {tab === 'following' ? (
-                <Link to="/" className="button button--quiet">
-                  Find creators
-                </Link>
-              ) : null}
+              <Link className="btn btn--primary btn--sm" to={user ? '/upload' : '/login?next=/upload'}>
+                Upload yours
+              </Link>
             </div>
           </div>
-        ) : (
-          <div className="feed">
-            {items.map((post, index) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                priority={index === 0}
-                onUpdate={(patch) => update(post.id, patch)}
-                onRemove={(id) => setItems((current) => current.filter((item) => item.id !== id))}
-                onOpenComments={(value) => setCommentsFor(value)}
-              />
-            ))}
-            <div ref={sentinel} className="feed__sentinel" aria-hidden="true" />
-            {loadingMore ? <p className="feed__loading">Loading more goats…</p> : null}
-          </div>
-        )}
-      </div>
-
-      <aside className="feed-aside" aria-label="About this feed">
-        {tab === 'foryou' && sounds.length ? (
-          <section className="aside-block">
-            <h2 className="aside-title">Sounds worth borrowing</h2>
-            <ul className="sound-list">
-              {sounds.map((sound) => (
-                <li key={sound.id}>
-                  <button type="button" className="sound-row" onClick={() => setSoundOpen(sound)}>
-                    <span className="sound-row__icon" aria-hidden="true">
-                      <Icon name="play" size={13} />
-                    </span>
-                    <span className="sound-row__text">
-                      <strong>{sound.title}</strong>
-                      <span className="muted">
-                        @{sound.owner.username} · {duration(sound.durationMs)} ·{' '}
-                        {plural(sound.useCount, 'use', 'uses')}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <Link to="/upload" className="text-link">
-              Post with a sound
-            </Link>
-          </section>
         ) : null}
-
-        <section className="aside-block">
-          <h2 className="aside-title">Why you see this</h2>
-          <p className="aside-text">
-            Each post you linger on, like, comment on or skip nudges these scores. The weights are
-            plain numbers: a like is worth 3, finishing a post 5, saying “not interested” −15.
-          </p>
-          <Link to="/settings?tab=feed" className="text-link">
-            See and reset your interests
-          </Link>
-        </section>
-
-        <section className="aside-block aside-block--quiet">
-          <h2 className="aside-title">House rule</h2>
-          <p className="aside-text">{config.guidelines[0]}</p>
-          <Link to="/guidelines" className="text-link">
-            Read the guidelines
-          </Link>
-        </section>
-      </aside>
-
-      {commentsFor ? (
-        <CommentsPanel
-          post={commentsFor}
-          onClose={() => setCommentsFor(null)}
-          onCountChange={(id, value) => update(id, { commentCount: value })}
-        />
+      </div>
+      {loadingMore ? (
+        <div className="feed-more" role="status">
+          <div className="spinner" />
+        </div>
       ) : null}
-      {soundOpen ? <SoundSheet sound={soundOpen} onClose={() => setSoundOpen(null)} /> : null}
     </div>
   );
 }

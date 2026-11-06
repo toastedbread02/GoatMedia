@@ -11,7 +11,14 @@ export const limits = {
   maxPostsPerHour: 8,
   feedPageSize: 6,
   commentsPageSize: 20,
+  // Video bytes live in chunked D1 rows, so the ceiling is generous but finite.
+  maxVideoMb: 25,
+  maxDurationSeconds: 60,
+  minDurationSeconds: 1,
 };
+
+/** Size of one stored video chunk. Kept well under D1's 2 MB row limit. */
+export const VIDEO_CHUNK_BYTES = 768 * 1024;
 
 export const categories = [
   { id: 'baby-goats', label: 'Baby goats', blurb: 'Kids finding their legs' },
@@ -57,8 +64,8 @@ export const commentReportReasons = ['Spam', 'Harassment', 'Hate speech', 'Somet
 export const rejectionReasons = [
   'Not goat-related',
   'Looks like animal mistreatment',
-  'Poor photo quality',
-  'Photos belong to someone else',
+  'Poor photo or video quality',
+  'Footage or photos belong to someone else',
   'Duplicate post',
   'Caption or tags need work',
   'Something else',
@@ -67,7 +74,7 @@ export const rejectionReasons = [
 export const guidelines = [
   'Goats only. Goats with other animals are fine, as long as a goat is the point.',
   'Treat animals well. No distress, injury, baiting or unsafe handling.',
-  'Post your own photos, or credit the person who took them.',
+  'Post your own footage and photos, or credit the person who made them.',
   'No personal information about other people, and no harassment.',
   'Every post is looked at by a human before it goes live.',
 ];
