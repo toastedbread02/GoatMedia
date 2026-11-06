@@ -5,7 +5,20 @@
 import { Env, missing } from '../lib';
 import { currentUser } from '../session';
 
-function blobResponse(bytes: ArrayBuffer | null, mime: string, cache: string) {
+/**
+ * D1 hands BLOBs back as an array of byte values rather than an ArrayBuffer,
+ * so they have to be repacked before Response will treat them as binary.
+ */
+function toBytes(value: unknown): Uint8Array | null {
+  if (!value) return null;
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (Array.isArray(value)) return new Uint8Array(value as number[]);
+  return null;
+}
+
+function blobResponse(raw: unknown, mime: string, cache: string) {
+  const bytes = toBytes(raw);
   if (!bytes) throw missing('That file is gone.');
   return new Response(bytes, {
     headers: {
@@ -24,7 +37,7 @@ export async function photo(req: Request, env: Env, id: string) {
       WHERE ph.id = ?`,
   )
     .bind(id)
-    .first<{ bytes: ArrayBuffer | null; mime: string; status: string; owner_id: string }>();
+    .first<{ bytes: unknown; mime: string; status: string; owner_id: string }>();
   if (!row) throw missing();
 
   if (row.status !== 'approved') {
@@ -44,7 +57,7 @@ export async function sound(req: Request, env: Env, id: string) {
        FROM sounds s WHERE s.id = ?`,
   )
     .bind(id)
-    .first<{ bytes: ArrayBuffer | null; mime: string; owner_id: string; live: number }>();
+    .first<{ bytes: unknown; mime: string; owner_id: string; live: number }>();
   if (!row) throw missing();
 
   if (!row.live) {
@@ -62,7 +75,7 @@ export async function avatar(req: Request, env: Env, userId: string) {
     'SELECT avatar_bytes, avatar_mime, status FROM users WHERE id = ?',
   )
     .bind(userId)
-    .first<{ avatar_bytes: ArrayBuffer | null; avatar_mime: string | null; status: string }>();
+    .first<{ avatar_bytes: unknown; avatar_mime: string | null; status: string }>();
   if (!row || !row.avatar_bytes) throw missing('No photo for this creator.');
   return blobResponse(
     row.avatar_bytes,

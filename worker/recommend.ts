@@ -36,10 +36,15 @@ export async function trendingStats(env: Env): Promise<Map<string, TrendingStats
 
   const [views, likes, comments] = await Promise.all([
     env.DB.prepare(
-      `SELECT post_id, COUNT(DISTINCT user_id) AS uv FROM post_events
-        WHERE kind = 'view' AND created_at >= ? GROUP BY post_id`,
+      `SELECT post_id, SUM(n) AS uv FROM (
+         SELECT post_id, COUNT(DISTINCT user_id) AS n FROM post_events
+          WHERE kind = 'view' AND created_at >= ? GROUP BY post_id
+         UNION ALL
+         SELECT post_id, COUNT(DISTINCT visitor_key) AS n FROM guest_views
+          WHERE created_at >= ? GROUP BY post_id
+       ) GROUP BY post_id`,
     )
-      .bind(since)
+      .bind(since, since)
       .all<{ post_id: string; uv: number }>(),
     env.DB.prepare(
       'SELECT post_id, COUNT(*) AS n FROM likes WHERE created_at >= ? GROUP BY post_id',

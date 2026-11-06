@@ -4,11 +4,13 @@ import {
   denied,
   json,
   missing,
+  ip,
   now,
   optionalStr,
   pageOf,
   rateLimit,
   readJson,
+  sha256,
   uid,
 } from '../lib';
 import { requireActive, currentUser } from '../session';
@@ -344,7 +346,8 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
   }
 
   const rows = await env.DB.prepare(
-    `SELECT c.id, c.body, c.created_at, c.user_id, u.username, u.display_name, u.avatar_version
+    `SELECT c.id, c.body, c.created_at, c.user_id, u.username, u.display_name, u.avatar_version,
+            (u.avatar_bytes IS NOT NULL) AS has_avatar
        FROM comments c JOIN users u ON u.id = c.user_id
       WHERE c.post_id = ? AND c.status = 'visible'
       ORDER BY c.created_at DESC
@@ -359,6 +362,7 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
       username: string;
       display_name: string;
       avatar_version: number;
+      has_avatar: number;
     }>();
 
   const list = rows.results || [];
@@ -373,7 +377,9 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
         id: row.user_id,
         username: row.username,
         displayName: row.display_name,
-        avatarUrl: `${origin}/media/avatars/${row.user_id}?v=${row.avatar_version}`,
+        avatarUrl: row.has_avatar
+          ? `${origin}/media/avatars/${row.user_id}?v=${row.avatar_version}`
+          : null,
       },
       canDelete: Boolean(viewer && (viewer.id === row.user_id || viewer.role === 'admin')),
     })),
@@ -438,7 +444,9 @@ export async function addComment(req: Request, env: Env, id: string) {
           id: user.id,
           username: user.username,
           displayName: user.displayName,
-          avatarUrl: `${origin}/media/avatars/${user.id}?v=${user.avatarVersion}`,
+          avatarUrl: user.hasAvatar
+            ? `${origin}/media/avatars/${user.id}?v=${user.avatarVersion}`
+            : null,
         },
         canDelete: true,
       },
@@ -473,16 +481,37 @@ export async function postEvent(req: Request, env: Env, id: string) {
   if (!post || post.status !== 'approved') throw missing();
 
   if (kind === 'view') {
+    const seenSince = now() - 3 * 60 * 60 * 1000;
+    if (viewer) {
+      const recent = await env.DB.prepare(
+        `SELECT 1 AS n FROM post_events WHERE user_id = ? AND post_id = ? AND kind = 'view' AND created_at > ?`,
+      )
+        .bind(viewer.id, id, seenSince)
+        .first<{ n: number }>();
+      if (!recent) {
+        await env.DB.batch([
+          env.DB.prepare(
+            'INSERT INTO post_events (id, post_id, user_id, kind, value, created_at) VALUES (?, ?, ?, ?, 0, ?)',
+          ).bind(uid('ev'), id, viewer.id, 'view', now()),
+          env.DB.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(id),
+        ]);
+      }
+      return json({ ok: true });
+    }
+
+    // Signed-out visitors are counted once per browser-ish fingerprint per post,
+    // so a refresh loop cannot inflate trending.
+    const visitorKey = await sha256(`${ip(req)}:${req.headers.get('user-agent') || ''}`);
     const recent = await env.DB.prepare(
-      `SELECT 1 AS n FROM post_events WHERE user_id = ? AND post_id = ? AND kind = 'view' AND created_at > ?`,
+      'SELECT 1 AS n FROM guest_views WHERE post_id = ? AND visitor_key = ? AND created_at > ?',
     )
-      .bind(viewer?.id ?? 'guest', id, now() - 3 * 60 * 60 * 1000)
+      .bind(id, visitorKey, seenSince)
       .first<{ n: number }>();
     if (!recent) {
       await env.DB.batch([
         env.DB.prepare(
-          'INSERT INTO post_events (id, post_id, user_id, kind, value, created_at) VALUES (?, ?, ?, ?, 0, ?)',
-        ).bind(uid('ev'), id, viewer?.id ?? 'guest', 'view', now()),
+          'INSERT OR REPLACE INTO guest_views (post_id, visitor_key, created_at) VALUES (?, ?, ?)',
+        ).bind(id, visitorKey, now()),
         env.DB.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(id),
       ]);
     }

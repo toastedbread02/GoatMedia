@@ -3,12 +3,15 @@
 // 13.5+), so this is how the API gets verified locally before deploying.
 
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import worker from '../worker/index.ts';
 import type { Env } from '../worker/lib.ts';
 
 const DB = new DatabaseSync(':memory:');
-DB.exec(readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8'));
+const migrationsDir = new URL('../migrations/', import.meta.url);
+for (const file of readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort()) {
+  DB.exec(readFileSync(new URL(file, migrationsDir), 'utf8'));
+}
 
 function normalize(params: unknown[]): unknown[] {
   return params.map((value) => {
@@ -232,6 +235,7 @@ async function run() {
   const anonFeed = await call('/api/feed?tab=foryou');
   ok(anonFeed.body.items.length === 0, 'pending posts never enter the feed');
 
+
   console.log('\n[moderation]');
   DB.prepare("UPDATE users SET role = 'admin' WHERE username = 'ada'").run();
   const adminLogin = await call('/api/auth/login', {
@@ -262,6 +266,18 @@ async function run() {
   ok(liveFeed.body.items.length === 1 && liveFeed.body.items[0].id === postId, 'approved post appears in the feed');
   const livePhoto = await call(`/media/photos/${photoId}`);
   ok(livePhoto.status === 200 && livePhoto.headers.get('content-type') === 'image/png', 'approved photos stream publicly');
+  const guestView = await call(`/api/posts/${postId}/events`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: 'view' }),
+  });
+  ok(guestView.status === 200, 'signed-out view tracking does not fail');
+  const served = new Uint8Array(livePhoto.body as ArrayBuffer);
+  ok(
+    served.length === PNG.length && served[0] === 0x89 && served[1] === 0x50,
+    'served photo bytes are real image bytes, not a stringified blob',
+    served.slice(0, 12),
+  );
 
   const history = await call(`/api/admin/posts/${postId}`, { token: adminToken });
   ok(history.body.history.length === 2, 'moderation history records submit and approve');

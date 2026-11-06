@@ -11,6 +11,7 @@ export interface SessionUser {
   status: 'active' | 'suspended';
   suspendedReason: string | null;
   avatarVersion: number;
+  hasAvatar: boolean;
 }
 
 const SESSION_DAYS = 30;
@@ -47,13 +48,15 @@ interface UserRow {
   status: string;
   suspended_reason: string | null;
   avatar_version: number;
+  has_avatar: number;
 }
 
 export async function currentUser(req: Request, env: Env): Promise<SessionUser | null> {
   const token = bearer(req);
   if (!token) return null;
   const row = await env.DB.prepare(
-    `SELECT u.id, u.email, u.username, u.display_name, u.role, u.status, u.suspended_reason, u.avatar_version
+    `SELECT u.id, u.email, u.username, u.display_name, u.role, u.status, u.suspended_reason, u.avatar_version,
+            (u.avatar_bytes IS NOT NULL) AS has_avatar
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ?`,
   )
@@ -69,6 +72,7 @@ export async function currentUser(req: Request, env: Env): Promise<SessionUser |
     status: row.status === 'suspended' ? 'suspended' : 'active',
     suspendedReason: row.suspended_reason,
     avatarVersion: row.avatar_version,
+    hasAvatar: Boolean(row.has_avatar),
   };
 }
 

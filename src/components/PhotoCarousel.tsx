@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { PhotoRef } from '../../shared/types';
 import { Icon } from './Icon';
 
@@ -18,6 +19,9 @@ export function PhotoCarousel({ photos, caption, eager = false, className = '' }
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   const [failed, setFailed] = useState<Record<string, boolean>>({});
+  // A single photo keeps close to its real shape; a set shares one frame so the
+  // track does not jump height while you swipe. Both stay within sane bounds.
+  const [ratio, setRatio] = useState<number | null>(null);
   const multiple = photos.length > 1;
 
   const goTo = useCallback(
@@ -54,6 +58,7 @@ export function PhotoCarousel({ photos, caption, eager = false, className = '' }
     <div
       className={`carousel ${multiple ? 'carousel--multi' : ''} ${className}`}
       data-index={index}
+      style={!multiple && ratio ? ({ '--photo-ratio': ratio } as CSSProperties) : undefined}
       onKeyDown={(event) => {
         if (!multiple) return;
         if (event.key === 'ArrowRight') {
@@ -102,7 +107,16 @@ export function PhotoCarousel({ photos, caption, eager = false, className = '' }
                 decoding="async"
                 draggable={false}
                 className={loaded[photo.id] ? 'is-loaded' : ''}
-                onLoad={() => setLoaded((current) => ({ ...current, [photo.id]: true }))}
+                onLoad={(event) => {
+                  setLoaded((current) => ({ ...current, [photo.id]: true }));
+                  if (!multiple && position === 0) {
+                    const image = event.currentTarget;
+                    const shape = image.naturalWidth / image.naturalHeight;
+                    if (Number.isFinite(shape) && shape > 0) {
+                      setRatio(Math.min(1.6, Math.max(0.8, shape)));
+                    }
+                  }
+                }}
                 onError={() => setFailed((current) => ({ ...current, [photo.id]: true }))}
               />
             )}

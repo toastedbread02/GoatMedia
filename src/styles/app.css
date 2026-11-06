@@ -1080,7 +1080,7 @@ ol {
   position: relative;
   flex: 0 0 100%;
   scroll-snap-align: center;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: var(--photo-ratio, 4 / 5);
   max-height: 72vh;
   background: var(--sunken);
 }

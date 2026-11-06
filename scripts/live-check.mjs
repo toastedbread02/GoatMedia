@@ -3,6 +3,7 @@
 // free-plan CPU problem shows up as a failure rather than a vague slowness.
 
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const API = (process.env.API_ORIGIN || '').replace(/\/+$/, '');
 const SITE = process.env.SITE_ORIGIN || 'https://toastedbread02.github.io';
@@ -106,10 +107,28 @@ const login = await timed(
 );
 ok(login.status === 200 && login.body.token, 'login works', login.body);
 
-const claim = await call('/api/admin/claim', { method: 'POST', token: tokenA, body: { token: adminToken } });
-ok(claim.status === 200, 'first moderator claim works', claim.body);
-const claimAgain = await call('/api/admin/claim', { method: 'POST', token: tokenB, body: { token: adminToken } });
-ok(claimAgain.status === 400, 'claim refuses once a moderator exists', claimAgain.body);
+// Promote the throwaway account straight through D1: this deployment may
+// already have a moderator, and the setup token is single-use by design.
+try {
+  execFileSync(
+    'npx',
+    [
+      'wrangler',
+      'd1',
+      'execute',
+      'goatmedia',
+      '--remote',
+      '--command',
+      `UPDATE users SET role = 'admin' WHERE username = '${registerA.body.user.username}'`,
+    ],
+    { stdio: 'ignore' },
+  );
+  const promoted = await call('/api/auth/me', { token: tokenA });
+  ok(promoted.body.user?.role === 'admin', 'smoke account promoted for moderation checks');
+} catch {
+  ok(false, 'could not promote the smoke account (is wrangler logged in?)');
+}
+void adminToken;
 
 const created = await call('/api/posts', {
   method: 'POST',

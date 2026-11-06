@@ -23,6 +23,7 @@ export interface PostRow {
   username: string;
   display_name: string;
   avatar_version: number;
+  has_avatar: number;
   owner_status: string;
 }
 
@@ -30,10 +31,17 @@ export const POST_SELECT = `
   SELECT p.id, p.owner_id, p.caption, p.category, p.hashtags, p.sound_id, p.status,
          p.reject_reason, p.removed_reason, p.created_at, p.updated_at, p.published_at,
          p.view_count, p.like_count, p.comment_count,
-         u.username, u.display_name, u.avatar_version, u.status AS owner_status
+         u.username, u.display_name, u.avatar_version,
+         (u.avatar_bytes IS NOT NULL) AS has_avatar, u.status AS owner_status
     FROM posts p JOIN users u ON u.id = p.owner_id`;
 
-export function avatarUrl(origin: string, userId: string, version: number): string {
+export function avatarUrl(
+  origin: string,
+  userId: string,
+  version: number,
+  hasAvatar: boolean | number,
+): string | null {
+  if (!hasAvatar) return null;
   return `${origin}/media/avatars/${userId}?v=${version}`;
 }
 
@@ -216,7 +224,7 @@ export async function hydratePosts(
         id: row.owner_id,
         username: row.username,
         displayName: row.display_name,
-        avatarUrl: avatarUrl(origin, row.owner_id, row.avatar_version),
+        avatarUrl: avatarUrl(origin, row.owner_id, row.avatar_version, Boolean(row.has_avatar)),
         isSelf: viewerId === row.owner_id,
         isFollowing: following.has(row.owner_id),
         isBlocked: blocked.has(row.owner_id),
@@ -236,6 +244,7 @@ export interface UserRow {
   status: string;
   suspended_reason: string | null;
   avatar_version: number;
+  has_avatar: number;
   created_at: number;
   follower_count: number;
   following_count: number;
@@ -250,7 +259,7 @@ export function publicUser(origin: string, row: UserRow, viewerId: string | null
     username: row.username,
     displayName: row.display_name,
     bio: row.bio,
-    avatarUrl: avatarUrl(origin, row.id, row.avatar_version),
+    avatarUrl: avatarUrl(origin, row.id, row.avatar_version, Boolean(row.has_avatar)),
     createdAt: row.created_at,
     followerCount: row.follower_count,
     followingCount: row.following_count,
@@ -264,7 +273,7 @@ export function publicUser(origin: string, row: UserRow, viewerId: string | null
 
 export const USER_SELECT = (viewerId: string | null) => `
   SELECT u.id, u.email, u.username, u.display_name, u.bio, u.role, u.status,
-         u.suspended_reason, u.avatar_version, u.created_at,
+         u.suspended_reason, u.avatar_version, (u.avatar_bytes IS NOT NULL) AS has_avatar, u.created_at,
          (SELECT COUNT(*) FROM follows f WHERE f.following_id = u.id) AS follower_count,
          (SELECT COUNT(*) FROM follows f WHERE f.follower_id = u.id) AS following_count,
          (SELECT COUNT(*) FROM posts p WHERE p.owner_id = u.id AND p.status = 'approved') AS post_count,
