@@ -15,9 +15,38 @@ const int = (raw: string | undefined, fallback: number) => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 };
 
+const trimOrigin = (value: string) => value.trim().replace(/\/+$/, '');
+
 export const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 export const PORT = int(process.env.PORT, 3001);
-export const APP_ORIGIN = process.env.APP_ORIGIN || 'http://localhost:5173';
+/** Where the website lives. Used for reset links and the cross-site allowlist. */
+export const APP_ORIGIN = trimOrigin(process.env.APP_ORIGIN || 'http://localhost:5173');
+/**
+ * Public base URL of this API when the site is hosted somewhere else (GitHub
+ * Pages, for example). Empty means the API and the site share an origin.
+ */
+export const API_ORIGIN = trimOrigin(process.env.API_ORIGIN || '');
+/**
+ * Cross-site cookies are only needed when the site and the API are on different
+ * registrable domains. They are SameSite=None; Secure, which Safari's tracking
+ * protection blocks — prefer serving the site from the API origin.
+ */
+export const crossSiteCookies = process.env.CROSS_SITE_COOKIES === '1';
+
+export const allowedOrigins = new Set<string>([
+  APP_ORIGIN,
+  ...trimOrigin(process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(trimOrigin)
+    .filter(Boolean),
+]);
+
+/** Turns a stored `/media/...` or `/avatars/...` path into a URL the browser can load. */
+export function publicUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (/^https?:/i.test(path)) return path;
+  return API_ORIGIN ? `${API_ORIGIN}${path}` : path;
+}
 export const ROOT_DIR = ROOT;
 export const DATA_DIR = path.resolve(ROOT, process.env.DATA_DIR || '.data');
 export const MEDIA_DIR = path.join(DATA_DIR, 'media');

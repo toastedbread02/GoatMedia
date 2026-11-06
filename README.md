@@ -78,6 +78,10 @@ Everything lives in `.env` (see `.env.example`). All values have development def
 | `DEV_EXPOSE_RESET_LINK` | `1` in dev | Returns the reset link in the API response so you can test without email |
 | `EMAIL_API_KEY` / `EMAIL_FROM` | unset | Enables real password-reset email delivery |
 | `EMAIL_API_URL` | Resend endpoint | Override for a different provider |
+| `API_ORIGIN` | unset | Public URL of the API when the site is hosted elsewhere (GitHub Pages). Makes media URLs absolute; leave unset for a single-origin deployment |
+| `ALLOWED_ORIGINS` | unset | Comma-separated extra origins allowed to call the API (credentialed CORS). `APP_ORIGIN` is always allowed |
+| `CROSS_SITE_COOKIES` | unset | `1` issues `SameSite=None; Secure` session cookies for a split deployment. Safari blocks these — see DEPLOY.md |
+| `VITE_API_ORIGIN` | unset | Build-time API base for the client (`VITE_API_ORIGIN=https://api.example npm run build`) |
 
 Upload limits are also served to the browser through `/api/config`, so the form and the server always agree.
 
@@ -143,6 +147,8 @@ npm run build       # production client bundle
 npm run build
 npm start           # NODE_ENV=production, serves dist/ and the API from one process
 ```
+
+**[DEPLOY.md](DEPLOY.md)** has the hosting recommendation (Oracle Cloud Always Free is the only realistic free option for a Node + ffmpeg + disk app), the full server setup, HTTPS, backups, and the optional GitHub Pages split — including why serving the site from the server is more reliable than splitting it.
 
 Put it behind a TLS-terminating reverse proxy and set `APP_ORIGIN` to the public origin — cookies are `SameSite=Lax` and marked `Secure` in production, and state-changing requests are checked against the origin.
 

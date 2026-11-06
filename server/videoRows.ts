@@ -1,5 +1,5 @@
 import type { VideoDTO, VideoStatus } from '../shared/types.ts';
-import { categoryById } from './config.ts';
+import { categoryById, publicUrl } from './config.ts';
 
 export interface VideoRow {
   id: string;
@@ -67,15 +67,15 @@ export function rowToVideo(row: VideoRow, viewerId: string | null, reason: strin
     liked: Boolean(row.liked),
     status: row.status,
     rejectReason: row.status === 'removed' ? row.removed_reason : row.reject_reason,
-    posterUrl: row.poster_name ? `/media/posters/${row.id}` : null,
-    videoUrl: `/media/videos/${row.id}`,
+    posterUrl: row.poster_name ? publicUrl(`/media/posters/${row.id}`) : null,
+    videoUrl: publicUrl(`/media/videos/${row.id}`) ?? '',
     width: row.width,
     height: row.height,
     creator: {
       id: row.owner_id,
       username: row.owner_username,
       displayName: row.owner_name,
-      avatarUrl: row.owner_avatar,
+      avatarUrl: publicUrl(row.owner_avatar),
       isFollowing: Boolean(row.following_owner),
       isSelf: creatorIsSelf,
     },

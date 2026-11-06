@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import multer from 'multer';
 import { attachUser } from './auth.ts';
-import { APP_ORIGIN, AVATAR_DIR, DIST_DIR, IS_PRODUCTION, PORT, ensureDataDirs } from './config.ts';
+import { APP_ORIGIN, AVATAR_DIR, DIST_DIR, IS_PRODUCTION, PORT, allowedOrigins, ensureDataDirs } from './config.ts';
 import { HttpError } from './util.ts';
 import { authRouter } from './routes/auth.ts';
 import { videosRouter, mediaRouter } from './routes/videos.ts';
@@ -16,6 +16,28 @@ ensureDataDirs();
 
 const app = express();
 app.disable('x-powered-by');
+// Behind Caddy/nginx the real client IP and protocol arrive in headers.
+if (IS_PRODUCTION) app.set('trust proxy', 1);
+
+// Credentialed CORS for a site served from a different origin (GitHub Pages).
+// Same-origin deployments never send an Origin header for GETs and are unaffected.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '600');
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(origin && allowedOrigins.has(origin) ? 204 : 403).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '1mb' }));
 app.use(attachUser);
 
@@ -28,7 +50,7 @@ app.use((req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.headers.origin;
   if (!origin) return next();
-  const allowed = new Set([APP_ORIGIN, `${req.protocol}://${req.get('host')}`]);
+  const allowed = new Set([...allowedOrigins, APP_ORIGIN, `${req.protocol}://${req.get('host')}`]);
   if (!allowed.has(origin)) {
     return res.status(403).json({ error: 'Cross-site request blocked.' });
   }

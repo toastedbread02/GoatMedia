@@ -138,7 +138,14 @@ export interface ReportDTO {
   createdAt: number;
   status: 'open' | 'dismissed' | 'actioned';
   reporterUsername: string;
-  video: { id: string; caption: string; posterUrl: string | null; status: VideoStatus; creatorUsername: string } | null;
+  video: {
+    id: string;
+    caption: string;
+    posterUrl: string | null;
+    videoUrl: string;
+    status: VideoStatus;
+    creatorUsername: string;
+  } | null;
   comment: { id: string; body: string; authorUsername: string; videoId: string; status: string } | null;
 }
 

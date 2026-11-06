@@ -11,6 +11,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Empty when the site and API share an origin (the normal deployment). Set
+ * VITE_API_ORIGIN at build time when the website is hosted elsewhere, e.g.
+ * GitHub Pages pointing at the server.
+ */
+export const API_BASE = (import.meta.env.VITE_API_ORIGIN ?? '').replace(/\/+$/, '');
+
+function withBase(path: string): string {
+  if (/^https?:/i.test(path)) return path;
+  return `${API_BASE}${path}`;
+}
+
 async function handle<T>(response: Response): Promise<T> {
   const text = await response.text();
   let payload: unknown = null;
@@ -32,7 +44,7 @@ async function handle<T>(response: Response): Promise<T> {
 }
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
-  return fetch(path, {
+  return fetch(withBase(path), {
     credentials: 'include',
     ...init,
     headers: {
@@ -58,7 +70,7 @@ export function uploadWithProgress<T>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', path);
+    xhr.open('POST', withBase(path));
     xhr.withCredentials = true;
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));

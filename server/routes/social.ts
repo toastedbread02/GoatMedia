@@ -4,6 +4,7 @@ import { all, get, run, notify, transaction } from '../db.ts';
 import { requireUser } from '../auth.ts';
 import { HttpError, cleanText, enforceRate, pageParam, param } from '../util.ts';
 import { applyVideoInterest } from '../interests.ts';
+import { publicUrl } from '../config.ts';
 import { interactionWeights, limits } from '../config.ts';
 import { invalidateTrendingCache } from '../recommend.ts';
 import type { CommentDTO, NotificationDTO } from '../../shared/types.ts';
@@ -51,7 +52,7 @@ function toComment(row: CommentRow, viewerId: string | null, isAdmin: boolean): 
       id: row.user_id,
       username: row.username,
       displayName: row.display_name,
-      avatarUrl: row.avatar_url,
+      avatarUrl: publicUrl(row.avatar_url),
     },
     canDelete: viewerId === row.user_id || isAdmin,
   };

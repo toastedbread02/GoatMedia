@@ -5,7 +5,7 @@ import { requireAdmin } from '../auth.ts';
 import { HttpError, cleanText, pageParam, param } from '../util.ts';
 import { VIDEO_SELECT, rowToVideo, type VideoRow } from '../videoRows.ts';
 import { invalidateTrendingCache } from '../recommend.ts';
-import { limits } from '../config.ts';
+import { limits, publicUrl } from '../config.ts';
 import type {
   AdminQueueItem,
   AdminUserRow,
@@ -241,7 +241,8 @@ adminRouter.get('/admin/reports', (req, res) => {
       ? {
           id: row.video_id,
           caption: row.video_caption ?? '',
-          posterUrl: row.video_poster ? `/media/posters/${row.video_id}` : null,
+          posterUrl: row.video_poster ? publicUrl(`/media/posters/${row.video_id}`) : null,
+          videoUrl: publicUrl(`/media/videos/${row.video_id}`) ?? '',
           status: row.video_status ?? 'approved',
           creatorUsername: row.video_owner ?? '',
         }

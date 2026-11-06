@@ -1,5 +1,6 @@
 import type { MeDTO, PublicUser } from '../shared/types.ts';
 import { get } from './db.ts';
+import { publicUrl } from './config.ts';
 
 interface UserCountRow {
   id: string;
@@ -32,7 +33,7 @@ export function getPublicUser(username: string, viewerId: string | null): Public
     username: row.username,
     displayName: row.display_name,
     bio: row.bio,
-    avatarUrl: row.avatar_url,
+    avatarUrl: publicUrl(row.avatar_url),
     createdAt: row.created_at,
     followerCount: row.follower_count,
     followingCount: row.following_count,
@@ -61,7 +62,7 @@ export function getMe(userId: string): MeDTO | null {
     username: row.username,
     displayName: row.display_name,
     bio: row.bio,
-    avatarUrl: row.avatar_url,
+    avatarUrl: publicUrl(row.avatar_url),
     role: row.role,
     status: row.status,
     createdAt: row.created_at,

@@ -361,7 +361,7 @@ export function AdminPage() {
                   <div className="report-target">
                     <Player
                       key={selectedReport.video.id}
-                      src={`/media/videos/${selectedReport.video.id}`}
+                      src={selectedReport.video.videoUrl}
                       poster={selectedReport.video.posterUrl}
                       active
                     />

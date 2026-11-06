@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { crossSiteCookies } from './config.ts';
 
 export class HttpError extends Error {
   status: number;
@@ -144,16 +145,18 @@ export function parseCookies(req: Request): Record<string, string> {
   return result;
 }
 
+function cookieAttributes(): string {
+  const secure = crossSiteCookies || /^https:/.test(process.env.APP_ORIGIN || '');
+  const sameSite = crossSiteCookies ? 'None' : 'Lax';
+  return `Path=/; HttpOnly; SameSite=${sameSite}${secure ? '; Secure' : ''}`;
+}
+
 export function setCookie(res: Response, name: string, value: string, maxAgeSeconds: number) {
-  const secure = /^https:/.test(process.env.APP_ORIGIN || '') ? '; Secure' : '';
-  res.append(
-    'Set-Cookie',
-    `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`,
-  );
+  res.append('Set-Cookie', `${name}=${encodeURIComponent(value)}; ${cookieAttributes()}; Max-Age=${maxAgeSeconds}`);
 }
 
 export function clearCookie(res: Response, name: string) {
-  res.append('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  res.append('Set-Cookie', `${name}=; ${cookieAttributes()}; Max-Age=0`);
 }
 
 /** A tiny seeded PRNG so a user's feed order stays stable between page loads. */
