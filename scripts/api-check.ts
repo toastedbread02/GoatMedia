@@ -328,6 +328,9 @@ async function run() {
   ok(comment.status === 201, 'comments can be posted');
   const commentList = await call(`/api/posts/${postId}/comments`);
   ok(commentList.body.comments.length === 1, 'comments are listed');
+  ok(Array.isArray(commentList.body.items) && commentList.body.items.length === 1, 'comments are listed in the shape the app reads');
+  ok(commentList.body.total === 1, 'comment list reports a total');
+  ok(comment.body.total === 1, 'posting a comment returns the new total');
   const deleteOther = await call(`/api/comments/${comment.body.comment.id}`, {
     method: 'DELETE',
     token: adminToken === tokenB ? tokenA : tokenB,

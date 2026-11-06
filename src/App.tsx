@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from './components/AppShell.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { FeedPage } from './pages/FeedPage.tsx';
 import { VideoPage } from './pages/VideoPage.tsx';
 import { ProfilePage } from './pages/ProfilePage.tsx';
@@ -21,7 +22,9 @@ function AppFrame() {
 
   return (
     <AppShell>
-      <Outlet />
+      <ErrorBoundary key={location.pathname}>
+        <Outlet />
+      </ErrorBoundary>
     </AppShell>
   );
 }

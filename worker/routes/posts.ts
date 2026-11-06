@@ -325,7 +325,14 @@ export async function updatePost(req: Request, env: Env, origin: string, id: str
 
   const updated = await env.DB.prepare(`${POST_SELECT} WHERE p.id = ?`).bind(id).first<PostRow>();
   const [post] = await hydratePosts(env, origin, user.id, [updated!]);
-  return json({ post, video: post, needsReview });
+  return json({
+    post,
+    video: post,
+    needsReview,
+    message: needsReview
+      ? 'Saved. Because the details changed, a moderator will review it again before it returns to the feed.'
+      : 'Details saved.',
+  });
 }
 
 export async function deletePost(req: Request, env: Env, id: string) {
@@ -408,9 +415,13 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
 
   const list = rows.results || [];
   const hasMore = list.length > limits.commentsPageSize;
+  const count = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM comments WHERE post_id = ? AND status = 'visible'",
+  )
+    .bind(id)
+    .first<{ n: number }>();
   const origin = new URL(req.url).origin;
-  return json({
-    comments: list.slice(0, limits.commentsPageSize).map((row) => ({
+  const items = list.slice(0, limits.commentsPageSize).map((row) => ({
       id: row.id,
       body: row.body,
       createdAt: row.created_at,
@@ -423,10 +434,9 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
           : null,
       },
       canDelete: Boolean(viewer && (viewer.id === row.user_id || viewer.role === 'admin')),
-    })),
-    hasMore,
-    page,
-  });
+  }));
+  // `comments` stays as an alias for older clients; the app reads items/total.
+  return json({ items, comments: items, total: count?.n ?? items.length, hasMore, page });
 }
 
 export async function addComment(req: Request, env: Env, id: string) {
@@ -475,8 +485,12 @@ export async function addComment(req: Request, env: Env, id: string) {
   }
 
   const origin = new URL(req.url).origin;
+  const count = await env.DB.prepare('SELECT comment_count FROM posts WHERE id = ?')
+    .bind(id)
+    .first<{ comment_count: number }>();
   return json(
     {
+      total: count?.comment_count ?? 0,
       comment: {
         id: commentId,
         body: text,

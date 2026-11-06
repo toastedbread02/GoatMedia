@@ -39,12 +39,14 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   useEffect(() => {
     let cancelled = false;
     api
-      .get<{ items: CommentDTO[]; hasMore: boolean; total: number }>(`/api/videos/${video.id}/comments`)
+      .get<{ items?: CommentDTO[]; comments?: CommentDTO[]; hasMore: boolean; total?: number }>(
+        `/api/videos/${video.id}/comments`,
+      )
       .then((data) => {
         if (cancelled) return;
-        setItems(data.items);
+        setItems(data.items ?? data.comments ?? []);
         setHasMore(data.hasMore);
-        setTotal(data.total);
+        setTotal(data.total ?? video.commentCount);
       })
       .catch((loadError) => {
         if (cancelled) return;
@@ -112,13 +114,16 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
     setLoadingMore(true);
     try {
       const next = page + 1;
-      const data = await api.get<{ items: CommentDTO[]; hasMore: boolean; total: number }>(
-        `/api/videos/${video.id}/comments?page=${next}`,
-      );
-      setItems((current) => [...(current ?? []), ...data.items]);
+      const data = await api.get<{
+        items?: CommentDTO[];
+        comments?: CommentDTO[];
+        hasMore: boolean;
+        total?: number;
+      }>(`/api/videos/${video.id}/comments?page=${next}`);
+      setItems((current) => [...(current ?? []), ...(data.items ?? data.comments ?? [])]);
       setHasMore(data.hasMore);
       setPage(next);
-      setTotal(data.total);
+      if (typeof data.total === 'number') setTotal(data.total);
     } catch {
       toast.notify('Could not load more comments.', { tone: 'error' });
     } finally {
