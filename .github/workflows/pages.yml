@@ -20,6 +20,9 @@ concurrency:
 
 jobs:
   build:
+    # Publishing without an API URL would ship a site that cannot sign in or
+    # load a feed, so this job stays skipped until the variable is set.
+    if: ${{ vars.API_ORIGIN != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

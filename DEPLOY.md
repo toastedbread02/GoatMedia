@@ -211,7 +211,7 @@ The repo includes [.github/workflows/pages.yml](.github/workflows/pages.yml), wh
 
    `API_ORIGIN` makes every poster, video and avatar URL absolute so the Pages site can load them. `ALLOWED_ORIGINS` opens credentialed CORS to exactly that origin and nothing else. `CROSS_SITE_COOKIES=1` switches the session cookie to `SameSite=None; Secure`, which **requires HTTPS** on the API.
 
-2. **Repository variable** — Settings → Secrets and variables → Actions → Variables → New variable: `API_ORIGIN` = `https://goatmedia.example.com`. The workflow fails with a clear message if it is missing.
+2. **Repository variable** — Settings → Secrets and variables → Actions → Variables → New variable: `API_ORIGIN` = `https://goatmedia.example.com`. Until it is set, the Pages workflow skips publishing rather than shipping a site with no backend.
 
 3. **Enable Pages** — Settings → Pages → Build and deployment → Source: **GitHub Actions**.
 
