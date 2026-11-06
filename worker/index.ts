@@ -102,6 +102,9 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   if (path === '/api/health') return json({ ok: true, service: 'goatmedia-api' });
 
   if (path === '/api/config') {
+    const admins = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first<{
+      n: number;
+    }>();
     return json(
       {
         limits: {
@@ -127,6 +130,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
         },
         rejectReasons: rejectionReasons,
         guidelines,
+        adminClaimable: (admins?.n ?? 0) === 0,
         passwordReset: 'link-on-screen',
       },
       200,

@@ -70,6 +70,7 @@ const env = {
   ALLOWED_ORIGINS: 'http://localhost:5173',
   PASSWORD_PEPPER: 'local-test-pepper',
   PASSWORD_ITERATIONS: '1000',
+  ADMIN_SETUP_TOKEN: 'local-setup-code',
 } as unknown as Env;
 
 const ORIGIN = 'http://localhost:8788';
@@ -132,6 +133,8 @@ async function run() {
   const config = await call('/api/config');
   ok(config.status === 200 && config.body.limits.maxPhotos === 6, 'config is served');
   ok(config.body.categories.length === 6, 'six categories');
+  ok(config.body.limits.maxVideoMb === 25, 'config advertises the video limit');
+  ok(config.body.adminClaimable === true, 'a fresh server reports the moderator role as claimable');
 
   console.log('\n[accounts]');
   const a = await call('/api/auth/register', {
@@ -195,6 +198,32 @@ async function run() {
 
   const me = await call('/api/auth/me', { token: tokenA });
   ok(me.body.user?.username === 'ada' && me.body.user.role === 'user', 'me returns the account');
+
+  console.log('\n[moderator claim]');
+  const wrongClaim = await call('/api/admin/claim', {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: 'not-the-code' }),
+  });
+  ok(wrongClaim.status === 400, 'a wrong setup code cannot claim the role');
+  const anonClaim = await call('/api/admin/claim', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: 'local-setup-code' }),
+  });
+  ok(anonClaim.status === 401, 'claiming needs a signed-in account');
+  const claim = await call('/api/admin/claim', {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: 'local-setup-code' }),
+  });
+  ok(claim.status === 200, 'the setup code grants the moderator role', claim.body);
+  const claimedMe = await call('/api/auth/me', { token: tokenA });
+  ok(claimedMe.body.user?.role === 'admin', 'the claimed account is now the moderator');
+  const afterClaim = await call('/api/config');
+  ok(afterClaim.body.adminClaimable === false, 'the role cannot be claimed twice');
 
   console.log('\n[pending uploads are private]');
   const created = await call('/api/posts', {

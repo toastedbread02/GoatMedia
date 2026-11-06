@@ -130,6 +130,8 @@ export interface AppConfigDTO {
   reportReasons: { video: string[]; post: string[]; comment: string[] };
   rejectReasons: string[];
   guidelines: string[];
+  /** True while this server still has no moderator, so the first account can claim it. */
+  adminClaimable: boolean;
 }
 
 export type NotificationType = 'approved' | 'rejected' | 'follow' | 'comment' | 'removed';

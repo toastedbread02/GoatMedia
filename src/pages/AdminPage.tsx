@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   AdminQueueItem,
@@ -59,7 +59,7 @@ function History({ events }: { events: ModerationEventDTO[] }) {
 
 export function AdminPage() {
   useDocumentTitle('Moderation');
-  const { user, loading } = useAuth();
+  const { user, loading, refresh: refreshSession } = useAuth();
   const config = useConfig();
   const { notify } = useToast();
   const isAdmin = user?.role === 'admin';
@@ -87,6 +87,9 @@ export function AdminPage() {
   const [removeReason, setRemoveReason] = useState('');
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
+  const [claimToken, setClaimToken] = useState('');
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -219,18 +222,77 @@ export function AdminPage() {
   }
 
   if (!isAdmin) {
+    const claim = async (event: FormEvent) => {
+      event.preventDefault();
+      setClaiming(true);
+      setClaimError(null);
+      try {
+        await api.post('/api/admin/claim', { token: claimToken.trim() });
+        setClaimToken('');
+        await refreshSession();
+        notify('You are the moderator now.');
+      } catch (error) {
+        setClaimError(error instanceof Error ? error.message : 'That setup code did not work.');
+      } finally {
+        setClaiming(false);
+      }
+    };
+
     return (
       <div className="page">
         <div className="empty-state" style={{ paddingTop: 48 }}>
           <Icon name="shield" size={26} />
           <h2>Moderation is for the moderator</h2>
-          <p>
-            This dashboard is restricted on the server, not just hidden in the interface. If you run this installation,
-            create an administrator account with the setup script.
-          </p>
-          <Link className="btn btn--primary" to="/">
-            Back to the feed
-          </Link>
+          {!user ? (
+            <>
+              <p>Sign in with the account that should review uploads, then claim the role with your setup code.</p>
+              <Link className="btn btn--primary" to="/login?next=/admin">
+                Sign in
+              </Link>
+            </>
+          ) : !config ? (
+            <div className="spinner spinner--dark" />
+          ) : config.adminClaimable ? (
+            <>
+              <p>
+                Paste the setup code from your server to make this account the moderator. The role is granted on the
+                server, not in the browser.
+              </p>
+              <form className="form-stack" onSubmit={claim} style={{ maxWidth: 340 }}>
+                <div className="field">
+                  <label className="field__label" htmlFor="claim-token">
+                    Setup code
+                  </label>
+                  <input
+                    id="claim-token"
+                    className="input"
+                    type="password"
+                    value={claimToken}
+                    onChange={(event) => setClaimToken(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    required
+                  />
+                  {claimError ? (
+                    <p className="field__error" role="alert">
+                      {claimError}
+                    </p>
+                  ) : null}
+                </div>
+                <button type="submit" className="btn btn--primary" disabled={claiming || !claimToken.trim()}>
+                  {claiming ? <span className="btn__spinner" /> : null}
+                  Claim moderator role
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <p>This installation already has a moderator, so this account cannot claim it.</p>
+              <Link className="btn btn--quiet" to="/">
+                Back to the feed
+              </Link>
+            </>
+          )}
         </div>
       </div>
     );
