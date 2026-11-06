@@ -1,138 +1,131 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { SearchResults } from '../../shared/types.ts';
-import { api } from '../lib/api.ts';
-import { useCategories } from '../lib/config.tsx';
-import { useDebouncedValue, useDocumentTitle } from '../lib/hooks.ts';
-import { Avatar } from '../components/Avatar.tsx';
-import { Icon } from '../components/Icon.tsx';
-import { VideoCard } from '../components/VideoCard.tsx';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import type { PostDTO, PublicUser } from '../../shared/types';
+import { Avatar } from '../components/Avatar';
+import { Icon } from '../components/Icon';
+import { api } from '../lib/api';
+import { count } from '../lib/format';
 
 export function SearchPage() {
-  const [params] = useSearchParams();
-  const navigate = useNavigate();
-  const categories = useCategories();
-  const initial = params.get('q') ?? '';
-  const [input, setInput] = useState(initial);
-  const debounced = useDebouncedValue(input.trim(), 300);
-  const [results, setResults] = useState<SearchResults | null>(null);
+  const [params, setParams] = useSearchParams();
+  const initial = params.get('q') || '';
+  const [query, setQuery] = useState(initial);
+  const [submitted, setSubmitted] = useState(initial);
+  const [posts, setPosts] = useState<PostDTO[]>([]);
+  const [creators, setCreators] = useState<PublicUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const requested = useRef('');
-
-  useDocumentTitle(initial ? `Search: ${initial}` : 'Search');
+  const input = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    setInput(params.get('q') ?? '');
+    input.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const value = params.get('q') || '';
+    setQuery(value);
+    setSubmitted(value);
   }, [params]);
 
   useEffect(() => {
-    if (debounced.length < 2) {
-      setResults(null);
-      setLoading(false);
-      return;
-    }
-    if (requested.current === debounced) return;
-    requested.current = debounced;
+    if (!submitted) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
     api
-      .get<SearchResults>(`/api/search?q=${encodeURIComponent(debounced)}`)
-      .then((data) => setResults(data))
-      .catch((searchError) => setError(searchError instanceof Error ? searchError.message : 'Search failed.'))
-      .finally(() => setLoading(false));
-  }, [debounced]);
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const query = input.trim();
-    if (query.length < 2) return;
-    navigate(`/search?q=${encodeURIComponent(query)}`, { replace: true });
-  };
-
-  const hasResults = Boolean(results && (results.videos.length || results.creators.length));
+      .search(submitted)
+      .then((result) => {
+        if (cancelled) return;
+        setPosts(result.posts);
+        setCreators(result.creators);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [submitted]);
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">Search</h1>
-          <p className="page-sub">Find a goat, a creator or a hashtag.</p>
-        </div>
-      </div>
+    <div className="column">
+      <header className="page-head">
+        <h1 className="page-title">Search</h1>
+        <p className="page-blurb">Find goats, creators and captions. A hashtag works too.</p>
+        <form
+          className="search-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setParams(query.trim() ? { q: query.trim() } : {});
+          }}
+          role="search"
+        >
+          <Icon name="search" size={19} />
+          <label className="visually-hidden" htmlFor="search-input">
+            Search GoatMedia
+          </label>
+          <input
+            id="search-input"
+            ref={input}
+            className="search-form__input"
+            type="search"
+            value={query}
+            placeholder="Baby goats, @adagoats, #parkour…"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button type="submit" className="button button--small">
+            Search
+          </button>
+        </form>
+      </header>
 
-      <form className="searchbox searchbox--page" role="search" onSubmit={submit}>
-        <Icon name="search" size={18} />
-        <input
-          className="input"
-          type="search"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Search goats, people, #hashtags"
-          aria-label="Search GoatMedia"
-          autoFocus
-        />
-        <button type="submit" className="btn btn--primary btn--sm">
-          Search
-        </button>
-      </form>
-
-      {debounced.length < 2 ? (
-        <div className="search-hints">
-          <h2 className="section-title">Try one of these</h2>
-          <div className="search-hint-links">
-            {categories.map((category) => (
-              <Link key={category.id} className="search-hint" to={`/search?q=${encodeURIComponent(category.label)}`}>
-                <span>{category.label}</span>
-                <span className="field__hint">{category.blurb}</span>
-              </Link>
+      {!submitted ? (
+        <div className="search-idle">
+          <h2 className="aside-title">Try a category</h2>
+          <ul className="link-list">
+            {['baby-goats', 'parkour', 'mountain-goats', 'goat-sounds'].map((id) => (
+              <li key={id}>
+                <Link to={`/c/${id}`} className="text-link">
+                  {id.replace(/-/g, ' ')}
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
-      ) : loading && !results ? (
-        <div className="search-results" aria-busy="true">
-          {[0, 1, 2].map((index) => (
-            <div className="video-skeleton" key={index} />
-          ))}
-        </div>
+      ) : loading ? (
+        <p className="feed__loading">Looking for goats…</p>
       ) : error ? (
-        <div className="empty-state">
-          <Icon name="alert" size={24} />
-          <h2>Search is not working right now</h2>
+        <div className="empty">
+          <p className="empty__title">Search did not run</p>
           <p>{error}</p>
         </div>
-      ) : !hasResults ? (
-        <div className="empty-state">
-          <h2>No goats found for “{debounced}”</h2>
-          <p>Try a shorter phrase, a creator’s username, or a hashtag like #goatkids.</p>
-          <div className="empty-state__actions">
-            <Link className="btn btn--quiet" to="/trending">
-              Browse trending
-            </Link>
-          </div>
+      ) : posts.length === 0 && creators.length === 0 ? (
+        <div className="empty">
+          <p className="empty__title">No goats matched “{submitted}”</p>
+          <p>Try a shorter word, a creator’s name, or a hashtag without the symbol.</p>
         </div>
       ) : (
-        <div className="search-body">
-          {results!.creators.length ? (
-            <section className="search-creators">
-              <h2 className="section-title">People</h2>
-              <ul className="creator-results">
-                {results!.creators.map((person) => (
-                  <li key={person.id}>
-                    <Link className="creator-result" to={`/u/${person.username}`}>
-                      <Avatar
-                        displayName={person.displayName}
-                        username={person.username}
-                        avatarUrl={person.avatarUrl}
-                        size={42}
-                      />
-                      <span className="creator-result__text">
-                        <span className="creator-result__name">{person.displayName}</span>
-                        <span className="creator-result__handle">
-                          @{person.username}
-                          {person.bio ? ` · ${person.bio}` : ''}
+        <>
+          {creators.length ? (
+            <section className="result-block">
+              <h2 className="result-title">Creators</h2>
+              <ul className="creator-list">
+                {creators.map((creator, index) => (
+                  <li key={creator.id} style={{ '--i': Math.min(index, 6) } as CSSProperties}>
+                    <Link to={`/u/${creator.username}`} className="creator-row">
+                      <Avatar user={creator} size={42} />
+                      <span className="creator-row__text">
+                        <strong>{creator.displayName}</strong>
+                        <span className="muted">
+                          @{creator.username} · {count(creator.followerCount)} followers ·{' '}
+                          {count(creator.postCount)} posts
                         </span>
                       </span>
+                      <Icon name="chevron-right" size={18} />
                     </Link>
                   </li>
                 ))}
@@ -140,19 +133,29 @@ export function SearchPage() {
             </section>
           ) : null}
 
-          {results!.videos.length ? (
-            <section>
-              <h2 className="section-title">
-                {results!.hashtag ? `#${results!.hashtag}` : 'Videos'}
+          {posts.length ? (
+            <section className="result-block">
+              <h2 className="result-title">
+                {posts.length} {posts.length === 1 ? 'post' : 'posts'}
               </h2>
-              <div className="video-grid">
-                {results!.videos.map((video, index) => (
-                  <VideoCard key={video.id} video={video} showCreator index={index} />
+              <ul className="post-grid">
+                {posts.map((post, index) => (
+                  <li key={post.id} style={{ '--i': Math.min(index, 11) } as CSSProperties}>
+                    <Link to={`/p/${post.id}`} className="post-grid__tile" aria-label={post.caption || 'Goat post'}>
+                      {post.photos[0] ? <img src={post.photos[0].url} alt="" loading="lazy" /> : null}
+                      {post.photos.length > 1 ? (
+                        <span className="post-grid__count">
+                          <Icon name="grid" size={13} />
+                          {post.photos.length}
+                        </span>
+                      ) : null}
+                    </Link>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </section>
           ) : null}
-        </div>
+        </>
       )}
     </div>
   );

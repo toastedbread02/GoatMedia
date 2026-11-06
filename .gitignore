@@ -8,3 +8,4 @@ dist
 seed-media
 screenshots
 .data-smoke-*
+.secrets/

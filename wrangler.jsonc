@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "goatmedia-api",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-01-01",
+  "observability": { "enabled": true },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://toastedbread02.github.io,http://localhost:5173,http://127.0.0.1:5173"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "goatmedia",
+      "database_id": "99f990ab-4246-4b49-9353-9269a5ccd115",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

@@ -1,97 +1,120 @@
 import { useEffect, useRef, useState } from 'react';
-import { Icon } from './Icon.tsx';
+import { api } from '../lib/api';
+import { useConfig } from '../lib/config';
+import { useToast } from '../lib/toast';
+import { Icon } from './Icon';
+
+export type ReportTarget = { type: 'post' | 'comment' | 'user'; id: string; label?: string };
 
 interface ReportDialogProps {
-  open: boolean;
-  title: string;
-  subject: string;
-  reasons: string[];
+  target: ReportTarget;
   onClose: () => void;
-  onSubmit: (reason: string, note: string) => Promise<void>;
 }
 
-export function ReportDialog({ open, title, subject, reasons, onClose, onSubmit }: ReportDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const [reason, setReason] = useState(reasons[0] ?? '');
+export function ReportDialog({ target, onClose }: ReportDialogProps) {
+  const config = useConfig();
+  const toast = useToast();
+  const firstRef = useRef<HTMLButtonElement | null>(null);
+  const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [state, setState] = useState<'idle' | 'sending' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
 
+  const reasons = target.type === 'comment' ? config.reportReasons.comment : config.reportReasons.post;
+
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) {
-      setReason(reasons[0] ?? '');
-      setNote('');
-      setError(null);
-      dialog.showModal();
+    firstRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const submit = async () => {
+    if (!reason) {
+      setError('Choose a reason first.');
+      return;
     }
-    if (!open && dialog.open) dialog.close();
-  }, [open, reasons]);
+    setState('sending');
+    setError(null);
+    try {
+      if (target.type === 'post') await api.reportPost(target.id, reason, note);
+      else if (target.type === 'comment') await api.reportComment(target.id, reason, note);
+      else await api.reportUser(target.id, reason, note);
+      setState('done');
+      toast('Report sent to the moderator', 'success');
+    } catch (err) {
+      setState('idle');
+      setError((err as Error).message);
+    }
+  };
 
   return (
-    <dialog className="dialog" ref={dialogRef} onCancel={onClose} onClose={onClose} aria-labelledby="report-title">
-      <form
-        className="dialog__form"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setSubmitting(true);
-          setError(null);
-          try {
-            await onSubmit(reason, note);
-            onClose();
-          } catch (submitError) {
-            setError(submitError instanceof Error ? submitError.message : 'The report did not send.');
-          } finally {
-            setSubmitting(false);
-          }
-        }}
-      >
-        <div className="dialog__head">
-          <h2 id="report-title">{title}</h2>
-          <button type="button" className="iconbtn" onClick={onClose} aria-label="Close">
-            <Icon name="close" size={18} />
+    <div className="sheet-backdrop" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="sheet sheet--narrow" role="dialog" aria-modal="true" aria-labelledby="report-title">
+        <div className="sheet__head">
+          <div>
+            <h2 className="sheet__title" id="report-title">
+              Report {target.type === 'user' ? 'account' : target.type}
+            </h2>
+            <p className="sheet__sub">
+              {target.label ? `“${target.label}”` : 'A person reviews every report.'}
+            </p>
+          </div>
+          <button ref={firstRef} type="button" className="icon-button" onClick={onClose} aria-label="Close">
+            <Icon name="close" />
           </button>
         </div>
-        <p className="dialog__subject">{subject}</p>
-        <fieldset className="radio-list">
-          <legend className="field__label">What is wrong?</legend>
-          {reasons.map((option) => (
-            <label key={option} className="radio-list__item">
-              <input
-                type="radio"
-                name="report-reason"
-                value={option}
-                checked={reason === option}
-                onChange={() => setReason(option)}
+
+        {state === 'done' ? (
+          <div className="report-done">
+            <Icon name="check" size={22} />
+            <p>The moderator will look at this. Thanks for flagging it.</p>
+            <button type="button" className="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        ) : (
+          <>
+            <fieldset className="field radio-list">
+              <legend className="field__label">What is wrong?</legend>
+              {reasons.map((option) => (
+                <label key={option} className="radio">
+                  <input
+                    type="radio"
+                    name="report-reason"
+                    value={option}
+                    checked={reason === option}
+                    onChange={() => setReason(option)}
+                  />
+                  <span>{option}</span>
+                </label>
+              ))}
+            </fieldset>
+            <label className="field">
+              <span className="field__label">Anything else? (optional)</span>
+              <textarea
+                className="textarea"
+                rows={3}
+                maxLength={400}
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Context helps the moderator decide quickly."
               />
-              <span>{option}</span>
             </label>
-          ))}
-        </fieldset>
-        <div className="field">
-          <label className="field__label" htmlFor="report-note">
-            Anything else? (optional)
-          </label>
-          <textarea
-            id="report-note"
-            className="textarea"
-            maxLength={500}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="Context helps the moderator make a fair call."
-          />
-        </div>
-        {error ? <p className="field__error">{error}</p> : null}
-        <div className="dialog__actions">
-          <button type="button" className="btn btn--quiet" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn--primary" disabled={submitting}>
-            {submitting ? 'Sending…' : 'Send report'}
-          </button>
-        </div>
-      </form>
-    </dialog>
+            {error ? <p className="form-error">{error}</p> : null}
+            <div className="sheet__actions">
+              <button type="button" className="button button--quiet" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="button" className="button" onClick={submit} disabled={state === 'sending'}>
+                {state === 'sending' ? 'Sending…' : 'Send report'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

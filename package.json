@@ -1,40 +1,36 @@
 {
   "name": "goatmedia",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "GoatMedia — a video platform for goats and the people who film them.",
+  "description": "GoatMedia — a goat photo network with human moderation.",
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:server": "tsx watch server/index.ts",
-    "dev:client": "vite",
+    "dev": "vite",
     "build": "vite build",
-    "start": "node scripts/start.mjs",
-    "seed:dev": "tsx scripts/seed-dev.ts",
-    "admin:create": "tsx scripts/create-admin.ts",
-    "typecheck": "tsc --noEmit",
-    "smoke": "tsx scripts/smoke.ts",
-    "public": "node scripts/public.mjs"
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "api:check": "tsx scripts/api-check.ts",
+    "deploy:api": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply goatmedia --remote",
+    "db:migrate:local": "wrangler d1 migrations apply goatmedia --local"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "multer": "^2.0.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.3",
-    "tsx": "^4.20.6"
+    "react-router-dom": "^7.9.3"
   },
   "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/multer": "^2.0.0",
+    "@cloudflare/workers-types": "^5.20261106.1",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.2",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "wrangler": "^4.158.0"
   }
 }

@@ -1,308 +1,220 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import type { CommentDTO, VideoDTO } from '../../shared/types.ts';
-import { api, ApiError } from '../lib/api.ts';
-import { useAuth } from '../lib/auth.tsx';
-import { useConfig } from '../lib/config.tsx';
-import { useToast } from '../lib/toast.tsx';
-import { timeAgo } from '../lib/format.ts';
-import { Avatar } from './Avatar.tsx';
-import { Icon } from './Icon.tsx';
-import { ReportDialog } from './ReportDialog.tsx';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { Link } from 'react-router-dom';
+import type { CommentDTO, PostDTO } from '../../shared/types';
+import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { relativeTime } from '../lib/format';
+import { useToast } from '../lib/toast';
+import { Avatar } from './Avatar';
+import { Icon } from './Icon';
+import { ReportDialog, type ReportTarget } from './ReportDialog';
 
 interface CommentsPanelProps {
-  video: VideoDTO;
+  post: PostDTO;
   onClose?: () => void;
-  onCountChange: (count: number) => void;
+  onCountChange?: (postId: string, count: number) => void;
   inline?: boolean;
 }
 
-export function CommentsPanel({ video, onClose, onCountChange, inline = false }: CommentsPanelProps) {
-  const { user } = useAuth();
-  const config = useConfig();
+export function CommentsPanel({ post, onClose, onCountChange, inline = false }: CommentsPanelProps) {
+  const { me } = useAuth();
   const toast = useToast();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [items, setItems] = useState<CommentDTO[] | null>(null);
-  const [total, setTotal] = useState(video.commentCount);
-  const [hasMore, setHasMore] = useState(false);
+  const [comments, setComments] = useState<CommentDTO[]>([]);
   const [page, setPage] = useState(1);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [body, setBody] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [closing, setClosing] = useState(false);
-  const [reportTarget, setReportTarget] = useState<CommentDTO | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
-  const panelRef = useRef<HTMLElement>(null);
+  const [sending, setSending] = useState(false);
+  const [target, setTarget] = useState<ReportTarget | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+
+  const load = useCallback(
+    async (nextPage: number) => {
+      try {
+        const result = await api.comments(post.id, nextPage);
+        setComments((current) => (nextPage === 1 ? result.comments : [...current, ...result.comments]));
+        setHasMore(result.hasMore);
+        setPage(nextPage);
+      } catch (error) {
+        toast((error as Error).message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [post.id, toast],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .get<{ items: CommentDTO[]; hasMore: boolean; total: number }>(`/api/videos/${video.id}/comments`)
-      .then((data) => {
-        if (cancelled) return;
-        setItems(data.items);
-        setHasMore(data.hasMore);
-        setTotal(data.total);
-      })
-      .catch((loadError) => {
-        if (cancelled) return;
-        setItems([]);
-        setError(loadError instanceof Error ? loadError.message : 'Comments could not load.');
-      });
-    return () => {
-      cancelled = true;
+    void load(1);
+  }, [load]);
+
+  useEffect(() => {
+    if (inline) return;
+    closeRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose?.();
     };
-  }, [video.id]);
-
-  const close = () => {
-    if (inline) return;
-    setClosing(true);
-    setTimeout(() => onClose?.(), 160);
-  };
-
-  useEffect(() => {
-    if (inline) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inline]);
-
-  useEffect(() => {
-    if (inline) return;
-    const panel = panelRef.current;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    const focusable =
-      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    document.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const focusTimer = window.setTimeout(() => {
-      panel?.querySelector<HTMLElement>(focusable)?.focus();
-    }, 30);
-    const keepFocusInside = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab' || !panel || document.querySelector('dialog[open]')) return;
-      const nodes = Array.from(panel.querySelectorAll<HTMLElement>(focusable)).filter(
-        (element) => element.getClientRects().length > 0,
-      );
-      if (!nodes.length) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', keepFocusInside);
     return () => {
-      window.clearTimeout(focusTimer);
-      document.removeEventListener('keydown', keepFocusInside);
-      document.body.style.overflow = previousOverflow;
-      previousFocus?.focus();
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
     };
-  }, [inline]);
+  }, [inline, onClose]);
 
-  const loadMore = async () => {
-    setLoadingMore(true);
-    try {
-      const next = page + 1;
-      const data = await api.get<{ items: CommentDTO[]; hasMore: boolean; total: number }>(
-        `/api/videos/${video.id}/comments?page=${next}`,
-      );
-      setItems((current) => [...(current ?? []), ...data.items]);
-      setHasMore(data.hasMore);
-      setPage(next);
-      setTotal(data.total);
-    } catch {
-      toast.notify('Could not load more comments.', { tone: 'error' });
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!user) {
-      navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
-      return;
-    }
+  const submit = async () => {
+    if (!me) return;
     const text = body.trim();
-    if (!text) return;
-    setPosting(true);
-    setError(null);
+    if (!text || sending) return;
+    setSending(true);
     try {
-      const data = await api.post<{ comment: CommentDTO; total: number }>(`/api/videos/${video.id}/comments`, {
-        body: text,
-      });
+      const result = await api.addComment(post.id, text);
+      setComments((current) => [result.comment, ...current]);
       setBody('');
-      if (data.comment) setItems((current) => [data.comment, ...(current ?? [])]);
-      setTotal(data.total);
-      onCountChange(data.total);
-      toast.notify('Comment added.');
-    } catch (postError) {
-      if (postError instanceof ApiError && postError.status === 401) {
-        navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
-      } else {
-        setError(postError instanceof Error ? postError.message : 'The comment did not post.');
-      }
+      onCountChange?.(post.id, post.commentCount + 1);
+    } catch (error) {
+      toast((error as Error).message, 'error');
     } finally {
-      setPosting(false);
+      setSending(false);
     }
   };
 
-  const remove = async (comment: CommentDTO) => {
-    try {
-      await api.delete(`/api/comments/${comment.id}`);
-      setItems((current) => current?.filter((item) => item.id !== comment.id) ?? null);
-      setTotal((current) => {
-        const next = Math.max(0, current - 1);
-        onCountChange(next);
-        return next;
-      });
-      toast.notify('Comment deleted.');
-    } catch {
-      toast.notify('Could not delete that comment.', { tone: 'error' });
-    }
-  };
+  const panel = (
+    <section
+      className={`comments ${inline ? 'comments--inline' : ''}`}
+      role={inline ? 'region' : 'dialog'}
+      aria-modal={inline ? undefined : true}
+      aria-label="Comments"
+    >
+      <header className="comments__head">
+        <h2>
+          {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
+        </h2>
+        {!inline ? (
+          <button ref={closeRef} type="button" className="icon-button" onClick={onClose} aria-label="Close comments">
+            <Icon name="close" />
+          </button>
+        ) : null}
+      </header>
+
+      <div className="comments__list">
+        {loading ? (
+          <div className="comments__skeletons" aria-busy="true">
+            {[0, 1, 2].map((row) => (
+              <div className="comment-skeleton" key={row} style={{ '--i': row } as CSSProperties} />
+            ))}
+          </div>
+        ) : comments.length === 0 ? (
+          <div className="empty empty--small">
+            <p className="empty__title">No comments yet</p>
+            <p>Say something about the goat.</p>
+          </div>
+        ) : (
+          comments.map((comment, index) => (
+            <article className="comment" key={comment.id} style={{ '--i': Math.min(index, 8) } as CSSProperties}>
+              <Link to={`/u/${comment.author.username}`} aria-label={comment.author.displayName}>
+                <Avatar user={comment.author} size={32} />
+              </Link>
+              <div className="comment__body">
+                <p className="comment__meta">
+                  <Link to={`/u/${comment.author.username}`} className="comment__author">
+                    {comment.author.displayName}
+                  </Link>
+                  <time dateTime={new Date(comment.createdAt).toISOString()}>
+                    {relativeTime(comment.createdAt)}
+                  </time>
+                </p>
+                <p className="comment__text">{comment.body}</p>
+                <div className="comment__tools">
+                  {comment.canDelete ? (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={async () => {
+                        try {
+                          await api.deleteComment(comment.id);
+                          setComments((current) => current.filter((item) => item.id !== comment.id));
+                          onCountChange?.(post.id, Math.max(0, post.commentCount - 1));
+                        } catch (error) {
+                          toast((error as Error).message, 'error');
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : me ? (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() =>
+                        setTarget({ type: 'comment', id: comment.id, label: comment.body.slice(0, 60) })
+                      }
+                    >
+                      Report
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          ))
+        )}
+        {hasMore ? (
+          <button type="button" className="button button--quiet comments__more" onClick={() => load(page + 1)}>
+            Load more comments
+          </button>
+        ) : null}
+      </div>
+
+      <footer className="comments__compose">
+        {me ? (
+          <>
+            <Avatar user={me} size={32} />
+            <label className="visually-hidden" htmlFor={`comment-input-${post.id}`}>
+              Write a comment
+            </label>
+            <textarea
+              id={`comment-input-${post.id}`}
+              className="comments__input"
+              rows={1}
+              maxLength={400}
+              placeholder="Add a comment…"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+            <button type="button" className="button button--small" onClick={submit} disabled={!body.trim() || sending}>
+              {sending ? 'Posting…' : 'Post'}
+            </button>
+          </>
+        ) : (
+          <p className="comments__signin">
+            <Link to="/signin" className="inline-link">
+              Sign in
+            </Link>{' '}
+            to join the conversation.
+          </p>
+        )}
+      </footer>
+    </section>
+  );
 
   return (
     <>
-      {!inline ? <div className="scrim" onClick={close} aria-hidden="true" /> : null}
-      <section
-        ref={panelRef}
-        className={`comments-panel${inline ? ' comments-panel--inline' : ''}${closing ? ' is-closing' : ''}`}
-        role={inline ? 'region' : 'dialog'}
-        aria-modal={inline ? undefined : true}
-        aria-label="Comments"
-      >
-        <header className="comments-panel__head">
-          <span className="comments-panel__title">Comments</span>
-          <span className="comments-panel__count">{total}</span>
-          {!inline ? (
-            <button
-              type="button"
-              className="iconbtn"
-              style={{ marginLeft: 'auto' }}
-              onClick={close}
-              aria-label="Close comments"
-            >
-              <Icon name="close" size={18} />
-            </button>
-          ) : null}
-        </header>
-
-        <div className="comments-panel__body">
-          {items === null ? (
-            <div className="comments-empty">Loading comments…</div>
-          ) : error && items.length === 0 ? (
-            <div className="comments-empty">{error}</div>
-          ) : items.length === 0 ? (
-            <div className="comments-empty">
-              No comments yet. Say something about this goat.
-            </div>
-          ) : (
-            <>
-              <ul>
-                {items.map((comment) => (
-                  <li key={comment.id} className="comment">
-                    <Link to={`/u/${comment.author.username}`} onClick={close}>
-                      <Avatar
-                        displayName={comment.author.displayName}
-                        username={comment.author.username}
-                        avatarUrl={comment.author.avatarUrl}
-                        size={32}
-                      />
-                    </Link>
-                    <div className="comment__body">
-                      <div className="comment__head">
-                        <Link to={`/u/${comment.author.username}`} className="comment__name" onClick={close}>
-                          {comment.author.displayName}
-                        </Link>
-                        <span className="comment__handle">@{comment.author.username}</span>
-                        <span className="comment__handle">{timeAgo(comment.createdAt)}</span>
-                      </div>
-                      <p className="comment__text">{comment.body}</p>
-                      <div className="comment__actions">
-                        {comment.canDelete ? (
-                          <button type="button" className="comment__link is-danger" onClick={() => remove(comment)}>
-                            Delete
-                          </button>
-                        ) : null}
-                        {user && !comment.canDelete ? (
-                          <button type="button" className="comment__link" onClick={() => setReportTarget(comment)}>
-                            Report
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {hasMore ? (
-                <div className="comments-more">
-                  <button type="button" className="btn btn--quiet btn--sm" onClick={loadMore} disabled={loadingMore}>
-                    {loadingMore ? 'Loading…' : 'Show older comments'}
-                  </button>
-                </div>
-              ) : null}
-            </>
-          )}
+      {inline ? (
+        panel
+      ) : (
+        <div className="sheet-backdrop" onPointerDown={(event) => event.target === event.currentTarget && onClose?.()}>
+          {panel}
         </div>
-
-        <div className="comments-panel__foot">
-          {user ? (
-            <form className="comment-form" onSubmit={submit} ref={formRef}>
-              <label className="visually-hidden" htmlFor="comment-body">
-                Add a comment
-              </label>
-              <textarea
-                id="comment-body"
-                className="textarea"
-                value={body}
-                maxLength={500}
-                onChange={(event) => setBody(event.target.value)}
-                placeholder="Add a comment about this goat…"
-                aria-invalid={Boolean(error)}
-              />
-              <div className="comment-form__row">
-                <span className="comment-form__hint">
-                  {error ? <span className="field__error">{error}</span> : `${body.length}/500 · Be kind.`}
-                </span>
-                <button type="submit" className="btn btn--primary btn--sm" disabled={posting || !body.trim()}>
-                  {posting ? <span className="btn__spinner" /> : null}
-                  Comment
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="comment-signin">
-              <span>Sign in to join the conversation.</span>
-              <Link className="btn btn--primary btn--sm" to={`/login?next=${encodeURIComponent(location.pathname)}`}>
-                Sign in
-              </Link>
-            </div>
-          )}
-        </div>
-
-        <ReportDialog
-          open={Boolean(reportTarget)}
-          title="Report this comment"
-          subject={reportTarget ? `“${reportTarget.body.slice(0, 120)}”` : ''}
-          reasons={config?.reportReasons.comment ?? ['Spam', 'Harassment', 'Hate speech', 'Something else']}
-          onClose={() => setReportTarget(null)}
-          onSubmit={async (reason, note) => {
-            if (!reportTarget) return;
-            await api.post(`/api/comments/${reportTarget.id}/report`, { reason, note });
-            toast.notify('Report sent to the moderator.');
-          }}
-        />
-      </section>
+      )}
+      {target ? <ReportDialog target={target} onClose={() => setTarget(null)} /> : null}
     </>
   );
 }

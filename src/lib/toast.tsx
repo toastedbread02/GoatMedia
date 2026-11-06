@@ -1,68 +1,34 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
-export interface ToastOptions {
-  actionLabel?: string;
-  onAction?: () => void;
-  tone?: 'default' | 'error';
-  duration?: number;
-}
-
-interface ToastItem extends ToastOptions {
+type Tone = 'info' | 'success' | 'error';
+interface Toast {
   id: number;
   message: string;
-  leaving?: boolean;
+  tone: Tone;
 }
 
-interface ToastContextValue {
-  notify: (message: string, options?: ToastOptions) => void;
-}
-
-const ToastContext = createContext<ToastContextValue | null>(null);
+const ToastContext = createContext<((message: string, tone?: Tone) => void) | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const counter = useRef(0);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const nextId = useRef(1);
 
-  const finish = useCallback((id: number) => {
-    setToasts((items) => items.map((item) => (item.id === id ? { ...item, leaving: true } : item)));
-    setTimeout(() => {
-      setToasts((items) => items.filter((item) => item.id !== id));
-    }, 160);
+  const show = useCallback((message: string, tone: Tone = 'info') => {
+    const id = nextId.current++;
+    setToasts((current) => [...current.slice(-2), { id, message, tone }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, tone === 'error' ? 5200 : 3200);
   }, []);
 
-  const notify = useCallback(
-    (message: string, options?: ToastOptions) => {
-      const id = ++counter.current;
-      setToasts((items) => [...items.slice(-2), { id, message, ...options }]);
-      setTimeout(() => finish(id), options?.duration ?? (options?.actionLabel ? 7000 : 4200));
-    },
-    [finish],
-  );
-
-  const value = useMemo(() => ({ notify }), [notify]);
-
   return (
-    <ToastContext.Provider value={value}>
+    <ToastContext.Provider value={show}>
       {children}
-      <div className="toast-stack" role="status" aria-live="polite">
+      <div className="toasts" role="status" aria-live="polite">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`toast${toast.leaving ? ' is-leaving' : ''}${toast.tone === 'error' ? ' toast--error' : ''}`}>
-            <span className="toast__message">{toast.message}</span>
-            {toast.actionLabel && toast.onAction ? (
-              <button
-                type="button"
-                className="toast__action"
-                onClick={() => {
-                  toast.onAction?.();
-                  finish(toast.id);
-                }}
-              >
-                {toast.actionLabel}
-              </button>
-            ) : null}
-            <button type="button" className="toast__close" aria-label="Dismiss message" onClick={() => finish(toast.id)}>
-              ×
-            </button>
+          <div key={toast.id} className={`toast toast--${toast.tone}`}>
+            {toast.message}
           </div>
         ))}
       </div>
@@ -71,7 +37,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 export function useToast() {
-  const context = useContext(ToastContext);
-  if (!context) throw new Error('useToast must be used inside ToastProvider');
-  return context;
+  const value = useContext(ToastContext);
+  if (!value) throw new Error('Toast is not ready yet.');
+  return value;
 }

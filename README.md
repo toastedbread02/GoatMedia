@@ -1,183 +1,135 @@
 # GoatMedia
 
-A video community for goats. People upload clips, a human watches every one of them, and only approved videos appear in the feed.
+A small social network for goat photos. Multiple photos in one post become a
+sideways carousel; sounds are shared and reusable; every post waits for a human
+moderator before it appears anywhere public.
 
-This is a working application, not a prototype: real accounts, real uploads with server-side processing, a real moderation queue, and a feed ordered by an explainable recommendation model. There is no automatic approval anywhere in the codebase, by design.
+- **Site:** https://toastedbread02.github.io/GoatMedia/ — static React build on GitHub Pages
+- **API:** https://goatmedia-api.dominikkoba22.workers.dev — Cloudflare Worker + D1
 
-## Stack
+## What is in here
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Client | React 19 + TypeScript + Vite | Fast dev loop, no framework runtime needed for this size |
-| API | Express 5 (TypeScript, run through `tsx`) | Small surface, easy to audit, streams media with range requests |
-| Database | SQLite via `node:sqlite` | One file to back up, real transactions, no external service to babysit before 1,000 users |
-| Media | `ffmpeg` / `ffprobe` | Duration + type validation, metadata stripping, poster frames, faststart remux |
-| Sessions | HTTP-only cookies, hashed tokens in the DB | No tokens in `localStorage`, sessions revocable on suspension |
-| Passwords | `scrypt` with per-user salt | Standard library, no dependency |
+| Path | What it is |
+| --- | --- |
+| `src/` | The browser app (React, TypeScript, Vite, HashRouter) |
+| `worker/` | The API: routing, auth, posts, feeds, moderation, media |
+| `migrations/` | D1 schema (users, posts, photos, sounds, moderation, reports…) |
+| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (64 checks) |
+| `scripts/live-check.mjs` | End-to-end checks against the deployed Worker (31 checks) |
+| `wrangler.jsonc` | Worker config, D1 binding, allowed site origins |
 
-The original request suggested Supabase. This build keeps everything on one machine instead: the moderation rules ("pending media must not be reachable by guessed URL") are easier to guarantee when the API owns both the database and the private media directory. Everything is behind a clean HTTP API, so swapping in hosted Postgres/object storage later is a change to `server/db.ts` and `server/media.ts`, not a rewrite.
+Photos and audio are stored as blobs in D1 rather than R2/R2 requires a payment
+method on Cloudflare, and this deployment is deliberately card-free. Each blob
+is capped well under D1's 2 MB row limit, and the browser re-encodes photos
+before upload (which also strips EXIF/GPS).
 
-## Running it locally
+## Features
 
-Requirements: Node 22.5 or newer (for `node:sqlite`), and `ffmpeg` on your `PATH`.
+**Feeds** — For You (personalized), Trending, Following, category pages, search
+for captions/hashtags/sounds/creators. Photos lazy-load, feeds paginate, and a
+post is only in a feed when its status is `approved` and its owner is active.
+
+**Posts** — 1–6 photos, swipeable carousel with dots, arrows, counter and
+keyboard support; caption with hashtags; one category; optional shared sound.
+Likes, comments, follows, sharing, not-interested, reporting, blocking.
+
+**Sounds** — Upload an MP3/M4A/AAC/OGG/WAV with a post, or borrow any sound from
+the shared library. Sound credits stay with the original creator and reuse is
+counted. Posts can also have no audio at all.
+
+**Moderation** — Nothing is published automatically. Uploads are `pending` and
+visible only to their author and the moderator. The dashboard reviews pending,
+approved, rejected and removed posts with photo preview and audio playback,
+creator details, moderation history and reports. Editing the caption of a live
+post puts it back in the queue. The moderator can remove live posts, suspend
+accounts, and handle video/comment/account reports.
+
+**Recommendations** — An explainable scoring model, no machine learning. Signals
+are weighted (complete +5, rewatch +6, like +3, comment +2, follow +4, skip −4,
+not interested −15), decayed over 30 days, and clamped. Pages are assembled from
+configurable quotas (80% personalized / 15% discovery / 5% trending) with a
+two-posts-per-creator cap, freshness decay and an exposure penalty. Users can see
+and reset what the model has learned under Settings → Feed.
+
+Manual moderation is the default at every size. Passing 1,000 accounts does not
+change it; that remains an explicit decision.
+
+## Running the site locally
 
 ```bash
 npm install
-cp .env.example .env      # defaults are fine for local work
-npm run seed:dev          # optional: sample accounts and credited goat clips
-npm run dev               # API on :3001, app on :5173
+VITE_API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev npm run dev
 ```
 
-Open http://localhost:5173.
+`npm run build` produces `dist/`. Locally, point `VITE_API_ORIGIN` at a deployed
+Worker: the API is a Cloudflare Worker, and `wrangler dev` needs workerd, which
+does not run on macOS below 13.5.
 
-`npm run seed:dev` downloads a handful of Wikimedia Commons goat clips, re-encodes them through the same pipeline real uploads use, and creates four development accounts. Each seeded video is labelled in the UI with its author and licence. Seeded rows have no invented views, likes or comments — sample footage is not fake community activity.
+## Deploying
 
-Development sign-ins created by the seed (password `goats-like-clover` for all four):
-
-| Account | Role |
-| --- | --- |
-| `barnnotes` | creator |
-| `kidsofcapra` | creator |
-| `sunnyvaleherd` | creator |
-| `highcountry` | creator |
-
-Seeded videos start out approved so the feed has something to show. Create your own moderator account with the steps below.
-
-## Creating the first moderator
-
-Moderator rights are never granted through the web UI. They come from a CLI that runs on the server:
+**Site (GitHub Pages).** Every push to `main` runs
+`.github/workflows/pages.yml`, which builds with `VITE_BASE_PATH=/GoatMedia/` and
+the repository variable `API_ORIGIN`. Set it with:
 
 ```bash
-npm run admin:create -- --email you@example.com --username keeper --display-name "Your Name"
+gh variable set API_ORIGIN --body "https://goatmedia-api.dominikkoba22.workers.dev"
 ```
 
-The script prints a generated password once (or use `--password` with at least 12 characters). Store it in a password manager, sign in at `/login`, then open `/admin`.
-
-To give an existing account moderator rights:
+**API (Cloudflare Workers).**
 
 ```bash
-npm run admin:create -- --email you@example.com --username yourname --promote
+npx wrangler d1 migrations apply goatmedia --remote   # schema
+npx wrangler deploy                                    # the Worker
 ```
 
-That promotes the account and resets its password. There is no self-service path to `role = 'admin'`, and `/api/admin/*` checks the role in the session on the server for every request.
+Worker secrets: `PASSWORD_PEPPER` (server-side pepper for password hashes) and
+`ADMIN_SETUP_TOKEN` (one-time moderator claim). Both are already set on the live
+deployment.
 
-## Configuration
-
-Everything lives in `.env` (see `.env.example`). All values have development defaults.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3001` | API / production server port |
-| `APP_ORIGIN` | `http://localhost:5173` | Public origin used in reset links and origin checks |
-| `DATA_DIR` | `.data` | SQLite file, private media, posters, avatars, temp uploads |
-| `MAX_UPLOAD_MB` | `200` | Upload size ceiling |
-| `MAX_DURATION_SECONDS` | `180` | Longest accepted clip |
-| `MIN_DURATION_SECONDS` | `2` | Shortest accepted clip |
-| `MAX_AVATAR_MB` | `4` | Avatar size ceiling |
-| `AUTO_APPROVE` | `false` | Present only to document that it does nothing; there is no auto-approval code path |
-| `DEV_EXPOSE_RESET_LINK` | `1` in dev | Returns the reset link in the API response so you can test without email |
-| `EMAIL_API_KEY` / `EMAIL_FROM` | unset | Enables real password-reset email delivery |
-| `EMAIL_API_URL` | Resend endpoint | Override for a different provider |
-| `API_ORIGIN` | unset | Public URL of the API when the site is hosted elsewhere (GitHub Pages). Makes media URLs absolute; leave unset for a single-origin deployment |
-| `ALLOWED_ORIGINS` | unset | Comma-separated extra origins allowed to call the API (credentialed CORS). `APP_ORIGIN` is always allowed |
-| `CROSS_SITE_COOKIES` | unset | `1` issues `SameSite=None; Secure` session cookies for a split deployment. Safari blocks these — see DEPLOY.md |
-| `VITE_API_ORIGIN` | unset | Build-time API base for the client (`VITE_API_ORIGIN=https://api.example npm run build`) |
-
-Upload limits are also served to the browser through `/api/config`, so the form and the server always agree.
-
-### Password reset email
-
-Out of the box the reset link is printed to the server log (and returned in the API response in development). For a public deployment, set:
+**First moderator.** Sign up on the site with your own account, open `#/admin`,
+and paste the setup token from `.secrets/admin-code.txt` (git-ignored, mode 600).
+The claim endpoint only works while no moderator exists, and the token never
+ships in the site bundle. Alternative, if you have Wrangler access:
 
 ```bash
-EMAIL_API_KEY=re_...
-EMAIL_FROM="GoatMedia <no-reply@your-domain.example>"
+npx wrangler d1 execute goatmedia --remote \
+  --command "UPDATE users SET role='admin' WHERE username='yourname'"
 ```
 
-Delivery is a single `POST` to a Resend-compatible `/emails` endpoint using `fetch`, so no SDK is involved and swapping providers means changing `EMAIL_API_URL`. If nothing is configured in production, the server logs a warning instead of silently pretending an email was sent.
+## Limits and configuration
 
-## How moderation works
-
-1. A signed-in user submits a video. The file lands in `.data/tmp`, outside anything the web server serves.
-2. Server-side validation runs first: MIME type and extension, size, and — when `ffmpeg` is present — duration and codec. Rejections explain exactly what failed.
-3. The video is re-encoded (location and other metadata stripped, `moov` moved to the front) into `.data/media`, a poster frame goes to `.data/posters`, and the row is created with status `pending`.
-4. A moderator opens `/admin`, watches the clip inline, and approves or rejects it. Rejecting requires a reason the creator sees on their profile.
-5. Only `approved` videos are returned by feed, search, profile, trending or media routes. Pending media is served through an authenticated route that allows the owner and the moderator only — there is no public path or predictable file URL to guess.
-6. Editing the caption or category of a published video sends it back to `pending`. It disappears from public surfaces until it is re-approved.
-
-Every decision is written to `moderation_events` and shown in the video's history panel. Reports from users land in the same dashboard, and resolving one can remove the video or dismiss the report.
-
-Moderation stays manual regardless of user count. `moderation.mode` in `server/config.ts` is a constant, not a feature flag, and nothing in the upload or moderation path branches on registered-user totals.
-
-## The recommendation system
-
-`server/recommend.ts` is a scoring model, not a black box. Each candidate video gets a score built from:
-
-- **Interest match** — the user's category and hashtag weights, learned from interactions and decayed with a 30-day half-life.
-- **Watch quality** — completion ratio and rewatch count, which separate "watched it twice" from "swiped past".
-- **Creator affinity** — follows and past completions on that creator's videos.
-- **Freshness** — newer approved videos get a modest lift.
-- **Recent popularity** — engagement over the last week, not lifetime views.
-- **Negative signals** — explicit "not interested" is a hard block; fast swipes and repeated exposure push a video down.
-
-Interaction weights and feed composition are plain numbers at the top of `server/config.ts`:
-
-```ts
-interactionWeights = { complete: 5, rewatch: 6, like: 3, comment: 2, follow: 4, skip: -4, notInterested: -15 }
-feedMix = { personalized: 0.8, discovery: 0.15, trending: 0.05 }
-```
-
-The feed is assembled in that proportion, so roughly one in six videos comes from a creator or category outside the user's usual orbit, and 5% comes from trending. Repeated events are de-duplicated per video and per day so nobody can inflate their own interests by hammering a like button.
-
-Signed-out visitors get trending with freshness weighting; no personalisation is invented for them.
+- 6 photos per post, 1.8 MB each after browser resizing
+- 1.5 MB audio, 60 s name field, 400-character comments, 300-character captions
+- 0.4 MB avatars
+- 8 posts/hour, 12 comments/minute, 12 sign-in attempts per 10 minutes per IP
+- Feed quotas and interest weights live in `worker/config.ts`
 
 ## Testing
 
 ```bash
-npm run typecheck   # tsc --noEmit
-npm run smoke       # 60 end-to-end API checks
-npm run build       # production client bundle
+npm run typecheck     # app + Worker
+npm run api:check     # 64 checks: auth, privacy, moderation, feeds, sounds, CORS
+API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev node scripts/live-check.mjs
 ```
 
-`npm run smoke` starts a server against a throwaway database in a temp directory, never touches `.data`, and covers registration, sign-in, upload validation, pending-video privacy (including guessed media URLs), approval and rejection, feed visibility, likes, comments, follows, watch tracking, not-interested, search, re-review after edits, reports, removals, suspensions, password reset, config leakage and cross-origin protection.
-
-## Production
-
-```bash
-npm run build
-npm start           # NODE_ENV=production, serves dist/ and the API from one process
-```
-
-**[DEPLOY.md](DEPLOY.md)** has the hosting recommendation, the full server setup, HTTPS, backups, and the optional GitHub Pages split — including why serving the site from the server is more reliable than splitting it. There is no free host that is email-only, always-on and disk-backed at the same time; the closest options and their trade-offs are documented there.
-
-A `Dockerfile` with ffmpeg is included for hosts that build from an image:
-
-```bash
-docker build -t goatmedia .
-docker run -p 3001:3001 -v goatmedia-data:/app/.data -e APP_ORIGIN=https://your-domain.example goatmedia
-```
-
-Put it behind a TLS-terminating reverse proxy and set `APP_ORIGIN` to the public origin — cookies are `SameSite=Lax` and marked `Secure` in production, and state-changing requests are checked against the origin.
-
-Back up `.data/` (database plus private media). SQLite runs in WAL mode; copy the database with `sqlite3 .data/goatmedia.db ".backup backup.db"` or stop the server first.
-
-## Repository layout
-
-```
-server/          API, auth, moderation, recommendation, media pipeline
-  routes/        auth, videos, social, users, admin
-shared/          types and policy text shared by client and server
-src/             React app (pages, components, styles)
-scripts/         dev runner, seed, moderator CLI, smoke suite
-.data/           runtime data, never committed
-```
+`live-check.mjs` needs `.secrets/admin-code.txt` and creates throwaway accounts
+and posts. It is a smoke test, not a load test.
 
 ## Known limitations
 
-- **Single node.** SQLite and a local media directory mean one server process. Scale-out needs Postgres and object storage.
-- **Email needs configuration.** Reset links only appear in the log until `EMAIL_API_KEY` and `EMAIL_FROM` are set.
-- **No automated moderation, ever, by request.** At 1,000 users the queue will need your attention; the code makes no attempt to shortcut it.
-- **Uploads need `ffmpeg`.** Without it, uploads are stored as-is and duration limits cannot be enforced, so install it in any real deployment.
-- **No direct messages.** Out of scope for this version, as requested.
-- **Sample footage is Wikimedia Commons material**, credited in the UI. Replace it with your own clips before showing the site to anyone.
-- **Adult supervision, hosting accounts, and privacy/legal review are not code.** The app ships community guidelines, privacy notes and terms, but someone still has to own them before the site is public.
+- **No email provider connected.** Password reset links are shown on screen
+  instead of being emailed. Wire an email service into
+  `worker/routes/auth.ts` before opening the site widely.
+- **Manual moderation is one person, one queue.** A backlog is a feature of the
+  design, not a bug, but it has no SLA.
+- **D1 blob storage** is a pragmatic answer to a card-free requirement, not the
+  cheapest way to serve media at scale. R2 with a payment method is the upgrade
+  path; media URLs are stable, so only `worker/routes/media.ts` and the upload
+  path change.
+- **Free-plan CPU.** Password hashing uses PBKDF2 with 6,000 iterations plus a
+  server-side pepper so it fits the 10 ms CPU budget. On Workers Paid, raise
+  `PASSWORD_ITERATIONS`.
+- **Local workerd** cannot run on this machine (macOS 12.6); the API harness in
+  `scripts/api-check.ts` exists for that reason.
+- No direct messages, no self-service account deletion yet (ask the moderator),
+  photos are immutable after posting (edit the caption or repost).

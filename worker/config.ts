@@ -1,0 +1,76 @@
+// Server-owned policy: limits, categories, recommendation weights.
+
+export const limits = {
+  maxPhotos: 6,
+  maxPhotoMb: 1.8,
+  maxAudioMb: 1.5,
+  maxAvatarMb: 0.4,
+  maxCaptionLength: 300,
+  maxBioLength: 200,
+  maxCommentsPerMinute: 12,
+  maxPostsPerHour: 8,
+  feedPageSize: 6,
+  commentsPageSize: 20,
+};
+
+export const categories = [
+  { id: 'baby-goats', label: 'Baby goats', blurb: 'Kids finding their legs' },
+  { id: 'parkour', label: 'Goat parkour', blurb: 'Climbing, leaping, standing on things' },
+  { id: 'farm-life', label: 'Farm life', blurb: 'Daily routines and barnyard characters' },
+  { id: 'mountain-goats', label: 'Mountain goats', blurb: 'Wild herds, cliffs and altitude' },
+  { id: 'goat-sounds', label: 'Goat sounds', blurb: 'Bleats, trills and other opinions' },
+  { id: 'rescue-care', label: 'Rescue & care', blurb: 'Rehomed goats and good husbandry' },
+];
+
+export const categoryById = new Map(categories.map((c) => [c.id, c]));
+
+/**
+ * Starting weights for the interest model. Plain numbers on purpose: they can
+ * be read, explained and tuned without a training pipeline.
+ */
+export const interactionWeights = {
+  complete: 5,
+  rewatch: 6,
+  like: 3,
+  comment: 2,
+  follow: 4,
+  skip: -4,
+  notInterested: -15,
+} as const;
+
+export const feedMix = {
+  personalized: 0.8,
+  discovery: 0.15,
+  trending: 0.05,
+} as const;
+
+export const postReportReasons = [
+  'Not actually a goat',
+  'Animal mistreatment',
+  'Spam or misleading',
+  'Harassment or hate',
+  'Something else',
+];
+
+export const commentReportReasons = ['Spam', 'Harassment', 'Hate speech', 'Something else'];
+
+export const rejectionReasons = [
+  'Not goat-related',
+  'Looks like animal mistreatment',
+  'Poor photo quality',
+  'Photos belong to someone else',
+  'Duplicate post',
+  'Caption or tags need work',
+  'Something else',
+];
+
+export const guidelines = [
+  'Goats only. Goats with other animals are fine, as long as a goat is the point.',
+  'Treat animals well. No distress, injury, baiting or unsafe handling.',
+  'Post your own photos, or credit the person who took them.',
+  'No personal information about other people, and no harassment.',
+  'Every post is looked at by a human before it goes live.',
+];
+
+/** Manual moderation is the default at every size. */
+export const moderation = 'manual' as const;

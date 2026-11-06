@@ -1,838 +1,837 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import type {
+  AdminPostDetail,
   AdminQueueItem,
+  AdminReport,
   AdminUserRow,
   ModerationCounts,
-  ModerationEventDTO,
-  ReportDTO,
-} from '../../shared/types.ts';
-import { api } from '../lib/api.ts';
-import { useAuth } from '../lib/auth.tsx';
-import { useConfig } from '../lib/config.tsx';
-import { useToast } from '../lib/toast.tsx';
-import { clearFeedCache } from '../lib/feedCache.ts';
-import { useDebouncedValue, useDocumentTitle } from '../lib/hooks.ts';
-import { compactNumber, formatDate, timeAgo } from '../lib/format.ts';
-import { Avatar } from '../components/Avatar.tsx';
-import { Icon } from '../components/Icon.tsx';
-import { Player } from '../components/Player.tsx';
-import { StatusTag } from '../components/StatusTag.tsx';
+} from '../../shared/types';
+import { Icon } from '../components/Icon';
+import { PhotoCarousel } from '../components/PhotoCarousel';
+import { StatusBadge } from '../components/StatusBadge';
+import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { count, fullDate, relativeTime } from '../lib/format';
+import { useToast } from '../lib/toast';
 
-type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts';
+type Section = 'queue' | 'reports' | 'accounts' | 'sounds';
+type Status = 'pending' | 'approved' | 'rejected' | 'removed';
 
-const VIDEO_TAB_STATUS: Record<string, string> = {
-  pending: 'pending',
-  approved: 'approved',
-  rejected: 'rejected',
-  removed: 'removed',
-};
-
-const ACTION_LABEL: Record<ModerationEventDTO['action'], string> = {
-  submit: 'Submitted for review',
-  approve: 'Approved and published',
-  reject: 'Rejected',
-  remove: 'Removed',
-  resubmit: 'Resubmitted after an edit',
-};
-
-function History({ events }: { events: ModerationEventDTO[] }) {
-  return (
-    <ol className="history">
-      {events.map((event) => (
-        <li key={event.id} className="history__item">
-          <span className="history__dot" aria-hidden="true" />
-          <div>
-            <p className="history__action">{ACTION_LABEL[event.action]}</p>
-            {event.reason ? <p className="history__reason">{event.reason}</p> : null}
-            <p className="history__meta">
-              {timeAgo(event.createdAt)}
-              {event.adminUsername ? ` · by @${event.adminUsername}` : ''}
-            </p>
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
+interface AdminSound {
+  id: string;
+  title: string;
+  url: string;
+  createdAt: number;
+  ownerUsername: string;
+  useCount: number;
+  postCount: number;
+  size: number;
+  durationMs: number;
 }
 
 export function AdminPage() {
-  useDocumentTitle('Moderation');
-  const { user, loading } = useAuth();
-  const config = useConfig();
-  const { notify } = useToast();
-  const isAdmin = user?.role === 'admin';
+  const { me, loading } = useAuth();
 
-  const [tab, setTab] = useState<Tab>('pending');
-  const [counts, setCounts] = useState<ModerationCounts | null>(null);
-  const [videos, setVideos] = useState<AdminQueueItem[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [reports, setReports] = useState<ReportDTO[]>([]);
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [accounts, setAccounts] = useState<AdminUserRow[]>([]);
-  const [accountQuery, setAccountQuery] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const debouncedAccountQuery = useDebouncedValue(accountQuery, 280);
-  const [loadingList, setLoadingList] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectPreset, setRejectPreset] = useState('');
-  const [rejectNote, setRejectNote] = useState('');
-  const [removing, setRemoving] = useState(false);
-  const [removeReason, setRemoveReason] = useState('');
-  const [suspendOpen, setSuspendOpen] = useState(false);
-  const [suspendReason, setSuspendReason] = useState('');
+  if (loading) return <div className="column" aria-busy="true" />;
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    setSelectedId(null);
-    setSelectedReportId(null);
-    setSelectedUserId(null);
-    setRejecting(false);
-    setRemoving(false);
-    setSuspendOpen(false);
-    setActionError(null);
-  }, [tab, isAdmin]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    let cancelled = false;
-    setLoadingList(true);
-    setListError(null);
-
-    const load = async () => {
-      try {
-        const nextCounts = await api.get<ModerationCounts>('/api/admin/counts');
-        if (cancelled) return;
-        setCounts(nextCounts);
-        if (tab === 'reports') {
-          const data = await api.get<{ items: ReportDTO[] }>('/api/admin/reports?status=open');
-          if (cancelled) return;
-          setReports(data.items);
-          setSelectedReportId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-        } else if (tab === 'accounts') {
-          const data = await api.get<{ items: AdminUserRow[] }>(
-            `/api/admin/users?q=${encodeURIComponent(debouncedAccountQuery)}`,
-          );
-          if (cancelled) return;
-          setAccounts(data.items);
-          setSelectedUserId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-        } else {
-          const data = await api.get<{ items: AdminQueueItem[]; hasMore: boolean }>(
-            `/api/admin/videos?status=${VIDEO_TAB_STATUS[tab]}&page=1`,
-          );
-          if (cancelled) return;
-          setVideos(data.items);
-          setHasMore(data.hasMore);
-          setPage(1);
-          setSelectedId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-        }
-      } catch (error) {
-        if (!cancelled) setListError(error instanceof Error ? error.message : 'The moderation queue could not load.');
-      } finally {
-        if (!cancelled) setLoadingList(false);
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, isAdmin, debouncedAccountQuery]);
-
-  const refresh = async () => {
-    try {
-      const nextCounts = await api.get<ModerationCounts>('/api/admin/counts');
-      setCounts(nextCounts);
-      if (tab === 'reports') {
-        const data = await api.get<{ items: ReportDTO[] }>('/api/admin/reports?status=open');
-        setReports(data.items);
-        setSelectedReportId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-      } else if (tab === 'accounts') {
-        const data = await api.get<{ items: AdminUserRow[] }>(
-          `/api/admin/users?q=${encodeURIComponent(debouncedAccountQuery)}`,
-        );
-        setAccounts(data.items);
-        setSelectedUserId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-      } else {
-        const data = await api.get<{ items: AdminQueueItem[]; hasMore: boolean }>(
-          `/api/admin/videos?status=${VIDEO_TAB_STATUS[tab]}&page=1`,
-        );
-        setVideos(data.items);
-        setHasMore(data.hasMore);
-        setPage(1);
-        setSelectedId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-      }
-    } catch {
-      /* the visible list stays usable */
-    }
-  };
-
-  const runAction = async (action: () => Promise<{ message?: string }>) => {
-    setBusy(true);
-    setActionError(null);
-    try {
-      const result = await action();
-      notify(result.message ?? 'Done.');
-      clearFeedCache();
-      setRejecting(false);
-      setRemoving(false);
-      setSuspendOpen(false);
-      setRejectPreset('');
-      setRejectNote('');
-      setRemoveReason('');
-      setSuspendReason('');
-      await refresh();
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'That action did not go through.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const loadMore = async () => {
-    try {
-      const data = await api.get<{ items: AdminQueueItem[]; hasMore: boolean }>(
-        `/api/admin/videos?status=${VIDEO_TAB_STATUS[tab]}&page=${page + 1}`,
-      );
-      setVideos((current) => [...current, ...data.items]);
-      setHasMore(data.hasMore);
-      setPage((current) => current + 1);
-    } catch {
-      notify('Could not load more.', { tone: 'error' });
-    }
-  };
-
-  if (loading) {
+  if (!me) {
     return (
-      <div className="page">
-        <div className="feed-empty">
-          <div className="spinner spinner--dark" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="page">
-        <div className="empty-state" style={{ paddingTop: 48 }}>
+      <div className="column column--reading">
+        <div className="empty">
           <Icon name="shield" size={26} />
-          <h2>Moderation is for the moderator</h2>
-          <p>
-            This dashboard is restricted on the server, not just hidden in the interface. If you run this installation,
-            create an administrator account with the setup script.
-          </p>
-          <Link className="btn btn--primary" to="/">
-            Back to the feed
+          <p className="empty__title">Moderation is protected</p>
+          <p>Sign in with the moderator account to review posts.</p>
+          <Link to="/signin" className="button">
+            Sign in
           </Link>
         </div>
       </div>
     );
   }
 
-  const selected = videos.find((item) => item.id === selectedId) ?? null;
-  const selectedReport = reports.find((item) => item.id === selectedReportId) ?? null;
-  const selectedAccount = accounts.find((item) => item.id === selectedUserId) ?? null;
-  const videoTabs: Tab[] = ['pending', 'approved', 'rejected', 'removed'];
+  if (me.role !== 'admin') return <ClaimAdmin />;
+  return <Dashboard />;
+}
+
+function ClaimAdmin() {
+  const { refresh } = useAuth();
+  const toast = useToast();
+  const [token, setToken] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   return (
-    <div className="page page--wide admin-page">
-      <div className="page-head admin-head">
+    <div className="column column--reading">
+      <div className="empty">
+        <Icon name="shield" size={26} />
+        <p className="empty__title">This area is for the GoatMedia moderator</p>
+        <p>
+          Permissions are checked on the server, so this page cannot be unlocked from the browser.
+          If you run this deployment, the Worker has a one-time setup token that promotes the first
+          account to moderator.
+        </p>
+      </div>
+      <form
+        className="form claim"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setBusy(true);
+          setError(null);
+          try {
+            await api.claimAdmin(token.trim());
+            await refresh();
+            toast('You are now the moderator', 'success');
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label className="field">
+          <span className="field__label">Setup token</span>
+          <input
+            className="input"
+            type="password"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            placeholder="ADMIN_SETUP_TOKEN"
+            autoComplete="off"
+          />
+          <span className="field__hint">
+            Set with <code>wrangler secret put ADMIN_SETUP_TOKEN</code>. It only works while no
+            moderator exists.
+          </span>
+        </label>
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <button type="submit" className="button" disabled={busy || !token.trim()}>
+          {busy ? 'Checking…' : 'Claim moderator access'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function Dashboard() {
+  const toast = useToast();
+  const [section, setSection] = useState<Section>('queue');
+  const [status, setStatus] = useState<Status>('pending');
+  const [counts, setCounts] = useState<ModerationCounts | null>(null);
+  const [items, setItems] = useState<AdminQueueItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [reports, setReports] = useState<AdminReport[]>([]);
+  const [accounts, setAccounts] = useState<AdminUserRow[]>([]);
+  const [accountQuery, setAccountQuery] = useState('');
+  const [sounds, setSounds] = useState<AdminSound[]>([]);
+
+  const loadCounts = useCallback(async () => {
+    try {
+      setCounts(await api.adminCounts());
+    } catch (error) {
+      toast((error as Error).message, 'error');
+    }
+  }, [toast]);
+
+  const loadQueue = useCallback(
+    async (nextStatus: Status, nextPage: number, replace = true) => {
+      setLoading(true);
+      try {
+        const result = await api.adminQueue(nextStatus, nextPage);
+        setItems((current) => (replace ? result.items : [...current, ...result.items]));
+        setHasMore(result.hasMore);
+        setPage(nextPage);
+      } catch (error) {
+        toast((error as Error).message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [toast],
+  );
+
+  useEffect(() => {
+    void loadCounts();
+  }, [loadCounts]);
+
+  useEffect(() => {
+    if (section === 'queue') void loadQueue(status, 1);
+    if (section === 'reports') {
+      api
+        .adminReports('open')
+        .then((result) => setReports(result.reports))
+        .catch((error: Error) => toast(error.message, 'error'));
+    }
+    if (section === 'accounts') {
+      api
+        .adminUsers('')
+        .then((result) => setAccounts(result.users))
+        .catch((error: Error) => toast(error.message, 'error'));
+    }
+    if (section === 'sounds') {
+      api
+        .adminSounds()
+        .then((result) => setSounds(result.sounds))
+        .catch((error: Error) => toast(error.message, 'error'));
+    }
+  }, [section, status, loadQueue, toast]);
+
+  const refreshAfterDecision = async () => {
+    await Promise.all([loadCounts(), loadQueue(status, 1)]);
+  };
+
+  return (
+    <div className="admin">
+      <header className="page-head admin__head">
         <div>
           <h1 className="page-title">Moderation</h1>
-          <p className="page-sub">
-            Every upload waits for you. Approve only what you have actually watched.
+          <p className="page-blurb">
+            Every post waits here. Open one, look at the photos, then approve or reject with a
+            reason the creator will read.
           </p>
         </div>
-        <div className="admin-head__counts">
-          <span>
-            <strong>{counts?.pending ?? 0}</strong> waiting
-          </span>
-          <span>
-            <strong>{counts?.openReports ?? 0}</strong> open reports
-          </span>
-        </div>
-      </div>
+        {counts ? (
+          <dl className="counts">
+            <div>
+              <dt>Waiting</dt>
+              <dd>{counts.pending}</dd>
+            </div>
+            <div>
+              <dt>Live</dt>
+              <dd>{counts.approved}</dd>
+            </div>
+            <div>
+              <dt>Reports</dt>
+              <dd>{counts.openReports}</dd>
+            </div>
+            <div>
+              <dt>Accounts</dt>
+              <dd>{counts.users}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </header>
 
-      <div className="admin-tabs" role="tablist" aria-label="Moderation sections">
-        {videoTabs.map((item) => (
+      <div className="segmented segmented--wide" role="tablist" aria-label="Moderation sections">
+        {(
+          [
+            ['queue', 'Queue'],
+            ['reports', `Reports${counts?.openReports ? ` (${counts.openReports})` : ''}`],
+            ['accounts', 'Accounts'],
+            ['sounds', 'Sounds'],
+          ] as const
+        ).map(([value, label]) => (
           <button
-            key={item}
+            key={value}
             type="button"
             role="tab"
-            aria-selected={tab === item}
-            className={`admin-tab${tab === item ? ' is-active' : ''}`}
-            onClick={() => setTab(item)}
+            aria-selected={section === value}
+            className={section === value ? 'is-active' : ''}
+            onClick={() => setSection(value)}
           >
-            {item === 'pending' ? 'Pending' : item === 'approved' ? 'Approved' : item === 'rejected' ? 'Rejected' : 'Removed'}
-            <span className="admin-tab__count">{counts?.[item as keyof ModerationCounts] ?? 0}</span>
+            {label}
           </button>
         ))}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'reports'}
-          className={`admin-tab${tab === 'reports' ? ' is-active' : ''}`}
-          onClick={() => setTab('reports')}
-        >
-          Reports
-          <span className="admin-tab__count">{counts?.openReports ?? 0}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'accounts'}
-          className={`admin-tab${tab === 'accounts' ? ' is-active' : ''}`}
-          onClick={() => setTab('accounts')}
-        >
-          Accounts
-        </button>
       </div>
 
-      {listError ? (
-        <div className="notice notice--error">
-          <Icon name="alert" size={18} />
-          <p>{listError}</p>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setTab(tab)}>
-            Reload
-          </button>
-        </div>
-      ) : null}
-
-      {tab === 'reports' ? (
-        <div className="admin-layout">
-          <div className="admin-list">
-            {loadingList ? (
-              <div className="admin-loading">Loading reports…</div>
-            ) : reports.length === 0 ? (
-              <div className="admin-loading">No open reports. Quiet week for goats.</div>
-            ) : (
-              <ul>
-                {reports.map((report) => (
-                  <li key={report.id}>
-                    <button
-                      type="button"
-                      className={`queue-row${selectedReportId === report.id ? ' is-selected' : ''}`}
-                      onClick={() => setSelectedReportId(report.id)}
-                      aria-current={selectedReportId === report.id}
-                    >
-                      <span className="queue-row__body">
-                        <span className="queue-row__title">
-                          {report.targetType === 'video'
-                            ? report.video?.caption || 'Reported video'
-                            : report.comment?.body || 'Reported comment'}
-                        </span>
-                        <span className="queue-row__meta">
-                          {report.reason} · @{report.reporterUsername} · {timeAgo(report.createdAt)}
-                        </span>
-                      </span>
-                      <span className={`queue-row__type ${report.targetType}`}>{report.targetType}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+      {section === 'queue' ? (
+        <>
+          <div className="segmented segmented--subtle" role="tablist" aria-label="Post status">
+            {(
+              [
+                ['pending', `Pending${counts ? ` (${counts.pending})` : ''}`],
+                ['approved', 'Approved'],
+                ['rejected', 'Rejected'],
+                ['removed', 'Removed'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={status === value}
+                className={status === value ? 'is-active' : ''}
+                onClick={() => setStatus(value)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          <div className="admin-detail">
-            {!selectedReport ? (
-              <div className="admin-empty">Select a report to see it.</div>
-            ) : (
-              <>
-                <div className="admin-detail__head">
-                  <div>
-                    <p className="admin-detail__kind">Report · {selectedReport.targetType}</p>
-                    <h2>{selectedReport.reason}</h2>
-                    <p className="section-note">
-                      Sent by @{selectedReport.reporterUsername} {timeAgo(selectedReport.createdAt)}
-                    </p>
-                  </div>
-                  <StatusTag status={selectedReport.status === 'open' ? 'pending' : 'approved'} />
-                </div>
-
-                {selectedReport.note ? <p className="report-note">{selectedReport.note}</p> : null}
-
-                {selectedReport.video ? (
-                  <div className="report-target">
-                    <Player
-                      key={selectedReport.video.id}
-                      src={selectedReport.video.videoUrl}
-                      poster={selectedReport.video.posterUrl}
-                      active
-                    />
-                    <div className="report-target__meta">
-                      <Link className="textlink" to={`/v/${selectedReport.video.id}`}>
-                        {selectedReport.video.caption || 'Open video'}
-                      </Link>
-                      <span className="section-note">
-                        @{selectedReport.video.creatorUsername} · {selectedReport.video.status}
-                      </span>
-                    </div>
-                  </div>
-                ) : selectedReport.comment ? (
-                  <div className="report-comment">
-                    <p>“{selectedReport.comment.body}”</p>
-                    <p className="section-note">
-                      @{selectedReport.comment.authorUsername} ·{' '}
-                      <Link className="textlink" to={`/v/${selectedReport.comment.videoId}`}>
-                        View the video
-                      </Link>
-                    </p>
-                  </div>
-                ) : null}
-
-                {actionError ? <p className="field__error">{actionError}</p> : null}
-                <div className="admin-actions">
-                  <button
-                    type="button"
-                    className="btn btn--primary"
-                    disabled={busy}
-                    onClick={() => runAction(() => api.post(`/api/admin/reports/${selectedReport.id}/resolve`, { action: 'remove_content' }))}
-                  >
-                    Remove content
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--quiet"
-                    disabled={busy}
-                    onClick={() => runAction(() => api.post(`/api/admin/reports/${selectedReport.id}/resolve`, { action: 'dismiss' }))}
-                  >
-                    Dismiss report
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      ) : tab === 'accounts' ? (
-        <div className="admin-layout">
-          <div className="admin-list">
-            <div className="admin-list__search">
-              <div className="searchbox">
-                <Icon name="search" size={17} />
-                <input
-                  className="input"
-                  type="search"
-                  placeholder="Search accounts"
-                  aria-label="Search accounts"
-                  value={accountQuery}
-                  onChange={(event) => setAccountQuery(event.target.value)}
-                />
-              </div>
-            </div>
-            {loadingList ? (
-              <div className="admin-loading">Loading accounts…</div>
-            ) : accounts.length === 0 ? (
-              <div className="admin-loading">No accounts match that search.</div>
-            ) : (
-              <ul>
-                {accounts.map((account) => (
-                  <li key={account.id}>
-                    <button
-                      type="button"
-                      className={`queue-row${selectedUserId === account.id ? ' is-selected' : ''}`}
-                      onClick={() => setSelectedUserId(account.id)}
-                      aria-current={selectedUserId === account.id}
-                    >
-                      <Avatar displayName={account.displayName} username={account.username} size={30} />
-                      <span className="queue-row__body">
-                        <span className="queue-row__title">{account.displayName}</span>
-                        <span className="queue-row__meta">
-                          @{account.username} · {account.videoCount} videos
-                        </span>
-                      </span>
-                      {account.status === 'suspended' ? <span className="queue-row__type">Suspended</span> : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="admin-detail">
-            {!selectedAccount ? (
-              <div className="admin-empty">Select an account.</div>
-            ) : (
-              <>
-                <div className="admin-detail__head">
-                  <div className="creator">
-                    <Avatar
-                      displayName={selectedAccount.displayName}
-                      username={selectedAccount.username}
-                      size={44}
-                    />
-                    <div>
-                      <h2>{selectedAccount.displayName}</h2>
-                      <p className="section-note">@{selectedAccount.username}</p>
-                    </div>
-                  </div>
-                  <span
-                    className={`status-tag status-tag--${selectedAccount.status === 'suspended' ? 'rejected' : 'approved'}`}
-                  >
-                    {selectedAccount.status === 'suspended' ? 'Suspended' : 'Active'}
-                  </span>
-                </div>
-
-                <dl className="admin-facts">
-                  <div>
-                    <dt>Email</dt>
-                    <dd>{selectedAccount.email}</dd>
-                  </div>
-                  <div>
-                    <dt>Joined</dt>
-                    <dd>{formatDate(selectedAccount.createdAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Videos</dt>
-                    <dd>{selectedAccount.videoCount}</dd>
-                  </div>
-                  <div>
-                    <dt>Followers</dt>
-                    <dd>{compactNumber(selectedAccount.followerCount)}</dd>
-                  </div>
-                  <div>
-                    <dt>Role</dt>
-                    <dd>{selectedAccount.role === 'admin' ? 'Moderator' : 'Member'}</dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{selectedAccount.status === 'suspended' ? 'Suspended' : 'Active'}</dd>
-                  </div>
-                </dl>
-
-                {selectedAccount.suspendedReason ? (
-                  <p className="report-note">Suspension reason: {selectedAccount.suspendedReason}</p>
-                ) : null}
-
-                <div className="admin-actions">
-                  <Link className="btn btn--quiet btn--sm" to={`/u/${selectedAccount.username}`}>
-                    Open profile
-                  </Link>
-                  {selectedAccount.role === 'admin' ? null : selectedAccount.status === 'suspended' ? (
-                    <button
-                      type="button"
-                      className="btn btn--primary btn--sm"
-                      disabled={busy}
-                      onClick={() => runAction(() => api.post(`/api/admin/users/${selectedAccount.id}/unsuspend`))}
-                    >
-                      Reinstate account
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn--danger btn--sm"
-                      onClick={() => setSuspendOpen((current) => !current)}
-                    >
-                      Suspend account
-                    </button>
-                  )}
-                </div>
-
-                {suspendOpen ? (
-                  <div className="mod-panel">
-                    <div className="field">
-                      <label className="field__label" htmlFor="suspend-reason">
-                        Reason for suspension
-                      </label>
-                      <textarea
-                        id="suspend-reason"
-                        className="textarea"
-                        value={suspendReason}
-                        onChange={(event) => setSuspendReason(event.target.value)}
-                        placeholder="Shown to the account holder if they contact you."
-                      />
-                    </div>
-                    <div className="form-actions">
-                      <button
-                        type="button"
-                        className="btn btn--danger btn--sm"
-                        disabled={busy || suspendReason.trim().length < 3}
-                        onClick={() =>
-                          runAction(() =>
-                            api.post(`/api/admin/users/${selectedAccount.id}/suspend`, { reason: suspendReason }),
-                          )
-                        }
-                      >
-                        Suspend
-                      </button>
-                      <button type="button" className="btn btn--quiet btn--sm" onClick={() => setSuspendOpen(false)}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="admin-layout">
-          {!loadingList && videos.length === 0 ? (
-            <div className="admin-empty admin-empty--wide">
-              {tab === 'pending' ? 'Nothing waiting. Every goat is accounted for.' : 'Nothing here yet.'}
+          {loading && items.length === 0 ? (
+            <p className="feed__loading">Loading the queue…</p>
+          ) : items.length === 0 ? (
+            <div className="empty">
+              <p className="empty__title">
+                {status === 'pending' ? 'The queue is empty' : `No ${status} posts`}
+              </p>
+              <p>{status === 'pending' ? 'Nice. Go and look at some goats for fun.' : 'Nothing to show here.'}</p>
             </div>
           ) : (
-            <>
-          <div className="admin-list">
-            {tab === 'pending' ? (
-              <p className="admin-list__note">
-                Oldest first. Approving publishes immediately; rejecting requires a reason the creator can see.
+            <ul className="queue">
+              {items.map((item, index) => (
+                <li key={item.id} style={{ '--i': Math.min(index, 8) } as CSSProperties}>
+                  <button type="button" className="queue-row" onClick={() => setSelected(item.id)}>
+                    <span className="queue-row__thumb">
+                      {item.photos[0] ? <img src={item.photos[0].url} alt="" loading="lazy" /> : null}
+                      {item.photos.length > 1 ? (
+                        <span className="queue-row__count">{item.photos.length}</span>
+                      ) : null}
+                    </span>
+                    <span className="queue-row__body">
+                      <span className="queue-row__caption">{item.caption || 'No caption'}</span>
+                      <span className="muted">
+                        @{item.creator.username} · {item.categoryLabel} ·{' '}
+                        {relativeTime(item.createdAt)}
+                        {item.sound ? ` · sound: ${item.sound.title}` : ''}
+                      </span>
+                    </span>
+                    <StatusBadge status={item.status} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {hasMore ? (
+            <button
+              type="button"
+              className="button button--quiet"
+              onClick={() => loadQueue(status, page + 1, false)}
+            >
+              Load more
+            </button>
+          ) : null}
+        </>
+      ) : null}
+
+      {section === 'reports' ? (
+        <ReportsSection
+          reports={reports}
+          onChanged={async () => {
+            const result = await api.adminReports('open');
+            setReports(result.reports);
+            await loadCounts();
+          }}
+          onReview={(id) => setSelected(id)}
+        />
+      ) : null}
+
+      {section === 'accounts' ? (
+        <AccountsSection
+          accounts={accounts}
+          query={accountQuery}
+          onQuery={setAccountQuery}
+          onSearch={async (value) => {
+            try {
+              const result = await api.adminUsers(value);
+              setAccounts(result.users);
+            } catch (error) {
+              toast((error as Error).message, 'error');
+            }
+          }}
+          onChanged={async () => {
+            const result = await api.adminUsers(accountQuery);
+            setAccounts(result.users);
+          }}
+        />
+      ) : null}
+
+      {section === 'sounds' ? (
+        <section aria-label="Sounds">
+          <ul className="sound-admin">
+            {sounds.map((sound) => (
+              <li key={sound.id}>
+                <div className="sound-admin__head">
+                  <strong>{sound.title}</strong>
+                  <span className="muted">
+                    @{sound.ownerUsername} · {relativeTime(sound.createdAt)} · {sound.useCount} uses ·{' '}
+                    {Math.round(sound.size / 1024)} KB
+                  </span>
+                </div>
+                <audio controls preload="none" src={sound.url} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {selected ? (
+        <ReviewDialog
+          id={selected}
+          onClose={() => setSelected(null)}
+          onDecided={async () => {
+            setSelected(null);
+            await refreshAfterDecision();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ReportsSection({
+  reports,
+  onChanged,
+  onReview,
+}: {
+  reports: AdminReport[];
+  onChanged: () => Promise<void>;
+  onReview: (postId: string) => void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  if (reports.length === 0) {
+    return (
+      <div className="empty">
+        <p className="empty__title">No open reports</p>
+        <p>When someone flags a post, comment or account it lands here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="report-list">
+      {reports.map((report) => (
+        <li key={report.id} className="report-row">
+          <div className="report-row__head">
+            <strong>{report.reason}</strong>
+            <span className="muted">
+              {report.targetType} · reported by @{report.reporterUsername} ·{' '}
+              {relativeTime(report.createdAt)}
+            </span>
+          </div>
+          {report.note ? <p className="report-row__note">“{report.note}”</p> : null}
+          {report.post ? (
+            <p className="report-row__target">
+              Post: “{report.post.caption || 'No caption'}” by @{report.post.creatorUsername} ·{' '}
+              {report.post.status}
+            </p>
+          ) : null}
+          {report.comment ? (
+            <p className="report-row__target">
+              Comment by @{report.comment.authorUsername}: “{report.comment.body}”
+            </p>
+          ) : null}
+          {report.userTarget ? <p className="report-row__target">Account: @{report.userTarget}</p> : null}
+          <div className="report-row__actions">
+            {report.post ? (
+              <button type="button" className="button button--quiet button--small" onClick={() => onReview(report.post!.id)}>
+                Review post
+              </button>
+            ) : null}
+            {report.comment ? (
+              <button
+                type="button"
+                className="button button--quiet button--small"
+                onClick={() => onReview(report.comment!.postId)}
+              >
+                Review post
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="button button--quiet button--small"
+              disabled={busy === report.id}
+              onClick={async () => {
+                setBusy(report.id);
+                try {
+                  await api.adminResolveReport(report.id, 'dismiss');
+                  toast('Report dismissed');
+                  await onChanged();
+                } catch (error) {
+                  toast((error as Error).message, 'error');
+                } finally {
+                  setBusy(null);
+                }
+              }}
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              className="button button--small"
+              disabled={busy === report.id}
+              onClick={async () => {
+                setBusy(report.id);
+                try {
+                  await api.adminResolveReport(report.id, 'action');
+                  toast('Marked as handled');
+                  await onChanged();
+                } catch (error) {
+                  toast((error as Error).message, 'error');
+                } finally {
+                  setBusy(null);
+                }
+              }}
+            >
+              Mark handled
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AccountsSection({
+  accounts,
+  query,
+  onQuery,
+  onSearch,
+  onChanged,
+}: {
+  accounts: AdminUserRow[];
+  query: string;
+  onQuery: (value: string) => void;
+  onSearch: (value: string) => Promise<void>;
+  onChanged: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [suspendFor, setSuspendFor] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+
+  return (
+    <section aria-label="Accounts">
+      <form
+        className="search-form search-form--compact"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSearch(query);
+        }}
+      >
+        <Icon name="search" size={18} />
+        <label className="visually-hidden" htmlFor="account-search">
+          Search accounts
+        </label>
+        <input
+          id="account-search"
+          className="search-form__input"
+          type="search"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder="Username, name or email"
+        />
+        <button type="submit" className="button button--small">
+          Find
+        </button>
+      </form>
+
+      <ul className="account-list">
+        {accounts.map((account) => (
+          <li key={account.id} className="account-row">
+            <div className="account-row__main">
+              <Link to={`/u/${account.username}`} className="account-row__name">
+                {account.displayName} <span className="muted">@{account.username}</span>
+              </Link>
+              <span className="muted">
+                {account.email} · joined {fullDate(account.createdAt)} · {count(account.postCount)}{' '}
+                posts · {count(account.followerCount)} followers
+                {account.suspendedReason ? ` · suspended: ${account.suspendedReason}` : ''}
+              </span>
+            </div>
+            <div className="account-row__actions">
+              {account.role === 'admin' ? (
+                <span className="muted">Moderator</span>
+              ) : account.status === 'suspended' ? (
+                <button
+                  type="button"
+                  className="button button--quiet button--small"
+                  onClick={async () => {
+                    await api.adminSuspend(account.id, false);
+                    toast('Account restored');
+                    await onChanged();
+                  }}
+                >
+                  Restore
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="button button--quiet button--small"
+                  onClick={() => {
+                    setSuspendFor(suspendFor === account.id ? null : account.id);
+                    setReason('');
+                  }}
+                >
+                  Suspend
+                </button>
+              )}
+            </div>
+            {suspendFor === account.id ? (
+              <form
+                className="suspend-form"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!reason.trim()) return;
+                  try {
+                    await api.adminSuspend(account.id, true, reason.trim());
+                    toast('Account suspended');
+                    setSuspendFor(null);
+                    await onChanged();
+                  } catch (error) {
+                    toast((error as Error).message, 'error');
+                  }
+                }}
+              >
+                <label className="field">
+                  <span className="field__label">Reason shown to the account</span>
+                  <input
+                    className="input"
+                    value={reason}
+                    maxLength={200}
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="Repeated uploads of sheep"
+                    autoFocus
+                  />
+                </label>
+                <button type="submit" className="button button--small" disabled={!reason.trim()}>
+                  Suspend account
+                </button>
+              </form>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ReviewDialog({
+  id,
+  onClose,
+  onDecided,
+}: {
+  id: string;
+  onClose: () => void;
+  onDecided: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [detail, setDetail] = useState<AdminPostDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+  const [customReason, setCustomReason] = useState('');
+  const [busy, setBusy] = useState<'approve' | 'reject' | 'remove' | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .adminPost(id)
+      .then((result) => {
+        if (!cancelled) setDetail(result);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
+
+  const decide = async (action: 'approve' | 'reject' | 'remove') => {
+    if (action !== 'approve') {
+      const final = customReason.trim() || reason;
+      if (!final) {
+        setError('Choose a reason first.');
+        return;
+      }
+      setBusy(action);
+      try {
+        await api.adminDecide(id, action, final);
+        toast(action === 'reject' ? 'Rejected with a reason' : 'Post removed');
+        await onDecided();
+      } catch (err) {
+        setError((err as Error).message);
+        setBusy(null);
+      }
+      return;
+    }
+    setBusy('approve');
+    try {
+      await api.adminDecide(id, 'approve');
+      toast('Approved and published');
+      await onDecided();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="sheet-backdrop" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="review" role="dialog" aria-modal="true" aria-label="Review post">
+        <header className="review__head">
+          <div>
+            <h2 className="review__title">Review</h2>
+            {detail ? (
+              <p className="muted">
+                @{detail.post.creator.username} · {detail.post.creatorEmail} · joined{' '}
+                {fullDate(detail.post.creatorJoinedAt)}
               </p>
             ) : null}
-            {loadingList ? (
-              <div className="admin-loading">Loading queue…</div>
-            ) : (
-              <ul>
-                {videos.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className={`queue-row${selectedId === item.id ? ' is-selected' : ''}`}
-                      onClick={() => setSelectedId(item.id)}
-                      aria-current={selectedId === item.id}
-                    >
-                      <span className="queue-row__thumb">
-                        {item.posterUrl ? <img src={item.posterUrl} alt="" loading="lazy" /> : <Icon name="play" size={16} />}
-                      </span>
-                      <span className="queue-row__body">
-                        <span className="queue-row__title">{item.caption || 'Untitled goat video'}</span>
-                        <span className="queue-row__meta">
-                          @{item.creator.username} · {timeAgo(item.createdAt)}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {hasMore ? (
-              <div className="admin-list__more">
-                <button type="button" className="btn btn--quiet btn--sm" onClick={loadMore}>
-                  Load more
-                </button>
-              </div>
-            ) : null}
           </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close review">
+            <Icon name="close" />
+          </button>
+        </header>
 
-          <div className="admin-detail">
-            {!selected ? (
-              <div className="admin-empty">
-                {tab === 'pending' ? 'Nothing waiting for review.' : 'Select a video from the list.'}
-              </div>
-            ) : (
-              <>
-                <div className="admin-detail__player">
-                  <Player key={selected.id} src={selected.videoUrl} poster={selected.posterUrl} active />
+        {error ? <p className="form-error">{error}</p> : null}
+
+        {!detail ? (
+          <p className="feed__loading">Opening post…</p>
+        ) : (
+          <div className="review__body">
+            <div className="review__media">
+              <PhotoCarousel photos={detail.post.photos} caption={detail.post.caption} eager />
+              {detail.post.sound ? (
+                <div className="review__sound">
+                  <p>
+                    <Icon name="volume" size={16} /> {detail.post.sound.title} · @
+                    {detail.post.sound.owner.username}
+                  </p>
+                  <audio controls preload="none" src={detail.post.sound.url} />
                 </div>
+              ) : (
+                <p className="hint">No audio on this post.</p>
+              )}
+            </div>
 
-                <div className="admin-detail__head">
+            <div className="review__side">
+              <div className="review__facts">
+                <StatusBadge status={detail.post.status} />
+                <p className="review__caption">{detail.post.caption || 'No caption'}</p>
+                <dl className="fact-list fact-list--tight">
                   <div>
-                    <p className="admin-detail__kind">{selected.categoryLabel}</p>
-                    <h2>{selected.caption || 'Untitled goat video'}</h2>
-                    <p className="section-note">
-                      Submitted {formatDate(selected.createdAt)} · {selected.duration ? `${Math.round(selected.duration)}s` : 'length unknown'}
-                    </p>
+                    <dt>Category</dt>
+                    <dd>{detail.post.categoryLabel}</dd>
                   </div>
-                  <StatusTag status={selected.status} />
-                </div>
+                  <div>
+                    <dt>Tags</dt>
+                    <dd>{detail.post.hashtags.length ? detail.post.hashtags.map((t) => `#${t}`).join(' ') : 'None'}</dd>
+                  </div>
+                  <div>
+                    <dt>Photos</dt>
+                    <dd>{detail.post.photos.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Submitted</dt>
+                    <dd>{fullDate(detail.post.createdAt)}</dd>
+                  </div>
+                </dl>
+              </div>
 
-                {selected.hashtags.length ? (
-                  <p className="admin-tags">{selected.hashtags.map((tag) => `#${tag}`).join(' ')}</p>
+              <div className="review__history">
+                <h3>History</h3>
+                <ul>
+                  {detail.history.map((event) => (
+                    <li key={event.id}>
+                      <strong>{event.action}</strong>
+                      <span className="muted">
+                        {relativeTime(event.createdAt)}
+                        {event.adminUsername ? ` · ${event.adminUsername}` : ''}
+                        {event.reason ? ` · ${event.reason}` : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {detail.reports.length ? (
+                <div className="review__history">
+                  <h3>Reports on this post</h3>
+                  <ul>
+                    {detail.reports.map((report) => (
+                      <li key={report.id}>
+                        <strong>{report.reason}</strong>
+                        <span className="muted">
+                          @{report.reporterUsername} · {report.status}
+                          {report.note ? ` · ${report.note}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="review__actions">
+                {detail.post.status !== 'approved' ? (
+                  <button
+                    type="button"
+                    className="button button--wide"
+                    onClick={() => decide('approve')}
+                    disabled={busy !== null}
+                  >
+                    <Icon name="check" size={17} />
+                    {busy === 'approve' ? 'Approving…' : detail.post.status === 'pending' ? 'Approve and publish' : 'Put it live'}
+                  </button>
                 ) : null}
 
-                <div className="admin-creator">
-                  <Avatar
-                    displayName={selected.creator.displayName}
-                    username={selected.creator.username}
-                    avatarUrl={selected.creator.avatarUrl}
-                    size={38}
+                <label className="field">
+                  <span className="field__label">Reason for rejecting or removing</span>
+                  <select className="select" value={reason} onChange={(event) => setReason(event.target.value)}>
+                    <option value="">Choose a reason…</option>
+                    {detail.rejectionReasons.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="input"
+                    value={customReason}
+                    maxLength={200}
+                    onChange={(event) => setCustomReason(event.target.value)}
+                    placeholder="Or write your own"
                   />
-                  <div className="admin-creator__text">
-                    <Link className="creator__name" to={`/u/${selected.creator.username}`}>
-                      {selected.creator.displayName}
-                    </Link>
-                    <span className="creator__handle">@{selected.creator.username}</span>
-                  </div>
-                  <dl className="admin-creator__facts">
-                    <div>
-                      <dt>Email</dt>
-                      <dd>{selected.creatorEmail}</dd>
-                    </div>
-                    <div>
-                      <dt>Joined</dt>
-                      <dd>{formatDate(selected.creatorJoinedAt)}</dd>
-                    </div>
-                    <div>
-                      <dt>Uploads</dt>
-                      <dd>{selected.creatorUploads}</dd>
-                    </div>
-                    <div>
-                      <dt>Views</dt>
-                      <dd>{compactNumber(selected.viewCount)}</dd>
-                    </div>
-                  </dl>
+                </label>
+                <div className="review__buttons">
+                  <button
+                    type="button"
+                    className="button button--quiet"
+                    onClick={() => decide('reject')}
+                    disabled={busy !== null}
+                  >
+                    {busy === 'reject' ? 'Rejecting…' : 'Reject'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--danger"
+                    onClick={() => decide('remove')}
+                    disabled={busy !== null}
+                  >
+                    {busy === 'remove' ? 'Removing…' : 'Remove'}
+                  </button>
                 </div>
-
-                {actionError ? <p className="field__error">{actionError}</p> : null}
-
-                {selected.status === 'pending' ? (
-                  <>
-                    {rejecting ? (
-                      <div className="mod-panel">
-                        <div className="field">
-                          <label className="field__label" htmlFor="reject-preset">
-                            Reason category
-                          </label>
-                          <select
-                            id="reject-preset"
-                            className="select"
-                            value={rejectPreset}
-                            onChange={(event) => setRejectPreset(event.target.value)}
-                          >
-                            <option value="">Choose a reason</option>
-                            {(config?.rejectReasons ?? []).map((reason) => (
-                              <option key={reason} value={reason}>
-                                {reason}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="field">
-                          <label className="field__label" htmlFor="reject-note">
-                            Note for the creator
-                          </label>
-                          <textarea
-                            id="reject-note"
-                            className="textarea"
-                            value={rejectNote}
-                            onChange={(event) => setRejectNote(event.target.value)}
-                            placeholder="Say what would need to change, or leave this blank."
-                          />
-                        </div>
-                        <div className="form-actions">
-                          <button
-                            type="button"
-                            className="btn btn--danger btn--sm"
-                            disabled={busy || (!rejectPreset && rejectNote.trim().length < 3)}
-                            onClick={() =>
-                              runAction(() =>
-                                api.post(`/api/admin/videos/${selected.id}/reject`, {
-                                  reason: [rejectPreset, rejectNote.trim()].filter(Boolean).join(' — '),
-                                }),
-                              )
-                            }
-                          >
-                            {busy ? <span className="btn__spinner" /> : null}
-                            Reject video
-                          </button>
-                          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRejecting(false)}>
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="admin-actions">
-                        <button
-                          type="button"
-                          className="btn btn--primary btn--lg"
-                          disabled={busy}
-                          onClick={() => runAction(() => api.post(`/api/admin/videos/${selected.id}/approve`))}
-                        >
-                          {busy ? <span className="btn__spinner" /> : <Icon name="check" size={18} />}
-                          Approve and publish
-                        </button>
-                        <button type="button" className="btn btn--quiet" onClick={() => setRejecting(true)}>
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                    <p className="admin-hint">
-                      Approved videos appear in For You, Trending, search and the creator’s profile immediately.
-                    </p>
-                  </>
-                ) : selected.status === 'approved' ? (
-                  <>
-                    {removing ? (
-                      <div className="mod-panel">
-                        <div className="field">
-                          <label className="field__label" htmlFor="remove-reason">
-                            Why is this coming down?
-                          </label>
-                          <input
-                            id="remove-reason"
-                            className="input"
-                            value={removeReason}
-                            onChange={(event) => setRemoveReason(event.target.value)}
-                            placeholder="Rules issue, creator request, bad quality…"
-                          />
-                        </div>
-                        <div className="form-actions">
-                          <button
-                            type="button"
-                            className="btn btn--danger btn--sm"
-                            disabled={busy}
-                            onClick={() =>
-                              runAction(() =>
-                                api.post(`/api/admin/videos/${selected.id}/remove`, {
-                                  reason: removeReason || 'Removed by the moderator',
-                                }),
-                              )
-                            }
-                          >
-                            Remove from public
-                          </button>
-                          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRemoving(false)}>
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="admin-actions">
-                        <button
-                          type="button"
-                          className="btn btn--danger"
-                          onClick={() => setRemoving(true)}
-                          disabled={busy}
-                        >
-                          Remove from public
-                        </button>
-                        <Link className="btn btn--quiet" to={`/v/${selected.id}`}>
-                          Open video page
-                        </Link>
-                      </div>
-                    )}
-                  </>
-                ) : selected.status === 'rejected' ? (
-                  <div className="admin-actions">
-                    <button
-                      type="button"
-                      className="btn btn--primary"
-                      disabled={busy}
-                      onClick={() => runAction(() => api.post(`/api/admin/videos/${selected.id}/approve`))}
-                    >
-                      Approve after all
-                    </button>
-                  </div>
-                ) : (
-                  <p className="admin-hint">This video is removed and cannot be published again.</p>
-                )}
-
-                <div className="admin-history">
-                  <h3>Moderation history</h3>
-                  <History events={selected.moderationHistory} />
-                </div>
-              </>
-            )}
+                <p className="hint">
+                  The creator sees the reason. Rejecting keeps the post visible to them under “In
+                  review”, removing hides it everywhere.
+                </p>
+              </div>
+            </div>
           </div>
-            </>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

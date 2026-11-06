@@ -12,9 +12,9 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "noUnusedLocals": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "server", "scripts", "vite.config.ts"]
+  "include": ["src", "shared", "vite.config.ts"]
 }
