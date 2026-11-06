@@ -563,6 +563,12 @@ async function run() {
   });
   ok(moderatorStream.status === 206, 'the moderator can watch a pending video', moderatorStream.status);
 
+  const pendingQueue = await call('/api/admin/queue?status=pending', { token: adminToken });
+  const queuedVideo = pendingQueue.body.items.find((item: any) => item.id === videoId);
+  ok(queuedVideo?.kind === 'video', 'the moderation queue reports the media kind', queuedVideo?.kind);
+  ok(typeof queuedVideo?.videoUrl === 'string', 'the moderation queue sends a playable video url');
+  ok(queuedVideo?.creatorEmail === 'ada@example.com', 'the moderation queue keeps creator info');
+
   const approveVideo = await call(`/api/admin/posts/${videoId}/approve`, {
     method: 'POST',
     token: adminToken,

@@ -15,7 +15,7 @@ appears anywhere public.
 | `src/` | The browser app (React, TypeScript, Vite, BrowserRouter) |
 | `worker/` | The API: routing, auth, posts, feeds, moderation, media |
 | `migrations/` | D1 schema (users, posts, videos, photos, sounds, moderation, reports…) |
-| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (86 checks) |
+| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (101 checks) |
 | `scripts/live-check.mjs` | End-to-end checks against the deployed Worker (31 checks) |
 | `wrangler.jsonc` | Worker config, D1 binding, allowed site origins |
 
@@ -116,7 +116,7 @@ npx wrangler d1 execute goatmedia --remote \
 
 ```bash
 npm run typecheck     # app + Worker
-npm run api:check     # 86 checks: auth, privacy, moderation, feeds, media, video streaming, CORS
+npm run api:check     # 101 checks: auth, privacy, moderation, feeds, media, video streaming, CORS
 API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev node scripts/live-check.mjs
 ```
 

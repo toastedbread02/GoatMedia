@@ -62,14 +62,15 @@ export async function queue(req: Request, env: Env, origin: string, url: URL) {
   const status = statusOf(url.searchParams.get('status'));
   const { offset, page } = pageOf(url.searchParams.get('page'), 12);
 
+  // The queue has to carry the same columns as every other feed, otherwise a
+  // video arrives as a photo album with no photos and the review pane is blank.
+  const queueSelect = POST_SELECT.replace(
+    'u.status AS owner_status',
+    `u.status AS owner_status, u.email AS creator_email, u.created_at AS creator_joined_at,
+     (SELECT COUNT(*) FROM posts p2 WHERE p2.owner_id = u.id) AS creator_posts`,
+  );
   const rows = await env.DB.prepare(
-    `SELECT p.id, p.owner_id, p.caption, p.category, p.hashtags, p.sound_id, p.status,
-            p.reject_reason, p.removed_reason, p.created_at, p.updated_at, p.published_at,
-            p.view_count, p.like_count, p.comment_count,
-            u.username, u.display_name, u.avatar_version, u.status AS owner_status,
-            u.email AS creator_email, u.created_at AS creator_joined_at,
-            (SELECT COUNT(*) FROM posts p2 WHERE p2.owner_id = u.id) AS creator_posts
-       FROM posts p JOIN users u ON u.id = p.owner_id
+    `${queueSelect}
       WHERE p.status = ?
       ORDER BY ${status === 'pending' ? 'p.created_at ASC' : 'p.updated_at DESC'}
       LIMIT ? OFFSET ?`,
