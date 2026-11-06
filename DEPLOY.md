@@ -24,6 +24,14 @@ If you still want the split, the sections below cover it.
 
 ## Free hosting, honestly
 
+### Getting a public URL today, with no account at all
+
+`npm run public` (after `npm run build`) starts the app in production mode behind a free Cloudflare quick tunnel and prints an `https://…trycloudflare.com` URL. Nothing to sign up for, no card, no domain.
+
+The trade-offs are real: the URL only lives while the process does, it changes each time you start it, and this computer has to stay awake. It is the right tool for showing the site to people now, not for a permanent home.
+
+Anyone with the link can browse, sign up and upload. Nothing they upload becomes public — every video still waits in the moderation queue for you.
+
 ### Email-only signup (no card, no phone)
 
 I checked every current free tier. **None** offers all four of: email-only signup, an always-on process, a disk that survives restarts, and no sleeping. Two are close enough to try:

@@ -16,7 +16,9 @@ import type {
 } from '../../shared/types.ts';
 
 export const adminRouter = Router();
-adminRouter.use(requireAdmin);
+// Scope the guard to the moderator paths: mounted on all of /api it would answer
+// unknown endpoints with 403 "moderator only" instead of a plain 404.
+adminRouter.use('/admin', requireAdmin);
 
 /* --------------------------------- overview -------------------------------- */
 
