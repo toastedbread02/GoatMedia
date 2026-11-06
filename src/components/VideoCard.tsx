@@ -4,6 +4,7 @@ import type { VideoDTO } from '../../shared/types.ts';
 import { compactNumber, formatDuration, timeAgo } from '../lib/format.ts';
 import { StatusTag } from './StatusTag.tsx';
 import { Icon } from './Icon.tsx';
+import { AuthorizedImage } from './AuthorizedMedia.tsx';
 
 interface VideoCardProps {
   video: VideoDTO;
@@ -18,7 +19,11 @@ export function VideoCard({ video, showStatus = false, showCreator = false, inde
       <Link to={`/v/${video.id}`} className="videocard__link">
         <div className={`videocard__thumb${video.kind === 'photos' ? ' videocard__thumb--album' : ''}`}>
           {video.posterUrl ? (
-            <img src={video.posterUrl} alt="" loading="lazy" decoding="async" />
+            video.status === 'approved' ? (
+              <img src={video.posterUrl} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <AuthorizedImage src={video.posterUrl} fallbackIcon="play" fallbackSize={22} />
+            )
           ) : (
             <div className="videocard__fallback" aria-hidden="true">
               {video.categoryLabel.slice(0, 1)}

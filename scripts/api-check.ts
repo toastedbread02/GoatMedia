@@ -551,6 +551,17 @@ async function run() {
   ok(anonPoster.status === 404, 'pending poster bytes are unreachable too');
   const pendingDetail = await call(`/api/posts/${videoId}`);
   ok(pendingDetail.status === 404, 'a pending video is invisible to guests');
+  const pendingVideoDetail = await call(`/api/videos/${videoId}`, { token: tokenA });
+  ok(
+    pendingVideoDetail.status === 200 && pendingVideoDetail.body.video?.id === videoId,
+    'post detail still returns a video alias',
+    pendingVideoDetail.body,
+  );
+  const moderatorStream = await call(`/media/videos/${videoId}`, {
+    token: adminToken,
+    headers: { range: 'bytes=0-9' },
+  });
+  ok(moderatorStream.status === 206, 'the moderator can watch a pending video', moderatorStream.status);
 
   const approveVideo = await call(`/api/admin/posts/${videoId}/approve`, {
     method: 'POST',
@@ -562,6 +573,12 @@ async function run() {
 
   const liveVideo = await call(`/api/posts/${videoId}`);
   ok(liveVideo.status === 200 && liveVideo.body.post.kind === 'video', 'the approved video is public');
+  const ownFeed = await call('/api/feed?tab=foryou&page=1', { token: tokenA });
+  ok(
+    ownFeed.body.items.some((item: any) => item.id === videoId),
+    'creators can see their own approved posts in For You',
+    ownFeed.body.items.map((item: any) => item.id),
+  );
   const stream = await call(`/media/videos/${videoId}`, { headers: { range: 'bytes=0-99' } });
   ok(stream.status === 206, 'video streaming answers a range request', stream.status);
   ok(stream.headers.get('content-range') === `bytes 0-99/${MP4.byteLength}`, 'the range header describes the clip');

@@ -258,10 +258,12 @@ export async function forYouFeed(
   );
 
   const rows = (await candidates(env, userId)).filter((row) => {
-    if (userId && row.owner_id === userId) return false;
+    const own = Boolean(userId && row.owner_id === userId);
     if (blockedUsers.has(row.owner_id)) return false;
     if (ctx.suppressed.has(row.id)) return false;
-    if (ctx.recentViews.has(row.id)) return false;
+    // Your own approved posts belong in your feed; a post you already watched
+    // normally steps aside, but that would hide your own work from you.
+    if (!own && ctx.recentViews.has(row.id)) return false;
     return true;
   });
 

@@ -96,6 +96,26 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
 
+/**
+ * Pending media is served only to its owner and the moderator, and a <video>
+ * element cannot send an Authorization header. Fetching the bytes first and
+ * handing the element an object URL keeps that gate intact.
+ */
+export async function fetchMediaObjectUrl(url: string): Promise<string> {
+  const response = await fetch(withBase(url), { headers: authHeaders() });
+  if (!response.ok) {
+    let message = 'That video could not be loaded.';
+    try {
+      const payload = (await response.json()) as { error?: string };
+      if (payload?.error) message = payload.error;
+    } catch {
+      /* the body was not JSON */
+    }
+    throw new ApiError(message, response.status);
+  }
+  return URL.createObjectURL(await response.blob());
+}
+
 export function uploadWithProgress<T>(
   path: string,
   formData: FormData,

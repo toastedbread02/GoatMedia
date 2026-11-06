@@ -9,6 +9,7 @@ import { removeVideoFromCaches } from '../lib/feedCache.ts';
 import { compactNumber, formatDate, timeAgo } from '../lib/format.ts';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { Player } from '../components/Player.tsx';
+import { AuthorizedPlayer } from '../components/AuthorizedMedia.tsx';
 import { PhotoAlbum } from '../components/PhotoAlbum.tsx';
 import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
@@ -52,17 +53,19 @@ export function VideoPage() {
     setLoading(true);
     setError(null);
     api
-      .get<{ video: VideoDTO }>(`/api/videos/${id}`)
+      .get<{ post?: VideoDTO; video?: VideoDTO }>(`/api/videos/${id}`)
       .then((data) => {
         if (cancelled) return;
-        setVideo(data.video);
-        setLiked(data.video.liked);
-        setLikeCount(data.video.likeCount);
-        setCommentCount(data.video.commentCount);
-        setFollowing(data.video.creator.isFollowing);
-        setCaption(data.video.caption);
-        setCategory(data.video.category);
-        setHashtags(data.video.hashtags.join(' '));
+        const item = data.post ?? data.video;
+        if (!item) throw new Error('That post could not be loaded.');
+        setVideo(item);
+        setLiked(item.liked);
+        setLikeCount(item.likeCount);
+        setCommentCount(item.commentCount);
+        setFollowing(item.creator.isFollowing);
+        setCaption(item.caption);
+        setCategory(item.category);
+        setHashtags(item.hashtags.join(' '));
       })
       .catch((loadError) => {
         if (cancelled) return;
@@ -179,7 +182,14 @@ export function VideoPage() {
         <div className="video-column">
           <div className="video-player-wrap">
             {video.kind === 'photos' || !video.videoUrl ? (
-              <PhotoAlbum photos={video.photos} caption={video.caption} eager />
+              <PhotoAlbum
+                photos={video.photos}
+                caption={video.caption}
+                eager
+                gated={video.status !== 'approved'}
+              />
+            ) : video.status !== 'approved' ? (
+              <AuthorizedPlayer src={video.videoUrl} active />
             ) : (
               <Player
                 src={video.videoUrl}

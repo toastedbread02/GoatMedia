@@ -92,7 +92,8 @@ export async function postDetail(req: Request, env: Env, origin: string, id: str
     if (!privileged) throw missing('That post is not here.');
   }
   const [post] = await hydratePosts(env, origin, viewer?.id ?? null, [row]);
-  return json({ post });
+  // `video` stays as an alias so older clients (and the post page) keep working.
+  return json({ post, video: post });
 }
 
 async function publicSoundUsable(env: Env, soundId: string, userId: string) {

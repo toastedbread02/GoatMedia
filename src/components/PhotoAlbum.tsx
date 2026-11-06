@@ -1,12 +1,70 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PhotoRef } from '../../shared/types.ts';
 import { Icon } from './Icon.tsx';
+import { useAuthorizedMedia } from '../lib/media.ts';
 
 interface PhotoAlbumProps {
   photos: PhotoRef[];
   caption: string;
   className?: string;
   eager?: boolean;
+  /** Pending, rejected or removed posts need the session token to load. */
+  gated?: boolean;
+}
+
+function Slide({
+  photo,
+  caption,
+  eager,
+  gated,
+}: {
+  photo: PhotoRef;
+  caption: string;
+  eager: boolean;
+  gated: boolean;
+}) {
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const { src, error } = useAuthorizedMedia(photo.url, gated, attempt);
+  const broken = failed || Boolean(error);
+
+  if (broken) {
+    return (
+      <div className="album__failed">
+        <Icon name="alert" size={20} />
+        <p>This photo did not load.</p>
+        <button
+          type="button"
+          className="btn btn--quiet btn--sm"
+          onClick={() => {
+            setFailed(false);
+            setAttempt((current) => current + 1);
+          }}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (!src) {
+    return (
+      <div className="album__failed" role="status" aria-label="Loading photo">
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={caption || 'Goat photo'}
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      draggable={false}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 /**
@@ -14,10 +72,15 @@ interface PhotoAlbumProps {
  * the feed and a horizontal one turns the page. One photo renders as a plain
  * image with no controls at all.
  */
-export function PhotoAlbum({ photos, caption, className = '', eager = false }: PhotoAlbumProps) {
+export function PhotoAlbum({
+  photos,
+  caption,
+  className = '',
+  eager = false,
+  gated = false,
+}: PhotoAlbumProps) {
   const track = useRef<HTMLDivElement | null>(null);
   const [index, setIndex] = useState(0);
-  const [failed, setFailed] = useState<Record<string, boolean>>({});
   const multiple = photos.length > 1;
 
   const goTo = useCallback(
@@ -77,28 +140,7 @@ export function PhotoAlbum({ photos, caption, className = '', eager = false }: P
       >
         {photos.map((photo, position) => (
           <figure className="album__slide" key={photo.id}>
-            {failed[photo.id] ? (
-              <div className="album__failed">
-                <Icon name="alert" size={20} />
-                <p>This photo did not load.</p>
-                <button
-                  type="button"
-                  className="btn btn--quiet btn--sm"
-                  onClick={() => setFailed((current) => ({ ...current, [photo.id]: false }))}
-                >
-                  Try again
-                </button>
-              </div>
-            ) : (
-              <img
-                src={photo.url}
-                alt={caption || 'Goat photo'}
-                loading={eager && position === 0 ? 'eager' : 'lazy'}
-                decoding="async"
-                draggable={false}
-                onError={() => setFailed((current) => ({ ...current, [photo.id]: true }))}
-              />
-            )}
+            <Slide photo={photo} caption={caption} eager={eager && position === 0} gated={gated} />
           </figure>
         ))}
       </div>

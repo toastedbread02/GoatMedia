@@ -17,6 +17,7 @@ import { compactNumber, formatDate, timeAgo } from '../lib/format.ts';
 import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { Player } from '../components/Player.tsx';
+import { AuthorizedImage, AuthorizedPlayer } from '../components/AuthorizedMedia.tsx';
 import { PhotoAlbum } from '../components/PhotoAlbum.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
 
@@ -423,19 +424,18 @@ export function AdminPage() {
                 {selectedReport.video ? (
                   <div className="report-target">
                     {selectedReport.video.kind === 'video' && selectedReport.video.videoUrl ? (
-                      <Player
+                      <AuthorizedPlayer
                         key={selectedReport.video.id}
                         src={selectedReport.video.videoUrl}
-                        poster={selectedReport.video.posterUrl}
                         active
                       />
-                    ) : (
-                      <img
+                    ) : selectedReport.video.posterUrl ? (
+                      <AuthorizedImage
                         className="report-target__photo"
-                        src={selectedReport.video.posterUrl ?? ''}
-                        alt=""
+                        src={selectedReport.video.posterUrl}
+                        fallbackSize={22}
                       />
-                    )}
+                    ) : null}
                     <div className="report-target__meta">
                       <Link className="textlink" to={`/v/${selectedReport.video.id}`}>
                         {selectedReport.video.caption || 'Open video'}
@@ -668,7 +668,15 @@ export function AdminPage() {
                       aria-current={selectedId === item.id}
                     >
                       <span className="queue-row__thumb">
-                        {item.posterUrl ? <img src={item.posterUrl} alt="" loading="lazy" /> : <Icon name="play" size={16} />}
+                        {item.posterUrl ? (
+                          item.status === 'approved' ? (
+                            <img src={item.posterUrl} alt="" loading="lazy" />
+                          ) : (
+                            <AuthorizedImage src={item.posterUrl} fallbackIcon="play" />
+                          )
+                        ) : (
+                          <Icon name="play" size={16} />
+                        )}
                       </span>
                       <span className="queue-row__body">
                         <span className="queue-row__title">{item.caption || 'Untitled goat post'}</span>
@@ -699,9 +707,24 @@ export function AdminPage() {
               <>
                 <div className="admin-detail__player">
                   {selected.kind === 'video' && selected.videoUrl ? (
-                    <Player key={selected.id} src={selected.videoUrl} poster={selected.posterUrl} active />
+                    selected.status === 'approved' ? (
+                      <Player
+                        key={selected.id}
+                        src={selected.videoUrl}
+                        poster={selected.posterUrl}
+                        active
+                      />
+                    ) : (
+                      <AuthorizedPlayer key={selected.id} src={selected.videoUrl} active />
+                    )
                   ) : (
-                    <PhotoAlbum key={selected.id} photos={selected.photos} caption={selected.caption} eager />
+                    <PhotoAlbum
+                      key={selected.id}
+                      photos={selected.photos}
+                      caption={selected.caption}
+                      eager
+                      gated={selected.status !== 'approved'}
+                    />
                   )}
                 </div>
 
