@@ -16,6 +16,7 @@ export interface CreatorSummary {
   isFollowing: boolean;
   isSelf: boolean;
   isBlocked: boolean;
+  isModerator: boolean;
 }
 
 export interface PhotoRef {

@@ -167,7 +167,14 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
               <Link to={`/u/${video.creator.username}`} className="creator__name">
                 {video.creator.displayName}
               </Link>
-              <div className="creator__handle">@{video.creator.username}</div>
+              <div className="creator__handle">
+                <span className="creator__handle-text">@{video.creator.username}</span>
+                {video.creator.isModerator ? (
+                  <span className="modbadge" title="Moderator" aria-label="Moderator">
+                    <Icon name="shield" size={12} filled />
+                  </span>
+                ) : null}
+              </div>
             </div>
             {!video.creator.isSelf ? (
               <button

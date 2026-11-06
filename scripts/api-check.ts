@@ -392,6 +392,18 @@ async function run() {
   ok(reuse.status === 201 && reuse.body.post.sound.id === soundId, 'another creator can reuse a sound');
   ok(reuse.body.post.photos.length === 1, 'a single-photo post stores one photo');
 
+  const plainPost = await call('/api/posts', {
+    method: 'POST',
+    token: tokenB,
+    body: photoForm([{ bytes: PNG, type: 'image/png' }], {
+      caption: 'Bo is not a moderator',
+      category: 'parkour',
+      soundMode: 'none',
+    }),
+  });
+  ok(plainPost.body.post?.creator.isModerator === false, 'ordinary creators are not marked as moderators');
+  await call(`/api/posts/${plainPost.body.post.id}`, { method: 'DELETE', token: tokenB });
+
   console.log('\n[rejection]');
   const rejected = await call(`/api/admin/posts/${reuse.body.post.id}/reject`, {
     method: 'POST',
@@ -531,6 +543,7 @@ async function run() {
   ok(videoPost.body.post?.status === 'pending', 'a video post starts pending');
   ok(typeof videoPost.body.post?.videoUrl === 'string', 'the video has a stream url');
   ok(videoPost.body.post?.posterUrl?.includes('/media/posters/'), 'the video has a poster');
+  ok(videoPost.body.post?.creator.isModerator === true, 'the moderator badge travels with their posts');
 
   const anonVideo = await call(`/media/videos/${videoId}`);
   ok(anonVideo.status === 404, 'pending video bytes are unreachable when guessed');

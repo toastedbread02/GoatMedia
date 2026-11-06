@@ -31,6 +31,7 @@ export interface PostRow {
   avatar_version: number;
   has_avatar: number;
   owner_status: string;
+  owner_role: string;
 }
 
 export const POST_SELECT = `
@@ -40,7 +41,7 @@ export const POST_SELECT = `
          p.view_count, p.like_count, p.comment_count,
          (SELECT 1 FROM uploads up WHERE up.id = p.video_upload_id AND up.poster_bytes IS NOT NULL) AS has_poster,
          u.username, u.display_name, u.avatar_version,
-         (u.avatar_bytes IS NOT NULL) AS has_avatar, u.status AS owner_status
+         (u.avatar_bytes IS NOT NULL) AS has_avatar, u.status AS owner_status, u.role AS owner_role
     FROM posts p JOIN users u ON u.id = p.owner_id`;
 
 export function avatarUrl(
@@ -112,6 +113,7 @@ export interface PostDTO {
     isSelf: boolean;
     isFollowing: boolean;
     isBlocked: boolean;
+    isModerator: boolean;
   };
   reason: string | null;
 }
@@ -261,6 +263,7 @@ export async function hydratePosts(
         isSelf: viewerId === row.owner_id,
         isFollowing: following.has(row.owner_id),
         isBlocked: blocked.has(row.owner_id),
+        isModerator: row.owner_role === 'admin',
       },
       reason: null,
     };

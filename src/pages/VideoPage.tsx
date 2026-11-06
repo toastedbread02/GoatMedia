@@ -255,7 +255,14 @@ export function VideoPage() {
                 <Link className="creator__name" to={`/u/${video.creator.username}`}>
                   {video.creator.displayName}
                 </Link>
-                <span className="creator__handle">@{video.creator.username}</span>
+                <span className="creator__handle">
+                  <span className="creator__handle-text">@{video.creator.username}</span>
+                  {video.creator.isModerator ? (
+                    <span className="modbadge" title="Moderator" aria-label="Moderator">
+                      <Icon name="shield" size={12} filled />
+                    </span>
+                  ) : null}
+                </span>
               </div>
               {!isOwner ? (
                 <button

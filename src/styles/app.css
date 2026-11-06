@@ -4458,3 +4458,31 @@ ol {
     grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   }
 }
+
+/* ------------------------------ moderator mark ---------------------------- */
+
+.creator__handle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.creator__handle-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.videocard__creator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.modbadge {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+  line-height: 0;
+}

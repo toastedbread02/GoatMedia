@@ -39,7 +39,14 @@ export function VideoCard({ video, showStatus = false, showCreator = false, inde
             {timeAgo(video.publishedAt ?? video.createdAt)}
           </p>
           {showCreator ? (
-            <p className="videocard__creator">@{video.creator.username}</p>
+            <p className="videocard__creator">
+              @{video.creator.username}
+              {video.creator.isModerator ? (
+                <span className="modbadge" title="Moderator" aria-label="Moderator">
+                  <Icon name="shield" size={12} filled />
+                </span>
+              ) : null}
+            </p>
           ) : null}
         </div>
       </Link>
