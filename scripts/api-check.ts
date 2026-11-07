@@ -395,6 +395,15 @@ async function run() {
   ok(reuse.status === 201 && reuse.body.post.sound.id === soundId, 'another creator can reuse a sound');
   ok(reuse.body.post.photos.length === 1, 'a single-photo post stores one photo');
 
+  const soundQueue = await call('/api/admin/queue?status=pending', { token: adminToken });
+  const queuedAlbum = soundQueue.body.items.find((post: any) => post.id === reuse.body.post.id);
+  ok(queuedAlbum?.kind === 'photos', 'moderation queue marks a photo album as photos');
+  ok(queuedAlbum?.sound?.id === soundId, 'moderation queue carries the sound for review');
+  ok(
+    typeof queuedAlbum?.sound?.url === 'string' && queuedAlbum.sound.url.includes(`/media/sounds/${soundId}`),
+    'the queued sound has a URL the reviewer can play',
+  );
+
   const plainPost = await call('/api/posts', {
     method: 'POST',
     token: tokenB,

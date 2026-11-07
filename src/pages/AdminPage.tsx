@@ -19,6 +19,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Player } from '../components/Player.tsx';
 import { AuthorizedImage, AuthorizedPlayer } from '../components/AuthorizedMedia.tsx';
 import { PhotoAlbum } from '../components/PhotoAlbum.tsx';
+import { SoundStrip } from '../components/SoundStrip.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
 
 type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts';
@@ -727,6 +728,14 @@ export function AdminPage() {
                     />
                   )}
                 </div>
+
+                {selected.kind === 'photos' && selected.sound ? (
+                  <SoundStrip
+                    key={selected.sound.id}
+                    sound={selected.sound}
+                    gated={selected.status !== 'approved'}
+                  />
+                ) : null}
 
                 <div className="admin-detail__head">
                   <div>
