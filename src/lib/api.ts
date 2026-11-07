@@ -151,7 +151,8 @@ export function uploadWithProgress<T>(
         }),
       );
     };
-    xhr.onerror = () => reject(new ApiError('The upload lost its connection. Try again.', 0));
+    xhr.onerror = () =>
+      reject(new ApiError('The upload lost its connection. Send it again in a moment.', 0));
     xhr.ontimeout = () => reject(new ApiError('The upload timed out. Try again.', 0));
     xhr.send(formData);
   });
@@ -174,13 +175,30 @@ export async function uploadVideo(
   const total = Math.max(1, Math.ceil(file.size / chunkSize));
   for (let index = 0; index < total; index += 1) {
     const slice = file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize));
-    await uploadWithProgress(`/api/uploads/${start.uploadId}/chunks?index=${index}`, (() => {
-      const form = new FormData();
-      form.append('chunk', slice, `chunk-${index}`);
-      return form;
-    })(), (percent) => {
-      onProgress(Math.round(((index + percent / 100) / total) * 100));
-    });
+    const form = new FormData();
+    form.append('chunk', slice, `chunk-${index}`);
+
+    // A dropped connection on any single chunk used to throw away the whole
+    // upload. Re-sending just that slice costs a second and keeps the rest.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await uploadWithProgress(
+          `/api/uploads/${start.uploadId}/chunks?index=${index}`,
+          form,
+          (percent) => {
+            onProgress(Math.round(((index + percent / 100) / total) * 100));
+          },
+        );
+        break;
+      } catch (error) {
+        const status = error instanceof ApiError ? error.status : 0;
+        // 0 is a dropped connection, 5xx is the edge having a bad moment. A 4xx
+        // means the slice itself was refused, so trying again only wastes time.
+        const retriable = status === 0 || status >= 500;
+        if (!retriable || attempt >= 3) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
   }
 
   if (poster) {

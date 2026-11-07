@@ -98,32 +98,56 @@ async function assertMediaVisible(req: Request, env: Env, row: { status: string;
   return false;
 }
 
-/** Reads just the chunks a byte range touches, then trims the edges. */
-async function readRange(env: Env, uploadId: string, start: number, end: number) {
+/**
+ * A D1 blob arrives as one JS number per byte, so holding a whole clip in
+ * memory costs roughly eight times its size and blows the Worker's limit on
+ * anything over about 12 MB. Chunks are therefore pulled a few at a time and
+ * handed straight to the response as a stream.
+ */
+const CHUNK_BATCH = 4;
+
+/** A missing chunk would silently shorten the file mid-stream, so check first. */
+async function assertChunks(env: Env, uploadId: string, first: number, last: number) {
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM upload_chunks WHERE upload_id = ? AND idx BETWEEN ? AND ?',
+  )
+    .bind(uploadId, first, last)
+    .first<{ n: number }>();
+  if ((row?.n ?? 0) < last - first + 1) throw missing('That video is incomplete.');
+}
+
+/** Streams just the chunks a byte range touches, trimming the two edges. */
+async function streamRange(env: Env, uploadId: string, start: number, end: number) {
   const firstChunk = Math.floor(start / VIDEO_CHUNK_BYTES);
   const lastChunk = Math.floor(end / VIDEO_CHUNK_BYTES);
-  const rows = await env.DB.prepare(
-    'SELECT idx, bytes FROM upload_chunks WHERE upload_id = ? AND idx BETWEEN ? AND ? ORDER BY idx',
-  )
-    .bind(uploadId, firstChunk, lastChunk)
-    .all<{ idx: number; bytes: unknown }>();
+  await assertChunks(env, uploadId, firstChunk, lastChunk);
 
-  const wanted = end - start + 1;
-  const out = new Uint8Array(wanted);
-  let written = 0;
-  for (const row of rows.results || []) {
-    const bytes = toBytes(row.bytes);
-    if (!bytes) continue;
-    const chunkStart = row.idx * VIDEO_CHUNK_BYTES;
-    const from = Math.max(0, start - chunkStart);
-    const to = Math.min(bytes.byteLength, end - chunkStart + 1);
-    if (to <= from) continue;
-    const slice = bytes.subarray(from, to);
-    out.set(slice, written);
-    written += slice.byteLength;
-  }
-  if (written === 0) throw missing('That video is incomplete.');
-  return written === out.byteLength ? out : out.subarray(0, written);
+  let next = firstChunk;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (next > lastChunk) {
+        controller.close();
+        return;
+      }
+      const batchEnd = Math.min(lastChunk, next + CHUNK_BATCH - 1);
+      const rows = await env.DB.prepare(
+        'SELECT idx, bytes FROM upload_chunks WHERE upload_id = ? AND idx BETWEEN ? AND ? ORDER BY idx',
+      )
+        .bind(uploadId, next, batchEnd)
+        .all<{ idx: number; bytes: unknown }>();
+      next = batchEnd + 1;
+
+      for (const row of rows.results || []) {
+        const bytes = toBytes(row.bytes);
+        if (!bytes) continue;
+        const chunkStart = row.idx * VIDEO_CHUNK_BYTES;
+        const from = Math.max(0, start - chunkStart);
+        const to = Math.min(bytes.byteLength, end - chunkStart + 1);
+        if (to <= from) continue;
+        controller.enqueue(bytes.subarray(from, to));
+      }
+    },
+  });
 }
 
 export async function video(req: Request, env: Env, postId: string) {
@@ -162,21 +186,21 @@ export async function video(req: Request, env: Env, postId: string) {
         headers: { ...headers, 'content-range': `bytes */${row.size}` },
       });
     }
-    const body = await readRange(env, row.upload_id, start, end);
+    const body = await streamRange(env, row.upload_id, start, end);
     return new Response(body, {
       status: 206,
       headers: {
         ...headers,
         'content-range': `bytes ${start}-${end}/${row.size}`,
-        'content-length': String(body.byteLength),
+        'content-length': String(end - start + 1),
       },
     });
   }
 
-  const body = await readRange(env, row.upload_id, 0, row.size - 1);
+  const body = await streamRange(env, row.upload_id, 0, row.size - 1);
   return new Response(body, {
     status: 200,
-    headers: { ...headers, 'content-length': String(body.byteLength) },
+    headers: { ...headers, 'content-length': String(row.size) },
   });
 }
 
