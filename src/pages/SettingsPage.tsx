@@ -10,7 +10,7 @@ import { compactNumber, formatDate } from '../lib/format.ts';
 import { useTheme, type MotionChoice, type ThemeChoice } from '../lib/theme.tsx';
 import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
-import { SettingsSkeleton } from '../components/Skeleton.tsx';
+import { SettingsSkeleton, Skeleton } from '../components/Skeleton.tsx';
 
 function ageOnDate(iso: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
@@ -99,9 +99,9 @@ export function SettingsPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [savingPassword, setSavingPassword] = useState(false);
 
-  const [interests, setInterests] = useState<InterestView[]>([]);
-  const [hidden, setHidden] = useState<VideoDTO[]>([]);
-  const [blocked, setBlocked] = useState<PublicUser[]>([]);
+  const [interests, setInterests] = useState<InterestView[] | null>(null);
+  const [hidden, setHidden] = useState<VideoDTO[] | null>(null);
+  const [blocked, setBlocked] = useState<PublicUser[] | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
 
@@ -600,7 +600,13 @@ export function SettingsPage() {
           <p>GoatMedia starts with simple, explainable signals. This is what yours look like.</p>
         </div>
         <div className="settings-section__body">
-          {interests.length === 0 ? (
+          {interests === null ? (
+            <div className="settings-skel" aria-hidden="true">
+              <Skeleton className="sk--line" style={{ width: '46%' }} />
+              <Skeleton className="sk--line" style={{ width: '72%' }} />
+              <Skeleton className="sk--line" style={{ width: '58%' }} />
+            </div>
+          ) : interests.length === 0 ? (
             <p className="section-note">
               Nothing learned yet. Watch a few videos, like something, or follow a creator and this will fill in.
             </p>
@@ -670,7 +676,12 @@ export function SettingsPage() {
                 </div>
               </div>
             ) : (
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setConfirmReset(true)} disabled={!interests.length}>
+              <button
+                type="button"
+                className="btn btn--quiet btn--sm"
+                onClick={() => setConfirmReset(true)}
+                disabled={!interests?.length}
+              >
                 Reset recommendations
               </button>
             )}
@@ -678,7 +689,12 @@ export function SettingsPage() {
 
           <div className="settings-subsection">
             <h3>Hidden videos</h3>
-            {hidden.length === 0 ? (
+            {hidden === null ? (
+              <div className="settings-skel" aria-hidden="true">
+                <Skeleton className="sk--line" style={{ width: '64%' }} />
+                <Skeleton className="sk--line" style={{ width: '48%' }} />
+              </div>
+            ) : hidden.length === 0 ? (
               <p className="section-note">Videos you mark as not interested will be listed here so you can undo it.</p>
             ) : (
               <ul className="mini-list">
@@ -699,7 +715,7 @@ export function SettingsPage() {
                       onClick={async () => {
                         try {
                           await api.delete(`/api/me/hidden/${video.id}`);
-                          setHidden((items) => items.filter((item) => item.id !== video.id));
+                          setHidden((items) => (items ?? []).filter((item) => item.id !== video.id));
                           notify('That video can appear in your feed again.');
                         } catch {
                           notify('Could not undo that.', { tone: 'error' });
@@ -716,7 +732,12 @@ export function SettingsPage() {
 
           <div className="settings-subsection">
             <h3>Blocked accounts</h3>
-            {blocked.length === 0 ? (
+            {blocked === null ? (
+              <div className="settings-skel" aria-hidden="true">
+                <Skeleton className="sk--line" style={{ width: '56%' }} />
+                <Skeleton className="sk--line" style={{ width: '40%' }} />
+              </div>
+            ) : blocked.length === 0 ? (
               <p className="section-note">No one is blocked. You can block someone from their profile.</p>
             ) : (
               <ul className="mini-list">
@@ -735,7 +756,7 @@ export function SettingsPage() {
                       onClick={async () => {
                         try {
                           await api.delete(`/api/users/${person.username}/block`);
-                          setBlocked((items) => items.filter((item) => item.id !== person.id));
+                          setBlocked((items) => (items ?? []).filter((item) => item.id !== person.id));
                           notify(`Unblocked @${person.username}.`);
                         } catch {
                           notify('Could not unblock that account.', { tone: 'error' });
