@@ -106,33 +106,63 @@ async function assertMediaVisible(req: Request, env: Env, row: { status: string;
  * anything over about 12 MB. Chunks are therefore pulled a few at a time and
  * handed straight to the response as a stream.
  */
-const CHUNK_BATCH = 4;
+/**
+ * How many bytes one response carries. A D1 blob row reaches the Worker as an
+ * array of numbers, so turning it into bytes costs CPU in proportion to its
+ * size, and pulling a whole clip in one invocation both burns that budget and
+ * trips D1's resource limit for a ten-second window. Bounded slices keep every
+ * invocation small: the browser asks for the next range as it plays, and a busy
+ * database delays one slice instead of truncating the stream.
+ */
+const SLICE_BYTES = 512 * 1024;
 
-/** A missing chunk would silently shorten the file mid-stream, so check first. */
-async function assertChunks(
+/** Waits between retries of a read that failed for a reason that may pass. */
+const READ_RETRY_MS = [120, 350, 800];
+
+function transient(err: unknown): boolean {
+  const message = String((err as Error)?.message ?? err);
+  return /overload|too many resources|network connection lost|internal error|timed out/i.test(
+    message,
+  );
+}
+
+async function withRetry<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (err) {
+      if (attempt >= READ_RETRY_MS.length || !transient(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, READ_RETRY_MS[attempt]));
+    }
+  }
+}
+
+/** Reads only the bytes being sent, straight out of SQLite. */
+async function readSlice(
   env: Env,
   uploadId: string,
   shard: number,
-  first: number,
-  last: number,
-) {
+  idx: number,
+  from: number,
+  to: number,
+): Promise<Uint8Array | null> {
   const db = shardBinding(env, shard) ?? env.DB;
-  const row = await db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM ${chunkTable(shard)} WHERE upload_id = ? AND idx BETWEEN ? AND ?`,
-    )
-    .bind(uploadId, first, last)
-    .first<{ n: number }>();
-  if ((row?.n ?? 0) < last - first + 1) throw missing('That video is incomplete.');
+  const row = await withRetry(() =>
+    db
+      .prepare(
+        `SELECT substr(bytes, ?, ?) AS bytes FROM ${chunkTable(shard)}
+          WHERE upload_id = ? AND idx = ?`,
+      )
+      .bind(from + 1, to - from, uploadId, idx)
+      .first<{ bytes: unknown }>(),
+  );
+  return row ? toBytes(row.bytes) : null;
 }
 
-/** Streams just the chunks a byte range touches, trimming the two edges. */
+/** Streams just the bytes a range touches, one chunk at a time. */
 async function streamRange(env: Env, uploadId: string, shard: number, start: number, end: number) {
-  const db = shardBinding(env, shard) ?? env.DB;
-  const table = chunkTable(shard);
   const firstChunk = Math.floor(start / VIDEO_CHUNK_BYTES);
   const lastChunk = Math.floor(end / VIDEO_CHUNK_BYTES);
-  await assertChunks(env, uploadId, shard, firstChunk, lastChunk);
 
   let next = firstChunk;
   return new ReadableStream<Uint8Array>({
@@ -141,24 +171,19 @@ async function streamRange(env: Env, uploadId: string, shard: number, start: num
         controller.close();
         return;
       }
-      const batchEnd = Math.min(lastChunk, next + CHUNK_BATCH - 1);
-      const rows = await db
-        .prepare(
-          `SELECT idx, bytes FROM ${table} WHERE upload_id = ? AND idx BETWEEN ? AND ? ORDER BY idx`,
-        )
-        .bind(uploadId, next, batchEnd)
-        .all<{ idx: number; bytes: unknown }>();
-      next = batchEnd + 1;
-
-      for (const row of rows.results || []) {
-        const bytes = toBytes(row.bytes);
-        if (!bytes) continue;
-        const chunkStart = row.idx * VIDEO_CHUNK_BYTES;
-        const from = Math.max(0, start - chunkStart);
-        const to = Math.min(bytes.byteLength, end - chunkStart + 1);
-        if (to <= from) continue;
-        controller.enqueue(bytes.subarray(from, to));
+      const idx = next;
+      next += 1;
+      const chunkStart = idx * VIDEO_CHUNK_BYTES;
+      const from = Math.max(0, start - chunkStart);
+      const to = Math.min(VIDEO_CHUNK_BYTES, end - chunkStart + 1);
+      const bytes = await readSlice(env, uploadId, shard, idx, from, to);
+      // A short answer would end the body early and stall the player, so treat
+      // it the same as a missing chunk: the browser retries the range.
+      if (!bytes || bytes.byteLength !== to - from) {
+        controller.error(new Error('That video could not be read in full.'));
+        return;
       }
+      controller.enqueue(bytes);
     },
   });
 }
@@ -199,6 +224,8 @@ export async function video(req: Request, env: Env, postId: string) {
         headers: { ...headers, 'content-range': `bytes */${row.size}` },
       });
     }
+    // One bounded slice per response; the player asks for the rest as it goes.
+    if (end - start + 1 > SLICE_BYTES) end = start + SLICE_BYTES - 1;
     const body = await streamRange(env, row.upload_id, row.shard, start, end);
     return new Response(body, {
       status: 206,

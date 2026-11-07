@@ -137,6 +137,7 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
   const rewatched = useRef(false);
   const endedOnce = useRef(false);
   const wasActive = useRef(false);
+  const autoRetried = useRef(false);
   const onWatchRef = useRef(onWatch);
   onWatchRef.current = onWatch;
 
@@ -244,7 +245,19 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
       lastTime.current = video.currentTime;
     };
     const handleMetadata = () => setDuration(video.duration || 0);
+    // A dropped range is usually a busier moment at the database, not a bad
+    // file, so the first failure reconnects quietly before telling anyone.
     const handleError = () => {
+      if (wasActive.current && !autoRetried.current) {
+        autoRetried.current = true;
+        setWaiting(true);
+        window.setTimeout(() => {
+          if (!videoRef.current) return;
+          videoRef.current.load();
+          videoRef.current.play().catch(() => {});
+        }, 400);
+        return;
+      }
       setError(true);
       setWaiting(false);
     };
