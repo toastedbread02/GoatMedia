@@ -50,7 +50,9 @@ function notificationText(item: NotificationDTO) {
     case 'follow':
       return `@${item.actorUsername} started following you`;
     case 'comment':
-      return `@${item.actorUsername} commented on your video`;
+      return item.isReply
+        ? `@${item.actorUsername} replied to your comment`
+        : `@${item.actorUsername} commented on your post`;
     default:
       return 'New activity';
   }

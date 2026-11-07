@@ -154,6 +154,8 @@ export interface NotificationDTO {
   type: NotificationType;
   createdAt: number;
   read: boolean;
+  /** True when this comment notification answers the reader's own comment. */
+  isReply: boolean;
   videoId: string | null;
   videoCaption: string | null;
   actorUsername: string | null;

@@ -527,13 +527,29 @@ export async function addComment(req: Request, env: Env, id: string) {
   await applySignal(env, user.id, id, 'comment');
   invalidateTrending();
 
-  if (post.owner_id !== user.id) {
-    await env.DB.prepare(
-      `INSERT INTO notifications (id, user_id, type, post_id, actor_id, detail, created_at)
-       VALUES (?, ?, 'comment', ?, ?, ?, ?)`,
-    )
-      .bind(uid('ntf'), post.owner_id, id, user.id, text.slice(0, 120), now())
-      .run();
+  // A reply notifies the comment's author. If that is also the post owner they
+  // get one notification, worded as a reply, rather than two for the same event.
+  let replyAuthorId: string | null = null;
+  if (parentId) {
+    const parentAuthor = await env.DB.prepare('SELECT user_id FROM comments WHERE id = ?')
+      .bind(parentId)
+      .first<{ user_id: string }>();
+    if (parentAuthor && parentAuthor.user_id !== user.id) replyAuthorId = parentAuthor.user_id;
+  }
+
+  const recipients = new Map<string, boolean>();
+  if (post.owner_id !== user.id) recipients.set(post.owner_id, replyAuthorId === post.owner_id);
+  if (replyAuthorId && replyAuthorId !== post.owner_id) recipients.set(replyAuthorId, true);
+
+  if (recipients.size) {
+    await env.DB.batch(
+      [...recipients].map(([recipientId, isReply]) =>
+        env.DB.prepare(
+          `INSERT INTO notifications (id, user_id, type, post_id, actor_id, detail, is_reply, created_at)
+           VALUES (?, ?, 'comment', ?, ?, ?, ?, ?)`,
+        ).bind(uid('ntf'), recipientId, id, user.id, text.slice(0, 120), isReply ? 1 : 0, now()),
+      ),
+    );
   }
 
   const origin = new URL(req.url).origin;

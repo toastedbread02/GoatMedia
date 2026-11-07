@@ -392,6 +392,12 @@ async function run() {
     reply.body,
   );
   ok(reply.body.total === 2, 'replies count toward the comment total');
+  const replyNotices = await call('/api/me/notifications', { token: tokenB });
+  const replyNotice = replyNotices.body.notifications.find(
+    (notice: any) => notice.videoId === postId && notice.isReply === true,
+  );
+  ok(replyNotice?.actorUsername === 'ada', 'a reply notifies the comment author', replyNotice);
+  ok(replyNotice?.detail === 'That is a very good goat', 'the reply notification carries the reply text');
   const replyToReply = await call(`/api/posts/${postId}/comments`, {
     method: 'POST',
     token: tokenA,
@@ -418,6 +424,21 @@ async function run() {
   ok(
     modComment.body.comment.author.isModerator === true,
     'the moderator shield travels with comments',
+  );
+  const ownerReply = await call(`/api/posts/${postId}/comments`, {
+    method: 'POST',
+    token: tokenB,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body: 'The moderator approves', parentId: modComment.body.comment.id }),
+  });
+  const ownerNotices = await call('/api/me/notifications', { token: adminToken });
+  const ownerReplyNotices = ownerNotices.body.notifications.filter(
+    (notice: any) => notice.detail === ownerReply.body.comment.body,
+  );
+  ok(
+    ownerReplyNotices.length === 1 && ownerReplyNotices[0].isReply === true,
+    'a reply to the post owner sends one notification, worded as a reply',
+    ownerReplyNotices,
   );
 
   const deleteThread = await call(`/api/comments/${commentId}`, { method: 'DELETE', token: adminToken });
