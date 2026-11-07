@@ -72,11 +72,16 @@ export interface CommentDTO {
   id: string;
   body: string;
   createdAt: number;
+  /** Null for a top-level comment; the thread's root id for a reply. */
+  parentId: string | null;
+  likeCount: number;
+  liked: boolean;
   author: {
     id: string;
     username: string;
     displayName: string;
     avatarUrl: string | null;
+    isModerator: boolean;
   };
   canDelete: boolean;
 }

@@ -42,6 +42,7 @@ import {
   postEvent,
   reportComment,
   reportPost,
+  toggleCommentLike,
   setNotInterested,
   soundLibrary,
   toggleLike,
@@ -237,6 +238,8 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
 
   if (root === 'comments' && second) {
     if (method === 'DELETE' && parts.length === 3) return deleteComment(req, env, second);
+    if (third === 'like' && method === 'POST') return toggleCommentLike(req, env, second, true);
+    if (third === 'like' && method === 'DELETE') return toggleCommentLike(req, env, second, false);
     if (third === 'report' && method === 'POST') return reportComment(req, env, second);
     return json({ error: 'Not found.' }, 404);
   }

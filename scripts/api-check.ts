@@ -369,11 +369,79 @@ async function run() {
   ok(Array.isArray(commentList.body.items) && commentList.body.items.length === 1, 'comments are listed in the shape the app reads');
   ok(commentList.body.total === 1, 'comment list reports a total');
   ok(comment.body.total === 1, 'posting a comment returns the new total');
-  const deleteOther = await call(`/api/comments/${comment.body.comment.id}`, {
+
+  const commentId = comment.body.comment.id;
+  const guestCommentLike = await call(`/api/comments/${commentId}/like`, { method: 'POST' });
+  ok(guestCommentLike.status === 401, 'comment likes need a session');
+  const commentLike = await call(`/api/comments/${commentId}/like`, { method: 'POST', token: tokenA });
+  ok(commentLike.body.liked === true && commentLike.body.likeCount === 1, 'comments can be liked');
+  const commentLikeAgain = await call(`/api/comments/${commentId}/like`, { method: 'POST', token: tokenA });
+  ok(commentLikeAgain.body.likeCount === 1, 'liking twice does not double count');
+  const commentUnlike = await call(`/api/comments/${commentId}/like`, { method: 'DELETE', token: tokenA });
+  ok(commentUnlike.body.liked === false && commentUnlike.body.likeCount === 0, 'comment likes can be undone');
+
+  const reply = await call(`/api/posts/${postId}/comments`, {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body: 'That is a very good goat', parentId: commentId }),
+  });
+  ok(
+    reply.status === 201 && reply.body.comment.parentId === commentId,
+    'replies attach to the comment they answer',
+    reply.body,
+  );
+  ok(reply.body.total === 2, 'replies count toward the comment total');
+  const replyToReply = await call(`/api/posts/${postId}/comments`, {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body: 'Still the same thread', parentId: reply.body.comment.id }),
+  });
+  ok(
+    replyToReply.body.comment.parentId === commentId,
+    'replying to a reply stays in the same thread',
+  );
+  const thread = await call(`/api/posts/${postId}/comments`);
+  ok(
+    thread.body.items.filter((item: any) => item.parentId === commentId).length === 2,
+    'replies travel with their thread in the list',
+  );
+  ok(thread.body.total === 3, 'the comment total includes replies');
+
+  const modComment = await call(`/api/posts/${postId}/comments`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body: 'Moderator here, all goats accounted for' }),
+  });
+  ok(
+    modComment.body.comment.author.isModerator === true,
+    'the moderator shield travels with comments',
+  );
+
+  const deleteThread = await call(`/api/comments/${commentId}`, { method: 'DELETE', token: adminToken });
+  ok(deleteThread.body.removed === 3, 'deleting a thread removes its replies', deleteThread.body);
+  const afterThreadDelete = await call(`/api/posts/${postId}/comments`);
+  ok(
+    afterThreadDelete.body.items.every((item: any) => item.id !== commentId && item.parentId !== commentId),
+    'removed threads leave no replies behind',
+  );
+
+  const deleteOther = await call(`/api/comments/${modComment.body.comment.id}`, {
     method: 'DELETE',
     token: adminToken === tokenB ? tokenA : tokenB,
   });
-  ok(deleteOther.status === 403 || deleteOther.status === 200, 'comment delete is scoped per user');
+  ok(
+    deleteOther.status === 401 || deleteOther.status === 403,
+    'comment delete is scoped per user',
+    { status: deleteOther.status, body: deleteOther.body },
+  );
+  const deleteOwn = await call(`/api/comments/${modComment.body.comment.id}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  ok(deleteOwn.status === 200, 'a comment author can delete their own comment');
 
   const follow = await call('/api/users/ada/follow', { method: 'POST', token: tokenB });
   ok(follow.body.following === true && follow.body.followerCount === 1, 'following works');

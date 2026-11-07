@@ -383,8 +383,54 @@ export async function toggleLike(req: Request, env: Env, id: string) {
   return json({ liked: !existing, likeCount: count?.like_count ?? 0 });
 }
 
+interface CommentRow {
+  id: string;
+  body: string;
+  created_at: number;
+  user_id: string;
+  parent_id: string | null;
+  username: string;
+  display_name: string;
+  avatar_version: number;
+  has_avatar: number;
+  role: string;
+  like_count: number;
+  liked: number;
+}
+
+const COMMENT_SELECT = (viewerId: string | null) => `
+  SELECT c.id, c.body, c.created_at, c.user_id, c.parent_id,
+         u.username, u.display_name, u.avatar_version, u.role,
+         (u.avatar_bytes IS NOT NULL) AS has_avatar,
+         (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id = c.id) AS like_count,
+         EXISTS(SELECT 1 FROM comment_likes cl
+                 WHERE cl.comment_id = c.id AND cl.user_id = ${viewerId ? '?' : 'NULL'}) AS liked
+    FROM comments c JOIN users u ON u.id = c.user_id`;
+
+function commentItem(origin: string, row: CommentRow, viewer: { id: string; role: string } | null) {
+  return {
+    id: row.id,
+    body: row.body,
+    createdAt: row.created_at,
+    parentId: row.parent_id,
+    likeCount: row.like_count,
+    liked: Boolean(row.liked),
+    author: {
+      id: row.user_id,
+      username: row.username,
+      displayName: row.display_name,
+      avatarUrl: row.has_avatar
+        ? `${origin}/media/avatars/${row.user_id}?v=${row.avatar_version}`
+        : null,
+      isModerator: row.role === 'admin',
+    },
+    canDelete: Boolean(viewer && (viewer.id === row.user_id || viewer.role === 'admin')),
+  };
+}
+
 export async function listComments(req: Request, env: Env, url: URL, id: string) {
   const viewer = await currentUser(req, env);
+  const viewerId = viewer?.id ?? null;
   const { offset, page } = pageOf(url.searchParams.get('page'), limits.commentsPageSize);
   const post = await env.DB.prepare('SELECT status, owner_id FROM posts WHERE id = ?')
     .bind(id)
@@ -394,48 +440,40 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
     throw missing('That post is not here.');
   }
 
-  const rows = await env.DB.prepare(
-    `SELECT c.id, c.body, c.created_at, c.user_id, u.username, u.display_name, u.avatar_version,
-            (u.avatar_bytes IS NOT NULL) AS has_avatar
-       FROM comments c JOIN users u ON u.id = c.user_id
-      WHERE c.post_id = ? AND c.status = 'visible'
+  // Only top-level comments page; replies always travel with their thread.
+  const roots = await env.DB.prepare(
+    `${COMMENT_SELECT(viewerId)}
+      WHERE c.post_id = ? AND c.status = 'visible' AND c.parent_id IS NULL
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?`,
   )
-    .bind(id, limits.commentsPageSize + 1, offset)
-    .all<{
-      id: string;
-      body: string;
-      created_at: number;
-      user_id: string;
-      username: string;
-      display_name: string;
-      avatar_version: number;
-      has_avatar: number;
-    }>();
+    .bind(...(viewerId ? [viewerId] : []), id, limits.commentsPageSize + 1, offset)
+    .all<CommentRow>();
 
-  const list = rows.results || [];
-  const hasMore = list.length > limits.commentsPageSize;
+  const pageRows = (roots.results || []).slice(0, limits.commentsPageSize);
+  const hasMore = (roots.results || []).length > limits.commentsPageSize;
+  const parentIds = pageRows.map((row) => row.id);
+
+  const replies = parentIds.length
+    ? await env.DB.prepare(
+        `${COMMENT_SELECT(viewerId)}
+          WHERE c.post_id = ? AND c.status = 'visible'
+            AND c.parent_id IN (${parentIds.map(() => '?').join(', ')})
+          ORDER BY c.created_at ASC`,
+      )
+        .bind(...(viewerId ? [viewerId] : []), id, ...parentIds)
+        .all<CommentRow>()
+    : { results: [] as CommentRow[] };
+
   const count = await env.DB.prepare(
     "SELECT COUNT(*) AS n FROM comments WHERE post_id = ? AND status = 'visible'",
   )
     .bind(id)
     .first<{ n: number }>();
   const origin = new URL(req.url).origin;
-  const items = list.slice(0, limits.commentsPageSize).map((row) => ({
-      id: row.id,
-      body: row.body,
-      createdAt: row.created_at,
-      author: {
-        id: row.user_id,
-        username: row.username,
-        displayName: row.display_name,
-        avatarUrl: row.has_avatar
-          ? `${origin}/media/avatars/${row.user_id}?v=${row.avatar_version}`
-          : null,
-      },
-      canDelete: Boolean(viewer && (viewer.id === row.user_id || viewer.role === 'admin')),
-  }));
+  const items = [...pageRows, ...(replies.results || [])].map((row) =>
+    commentItem(origin, row, viewer ? { id: viewer.id, role: viewer.role } : null),
+  );
   // `comments` stays as an alias for older clients; the app reads items/total.
   return json({ items, comments: items, total: count?.n ?? items.length, hasMore, page });
 }
@@ -459,6 +497,18 @@ export async function addComment(req: Request, env: Env, id: string) {
     .first<{ id: string; owner_id: string; status: string }>();
   if (!post || post.status !== 'approved') throw missing('That post is not here.');
 
+  // A reply points at the thread root, so replying to a reply stays readable.
+  let parentId: string | null = null;
+  if (typeof body.parentId === 'string' && body.parentId) {
+    const parent = await env.DB.prepare(
+      "SELECT id, parent_id FROM comments WHERE id = ? AND post_id = ? AND status = 'visible'",
+    )
+      .bind(body.parentId, id)
+      .first<{ id: string; parent_id: string | null }>();
+    if (!parent) throw bad('That comment is no longer here.');
+    parentId = parent.parent_id ?? parent.id;
+  }
+
   const blocked = await env.DB.prepare(
     `SELECT 1 AS n FROM blocks
       WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`,
@@ -470,8 +520,8 @@ export async function addComment(req: Request, env: Env, id: string) {
   const commentId = uid('cmt');
   await env.DB.batch([
     env.DB.prepare(
-      'INSERT INTO comments (id, post_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).bind(commentId, id, user.id, text, now()),
+      'INSERT INTO comments (id, post_id, user_id, body, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(commentId, id, user.id, text, parentId, now()),
     env.DB.prepare('UPDATE posts SET comment_count = comment_count + 1 WHERE id = ?').bind(id),
   ]);
   await applySignal(env, user.id, id, 'comment');
@@ -497,6 +547,9 @@ export async function addComment(req: Request, env: Env, id: string) {
         id: commentId,
         body: text,
         createdAt: now(),
+        parentId,
+        likeCount: 0,
+        liked: false,
         author: {
           id: user.id,
           username: user.username,
@@ -504,6 +557,7 @@ export async function addComment(req: Request, env: Env, id: string) {
           avatarUrl: user.hasAvatar
             ? `${origin}/media/avatars/${user.id}?v=${user.avatarVersion}`
             : null,
+          isModerator: user.role === 'admin',
         },
         canDelete: true,
       },
@@ -514,19 +568,57 @@ export async function addComment(req: Request, env: Env, id: string) {
 
 export async function deleteComment(req: Request, env: Env, id: string) {
   const user = await requireActive(req, env);
-  const row = await env.DB.prepare('SELECT user_id, post_id FROM comments WHERE id = ?')
+  const row = await env.DB.prepare('SELECT user_id, post_id, parent_id FROM comments WHERE id = ?')
     .bind(id)
-    .first<{ user_id: string; post_id: string }>();
+    .first<{ user_id: string; post_id: string; parent_id: string | null }>();
   if (!row) throw missing();
   if (row.user_id !== user.id && user.role !== 'admin') throw denied('That comment is not yours.');
+
+  // Removing a thread removes its replies too; the count follows.
+  const visible = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM comments WHERE (id = ? OR parent_id = ?) AND status = 'visible'",
+  )
+    .bind(id, id)
+    .first<{ n: number }>();
+  const removed = visible?.n ?? 1;
+
   await env.DB.batch([
-    env.DB.prepare("UPDATE comments SET status = 'removed' WHERE id = ?").bind(id),
-    env.DB.prepare('UPDATE posts SET comment_count = MAX(0, comment_count - 1) WHERE id = ?').bind(
+    env.DB.prepare("UPDATE comments SET status = 'removed' WHERE id = ? OR parent_id = ?").bind(id, id),
+    env.DB.prepare('UPDATE posts SET comment_count = MAX(0, comment_count - ?) WHERE id = ?').bind(
+      removed,
       row.post_id,
     ),
   ]);
   invalidateTrending();
-  return json({ ok: true });
+  return json({ ok: true, removed });
+}
+
+export async function toggleCommentLike(req: Request, env: Env, id: string, on: boolean) {
+  const user = await requireActive(req, env);
+  const row = await env.DB.prepare(
+    `SELECT c.id, c.status, p.status AS post_status
+       FROM comments c JOIN posts p ON p.id = c.post_id
+      WHERE c.id = ?`,
+  )
+    .bind(id)
+    .first<{ id: string; status: string; post_status: string }>();
+  if (!row || row.status !== 'visible' || row.post_status !== 'approved') throw missing();
+
+  if (on) {
+    await env.DB.prepare(
+      'INSERT OR IGNORE INTO comment_likes (comment_id, user_id, created_at) VALUES (?, ?, ?)',
+    )
+      .bind(id, user.id, now())
+      .run();
+  } else {
+    await env.DB.prepare('DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?')
+      .bind(id, user.id)
+      .run();
+  }
+  const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM comment_likes WHERE comment_id = ?')
+    .bind(id)
+    .first<{ n: number }>();
+  return json({ liked: on, likeCount: count?.n ?? 0 });
 }
 
 async function countView(req: Request, env: Env, id: string, viewerId: string | null) {

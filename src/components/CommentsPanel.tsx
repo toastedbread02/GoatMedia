@@ -5,7 +5,7 @@ import { api, ApiError } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { useConfig } from '../lib/config.tsx';
 import { useToast } from '../lib/toast.tsx';
-import { timeAgo } from '../lib/format.ts';
+import { compactNumber, timeAgo } from '../lib/format.ts';
 import { Avatar } from './Avatar.tsx';
 import { Icon } from './Icon.tsx';
 import { ReportDialog } from './ReportDialog.tsx';
@@ -30,10 +30,11 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   const [loadingMore, setLoadingMore] = useState(false);
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
+  const [replyTo, setReplyTo] = useState<CommentDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [reportTarget, setReportTarget] = useState<CommentDTO | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -131,6 +132,41 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
     }
   };
 
+  const setComment = (id: string, patch: Partial<CommentDTO>) => {
+    setItems((current) => current?.map((item) => (item.id === id ? { ...item, ...patch } : item)) ?? null);
+  };
+
+  const like = async (comment: CommentDTO) => {
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
+      return;
+    }
+    const next = !comment.liked;
+    setComment(comment.id, {
+      liked: next,
+      likeCount: Math.max(0, comment.likeCount + (next ? 1 : -1)),
+    });
+    try {
+      const data = next
+        ? await api.post<{ liked: boolean; likeCount: number }>(`/api/comments/${comment.id}/like`)
+        : await api.delete<{ liked: boolean; likeCount: number }>(`/api/comments/${comment.id}/like`);
+      setComment(comment.id, { liked: data.liked, likeCount: data.likeCount });
+    } catch {
+      setComment(comment.id, { liked: comment.liked, likeCount: comment.likeCount });
+      toast.notify('That like did not save.', { tone: 'error' });
+    }
+  };
+
+  const startReply = (comment: CommentDTO) => {
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
+      return;
+    }
+    setReplyTo(comment);
+    setError(null);
+    window.requestAnimationFrame(() => bodyRef.current?.focus());
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!user) {
@@ -141,15 +177,21 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
     if (!text) return;
     setPosting(true);
     setError(null);
+    const parentId = replyTo ? (replyTo.parentId ?? replyTo.id) : null;
     try {
       const data = await api.post<{ comment: CommentDTO; total: number }>(`/api/videos/${video.id}/comments`, {
         body: text,
+        parentId,
       });
       setBody('');
-      if (data.comment) setItems((current) => [data.comment, ...(current ?? [])]);
+      setReplyTo(null);
+      setItems((current) => {
+        if (!current) return [data.comment];
+        return data.comment.parentId ? [...current, data.comment] : [data.comment, ...current];
+      });
       setTotal(data.total);
       onCountChange(data.total);
-      toast.notify('Comment added.');
+      toast.notify(data.comment.parentId ? 'Reply added.' : 'Comment added.');
     } catch (postError) {
       if (postError instanceof ApiError && postError.status === 401) {
         navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
@@ -163,18 +205,82 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
 
   const remove = async (comment: CommentDTO) => {
     try {
-      await api.delete(`/api/comments/${comment.id}`);
-      setItems((current) => current?.filter((item) => item.id !== comment.id) ?? null);
+      const data = await api.delete<{ ok: boolean; removed?: number }>(`/api/comments/${comment.id}`);
+      setItems(
+        (current) => current?.filter((item) => item.id !== comment.id && item.parentId !== comment.id) ?? null,
+      );
+      if (replyTo && (replyTo.id === comment.id || replyTo.parentId === comment.id)) setReplyTo(null);
+      const removed = data.removed ?? 1;
       setTotal((current) => {
-        const next = Math.max(0, current - 1);
+        const next = Math.max(0, current - removed);
         onCountChange(next);
         return next;
       });
-      toast.notify('Comment deleted.');
+      toast.notify(removed > 1 ? 'Thread deleted.' : 'Comment deleted.');
     } catch {
       toast.notify('Could not delete that comment.', { tone: 'error' });
     }
   };
+
+  const renderComment = (comment: CommentDTO, isReply: boolean) => (
+    <li key={comment.id} className={`comment${isReply ? ' comment--reply' : ''}`}>
+      <Link to={`/u/${comment.author.username}`} onClick={close} aria-label={`${comment.author.displayName} profile`}>
+        <Avatar
+          displayName={comment.author.displayName}
+          username={comment.author.username}
+          avatarUrl={comment.author.avatarUrl}
+          size={isReply ? 26 : 32}
+        />
+      </Link>
+      <div className="comment__body">
+        <div className="comment__head">
+          <Link to={`/u/${comment.author.username}`} className="comment__name" onClick={close}>
+            {comment.author.displayName}
+          </Link>
+          <span className="comment__handle-line">
+            <Link to={`/u/${comment.author.username}`} className="comment__handle" onClick={close}>
+              @{comment.author.username}
+            </Link>
+            {comment.author.isModerator ? (
+              <span className="modbadge" title="Moderator" aria-label="Moderator">
+                <Icon name="shield" size={12} filled />
+              </span>
+            ) : null}
+          </span>
+          <span className="comment__handle">{timeAgo(comment.createdAt)}</span>
+        </div>
+        <p className="comment__text">{comment.body}</p>
+        <div className="comment__actions">
+          <button
+            type="button"
+            className={`comment__like${comment.liked ? ' is-liked' : ''}`}
+            onClick={() => like(comment)}
+            aria-pressed={comment.liked}
+            aria-label={`${comment.liked ? 'Unlike' : 'Like'} comment, ${comment.likeCount} likes`}
+          >
+            <Icon name="heart" size={14} filled={comment.liked} />
+            <span>{comment.likeCount > 0 ? compactNumber(comment.likeCount) : 'Like'}</span>
+          </button>
+          <button type="button" className="comment__link" onClick={() => startReply(comment)}>
+            {replyTo?.id === comment.id ? 'Replying' : 'Reply'}
+          </button>
+          {comment.canDelete ? (
+            <button type="button" className="comment__link is-danger" onClick={() => remove(comment)}>
+              Delete
+            </button>
+          ) : null}
+          {user && !comment.canDelete ? (
+            <button type="button" className="comment__link" onClick={() => setReportTarget(comment)}>
+              Report
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </li>
+  );
+
+  const list = items ?? [];
+  const roots = list.filter((comment) => !comment.parentId);
 
   return (
     <>
@@ -214,42 +320,21 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
           ) : (
             <>
               <ul>
-                {items.map((comment) => (
-                  <li key={comment.id} className="comment">
-                    <Link to={`/u/${comment.author.username}`} onClick={close}>
-                      <Avatar
-                        displayName={comment.author.displayName}
-                        username={comment.author.username}
-                        avatarUrl={comment.author.avatarUrl}
-                        size={32}
-                      />
-                    </Link>
-                    <div className="comment__body">
-                      <div className="comment__head">
-                        <Link to={`/u/${comment.author.username}`} className="comment__name" onClick={close}>
-                          {comment.author.displayName}
-                        </Link>
-                        <Link to={`/u/${comment.author.username}`} className="comment__handle" onClick={close}>
-                          @{comment.author.username}
-                        </Link>
-                        <span className="comment__handle">{timeAgo(comment.createdAt)}</span>
-                      </div>
-                      <p className="comment__text">{comment.body}</p>
-                      <div className="comment__actions">
-                        {comment.canDelete ? (
-                          <button type="button" className="comment__link is-danger" onClick={() => remove(comment)}>
-                            Delete
-                          </button>
+                {roots.map((comment) => {
+                  const replies = list.filter((item) => item.parentId === comment.id);
+                  return (
+                    <li key={comment.id} className="comment-thread">
+                      <ul>
+                        {renderComment(comment, false)}
+                        {replies.length ? (
+                          <li className="comment__replies">
+                            <ul>{replies.map((reply) => renderComment(reply, true))}</ul>
+                          </li>
                         ) : null}
-                        {user && !comment.canDelete ? (
-                          <button type="button" className="comment__link" onClick={() => setReportTarget(comment)}>
-                            Report
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </li>
-                ))}
+                      </ul>
+                    </li>
+                  );
+                })}
               </ul>
               {hasMore ? (
                 <div className="comments-more">
@@ -264,29 +349,42 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
 
         <div className="comments-panel__foot">
           {user ? (
-            <form className="comment-form" onSubmit={submit} ref={formRef}>
-              <label className="visually-hidden" htmlFor="comment-body">
-                Add a comment
-              </label>
-              <textarea
-                id="comment-body"
-                className="textarea"
-                value={body}
-                maxLength={500}
-                onChange={(event) => setBody(event.target.value)}
-                placeholder="Add a comment about this goat…"
-                aria-invalid={Boolean(error)}
-              />
-              <div className="comment-form__row">
-                <span className="comment-form__hint">
-                  {error ? <span className="field__error">{error}</span> : `${body.length}/500 · Be kind.`}
-                </span>
-                <button type="submit" className="btn btn--primary btn--sm" disabled={posting || !body.trim()}>
-                  {posting ? <span className="btn__spinner" /> : null}
-                  Comment
-                </button>
-              </div>
-            </form>
+            <>
+              {replyTo ? (
+                <div className="comment-form__replying">
+                  <span>
+                    Replying to <strong>@{replyTo.author.username}</strong>
+                  </span>
+                  <button type="button" className="comment__link" onClick={() => setReplyTo(null)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : null}
+              <form className="comment-form" onSubmit={submit}>
+                <label className="visually-hidden" htmlFor="comment-body">
+                  {replyTo ? `Reply to ${replyTo.author.username}` : 'Add a comment'}
+                </label>
+                <textarea
+                  id="comment-body"
+                  ref={bodyRef}
+                  className="textarea"
+                  value={body}
+                  maxLength={400}
+                  onChange={(event) => setBody(event.target.value)}
+                  placeholder={replyTo ? `Reply to @${replyTo.author.username}…` : 'Add a comment about this goat…'}
+                  aria-invalid={Boolean(error)}
+                />
+                <div className="comment-form__row">
+                  <span className="comment-form__hint">
+                    {error ? <span className="field__error">{error}</span> : `${body.length}/400 · Be kind.`}
+                  </span>
+                  <button type="submit" className="btn btn--primary btn--sm" disabled={posting || !body.trim()}>
+                    {posting ? <span className="btn__spinner" /> : null}
+                    {replyTo ? 'Reply' : 'Comment'}
+                  </button>
+                </div>
+              </form>
+            </>
           ) : (
             <div className="comment-signin">
               <span>Sign in to join the conversation.</span>
