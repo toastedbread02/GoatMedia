@@ -4,12 +4,18 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-01-01",
   "observability": { "enabled": true },
+  // Workers AI screens every upload for gore before a person reviews it. It is
+  // a pre-filter only: a flagged post still waits for a moderator.
+  "ai": { "binding": "AI" },
   // One weekly note to creators, Monday 09:00 UTC.
   "triggers": { "crons": ["0 9 * * 1"] },
   "vars": {
     // goatmedia.js.org is allowed ahead of time so the site works the moment
     // the domain starts serving. The old Pages origin stays until links fade.
-    "ALLOWED_ORIGINS": "https://goatmedia.is-a.dev,https://toastedbread02.github.io,http://localhost:5173,http://127.0.0.1:5173"
+    "ALLOWED_ORIGINS": "https://goatmedia.is-a.dev,https://toastedbread02.github.io,http://localhost:5173,http://127.0.0.1:5173",
+    // Where appeal links in emails point. Change this to the custom domain
+    // once it is serving; a dead link in a suspension notice is unfair.
+    "SITE_ORIGIN": "https://toastedbread02.github.io"
   },
   // The free plan caps one database at 500 MB, so video chunks live in their
   // own databases and only the first one holds the schema. Reads and writes

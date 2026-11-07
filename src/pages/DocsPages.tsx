@@ -125,6 +125,24 @@ export function PrivacyPage() {
         <li>Comments, replies and likes on comments.</li>
         <li>Reports you file, and messages you send through the contact form.</li>
       </ul>
+      <h3>What the automatic check sees</h3>
+      <ul>
+        <li>
+          The first few images of an upload — the photos in an album, or the poster frame of a video — are sent to
+          Cloudflare's Workers AI to answer one question: does this show graphic gore? Only the probability that comes
+          back is stored, on the post, as a number. The images are not kept by that service for anything else and are
+          not used to train a model.
+        </li>
+        <li>
+          Warnings and appeals: the reason, whether a person or the filter raised it, what you wrote in an appeal, and
+          the decision. These are moderation records, visible to moderators and to you.
+        </li>
+        <li>
+          Whether a notice email was sent, failed or could not be sent, so that a missing email can be explained rather
+          than guessed at.
+        </li>
+      </ul>
+
       <h3>What you do on the site</h3>
       <ul>
         <li>
@@ -183,17 +201,22 @@ export function PrivacyPage() {
       <ul>
         <li>
           <strong>Cloudflare</strong> hosts the API, the database and the stored media, and terminates TLS. Requests to
-          the site therefore pass through their network, and their own security logs apply to them.
+          the site therefore pass through their network, and their own security logs apply to them. Their Workers AI
+          service answers the single gore question described above.
         </li>
         <li>
           <strong>GitHub</strong> serves the static site files through GitHub Pages, so a visit to goatmedia begins with
           a request to GitHub's servers.
         </li>
+        <li>
+          <strong>An email provider</strong> (SendGrid or Brevo, depending on which is configured) delivers moderation
+          notices: warnings, suspensions, appeal decisions. It receives your email address and the contents of that
+          message. Nothing else is sent through it. There is no newsletter and no marketing email.
+        </li>
       </ul>
       <p>
-        Both are infrastructure providers acting on instruction; neither is given your data to use for their own
-        marketing. There is no email provider, because GoatMedia does not send email: notifications appear inside the
-        app. There is no payment processor, because nothing on GoatMedia is for sale.
+        These are processors acting on instruction; none is given your data to use for their own marketing. There is no
+        payment processor, because nothing on GoatMedia is for sale.
       </p>
 
       <h2>Where it is processed</h2>
@@ -210,6 +233,11 @@ export function PrivacyPage() {
         <li>Visit records: deleted after 120 days. Your view history for the recommendation system is kept until you reset your interests or close the account.</li>
         <li>Reports and contact messages: kept while open, then retained as moderation history so a repeated problem is recognisable.</li>
         <li>Moderation decisions on your posts: kept with the post, and kept briefly after a removal so an appeal can be answered.</li>
+        <li>Warnings: kept while they still count against the account, and kept on record if an appeal is declined. An accepted appeal removes one from the count.</li>
+        <li>
+          Appeal links: the hashed token stays until the appeal is decided. The email log entry (address, subject,
+          delivery status) is kept so a missing notice can be investigated.
+        </li>
       </ul>
 
       <h2>Your choices and rights</h2>
@@ -225,6 +253,14 @@ export function PrivacyPage() {
         national data protection authority. If you are in California, you have the right to know what is collected, to
         have it deleted, and to not be discriminated against for asking; GoatMedia does not sell or share personal
         information for advertising, so there is nothing to opt out of there.
+      </p>
+
+      <h2>Automatic checks and your right to a person</h2>
+      <p>
+        The gore filter is a pre-filter. It can be wrong — a goat in a red barn, a cut on a leg that healed months ago —
+        so anything it flags is rejected rather than deleted, and a moderator can publish it after watching it. Every
+        warning it produces can be appealed, and an appeal is read by a person, never by the filter again. No account is
+        suspended by software without a written reason being emailed to it and an appeal route being available.
       </p>
 
       <h2>Closing an account</h2>
@@ -451,6 +487,11 @@ export function TermsPage() {
       <ul>
         <li>Anything that is not about a goat, or that uses a goat as a prop for something unrelated.</li>
         <li>Animal mistreatment: distress, injury, baiting, drugging or unsafe handling. This is a zero-tolerance removal.</li>
+        <li>
+          Graphic gore: open wounds, pooled blood, exposed tissue, butchery or a dead animal. A healed scar or a bit of
+          mud is not gore, and the automatic filter is tuned to tell the difference — but it is not perfect, which is
+          why every flag can be appealed.
+        </li>
         <li>Sexual content, or any sexualised depiction of a minor. Reported to the relevant authority where required.</li>
         <li>Illegal content, threats, harassment, hate speech, or revealing someone else's personal information.</li>
         <li>Spam, scams, advertising, referral links, political campaigning, or repetitive uploads of the same clip.</li>
@@ -466,9 +507,49 @@ export function TermsPage() {
         fit the platform.
       </p>
       <p>
-        If a post is rejected or removed, you can ask why and appeal once through the contact form. Decisions are made by
-        a person, and a clear explanation from you can change the outcome.
+        If a post is rejected or removed, you can ask why through the contact form. Decisions are made by a person, and a
+        clear explanation from you can change the outcome.
       </p>
+
+      <h2>Automatic screening</h2>
+      <p>
+        Every upload is screened before it reaches the review queue. The check asks a vision model one question: does
+        this image show graphic gore? A high enough probability sends the post to the rejected pile instead of the
+        queue, and the score is written next to the post so a moderator can see exactly why. Nothing is deleted, and a
+        moderator can publish a flagged post after watching it.
+      </p>
+      <p>
+        The filter is a pre-filter, not a verdict. It will occasionally flag a goat in a red barn, and it will miss
+        things. It is not a substitute for the human review that stands behind it, and no post is removed permanently
+        because software said so.
+      </p>
+
+      <h2>Warnings, suspensions and appeals</h2>
+      <ul>
+        <li>
+          A first and second violation of these terms — most often an upload the filter flagged as gore, including
+          repeated attempts to get one past it — produce a written warning. The warning is emailed to the address on the
+          account with the reason and an appeal link.
+        </li>
+        <li>
+          A third active warning suspends the account. A moderator can also suspend directly for something serious, such
+          as animal mistreatment or harassment. A suspension always carries a written reason, and that reason is
+          emailed to the account.
+        </li>
+        <li>
+          A suspended account cannot sign in to post, like or comment, and its posts and comments are hidden. The reason
+          is shown when you try to use the account.
+        </li>
+        <li>
+          Every warning and every suspension can be appealed once, using the link in the email. A person reads it and
+          decides; the filter is never asked again. If an appeal is accepted, the warning stops counting, or the account
+          is restored together with the posts that were hidden with it.
+        </li>
+        <li>
+          If the notice email never arrives, the contact form reaches a moderator, and the reason is still visible when
+          you try to sign in.
+        </li>
+      </ul>
 
       <h2>Using the service properly</h2>
       <p>

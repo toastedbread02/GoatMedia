@@ -149,6 +149,59 @@ npx wrangler d1 execute goatmedia --remote \
   --command "UPDATE users SET role='admin' WHERE username='yourname'"
 ```
 
+## Automatic screening, warnings and appeals
+
+Every upload is screened before it reaches the queue. A vision model on Workers
+AI (`@cf/cloudflare/clef-flash`) looks at the poster frame or the first photos
+and scores it for graphic gore; anything over `safety.goreThreshold` in
+`worker/config.ts` is filed as `rejected` with the score kept on the post, and a
+moderator can still approve it after watching. Workers AI is bound in
+`wrangler.jsonc` (`"ai": { "binding": "AI" }`), so the first deploy after this
+change attaches it. The free allowance is 10,000 neurons a day, roughly 2,000
+screened images, and needs no payment method. With no binding or a failed call,
+uploads simply queue for a person: the filter can never publish or delete
+anything.
+
+A flagged upload also records a warning. The first two email the reason and a
+single-use appeal link; the third (`safety.warningLimit`) suspends the account
+automatically. Moderators can warn by hand from the control center, and a
+suspension always requires a written reason, because that sentence is what the
+person reads and appeals against.
+
+Mail is the one thing a Worker cannot do by itself. Either provider works, both
+let you verify a single sender address without owning a domain:
+
+| Provider | Free allowance | Variables |
+| --- | --- | --- |
+| Brevo | 300 messages/day | `BREVO_API_KEY`, `MAIL_FROM` |
+| SendGrid | 100 messages/day | `SENDGRID_API_KEY`, `MAIL_FROM` |
+
+```bash
+npx wrangler secret put BREVO_API_KEY     # paste the key when prompted
+npx wrangler secret put MAIL_FROM         # the verified sender address
+npx wrangler secret put MAIL_FROM_NAME    # optional, defaults to GoatMedia
+```
+
+Until a key is set, notices are composed and logged as `skipped`, and the in-app
+side of the event still happens, so moderation never silently depends on mail.
+Check delivery after a test suspension:
+
+```bash
+npx wrangler d1 execute goatmedia --remote \
+  --command "SELECT kind, status, error FROM emails ORDER BY created_at DESC LIMIT 5"
+```
+
+`SITE_ORIGIN` in `wrangler.jsonc` is where appeal links point. It is currently
+the GitHub Pages address; change it to the custom domain in the same commit that
+starts serving one. The `/GoatMedia/` path prefix is added automatically for a
+`github.io` origin.
+
+Appeals arrive under **Report center → Appeals** (`/admin?tab=reports&view=appeals`).
+Accepting a suspension reinstates the account and puts back the posts that were
+hidden with it; accepting a warning takes it off the tally. Both send a decision
+email. A suspended account can still read the appeal page, because the link is
+its own authorisation and does not need a session.
+
 ## Configuring the site build
 
 `VITE_API_ORIGIN` — absolute API origin, no trailing slash. Baked in at build
@@ -183,13 +236,20 @@ real multipart uploads and media streaming.
   database; 768 KB video chunks are spread over the seven shard databases to
   get past that per-database cap. All of it is D1 because R2 requires a card.
   The daily row limits, not the storage, are what a viral clip hits first.
-- Cloudflare has no email sending here, so password resets surface the link on
-  screen. Add an email provider before opening sign-ups to the public.
+- Workers AI is free up to 10,000 neurons a day, which is about 2,000 screenshot
+  checks on `clef-flash`; past that the filter stops answering and uploads queue
+  for a person instead.
+- Cloudflare cannot send mail from a Worker, so ban and warning notices need a
+  free Brevo or SendGrid key (see above). Password resets still surface the link
+  on screen, whatever provider is configured.
 - GitHub Pages is free for public repositories.
 
 ## Operational checklist before opening up
 
-- Replace the on-screen password reset with a real email provider.
+- Set an email provider key so suspensions and warnings reach people by mail.
+- Point `SITE_ORIGIN` at the address people actually open, then test one appeal
+  link end to end from your inbox.
+- Replace the on-screen password reset with the same email provider.
 - Add a custom domain if you want one (and its origin in `ALLOWED_ORIGINS`).
 - Keep the moderation queue under a day old; the product promise is that a
   person looks at every post.

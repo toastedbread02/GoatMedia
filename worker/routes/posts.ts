@@ -14,11 +14,12 @@ import {
   uid,
 } from '../lib';
 import { requireActive, currentUser } from '../session';
-import { categoryById, limits, postReportReasons } from '../config';
+import { categoryById, limits, postReportReasons, safety } from '../config';
 import { hydratePosts, PostRow, POST_SELECT } from '../models';
 import { followingFeed, forYouFeed, trendingFeed, invalidateTrending } from '../recommend';
 import { applySignal, recordEvent, undoEvent } from '../interests';
 import { firstCommentMilestone, likeMilestone } from '../milestones';
+import { addWarning, screenImages } from '../safety';
 import { todaysPick } from './daily';
 import { completeUpload, dimensionFromForm, durationFromForm } from './uploads';
 
@@ -293,6 +294,62 @@ export async function createPost(req: Request, env: Env, origin: string) {
   );
 
   await env.DB.batch(statements);
+
+  // The automatic screen runs after the upload is stored, so a slow model never
+  // loses bytes. It is a pre-filter, not a decision: flagged posts land in the
+  // rejected pile, and a moderator can still publish one after watching it.
+  const frames: { bytes: ArrayBuffer | Uint8Array; mime: string }[] = photos.map((photo) => ({
+    bytes: photo.bytes,
+    mime: photo.mime,
+  }));
+  if (video) {
+    const frame = await env.DB.prepare('SELECT poster_bytes, poster_mime FROM uploads WHERE id = ?')
+      .bind(video.uploadId)
+      .first<{ poster_bytes: ArrayBuffer | null; poster_mime: string | null }>();
+    if (frame?.poster_bytes) frames.push({ bytes: frame.poster_bytes, mime: frame.poster_mime || 'image/jpeg' });
+  }
+
+  const screen = await screenImages(env, frames);
+  if (screen.flagged) {
+    const heldAt = now();
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE posts SET status = 'rejected', reject_reason = ?, auto_flag = ?, updated_at = ? WHERE id = ?",
+      ).bind(
+        `The automatic safety check scored this ${Math.round(screen.score * 100)}% for ${safety.label}, so it was held back instead of published. A moderator will look at it; approve it if the filter was wrong.`,
+        `gore:${screen.score}`,
+        heldAt,
+        postId,
+      ),
+      env.DB.prepare(
+        `INSERT INTO moderation_events (id, post_id, admin_id, action, reason, created_at)
+         VALUES (?, ?, NULL, 'reject', ?, ?)`,
+      ).bind(uid('mod'), postId, `Automatic filter: possible gore, score ${screen.score}`, heldAt),
+    ]);
+
+    const warning = await addWarning(env, {
+      userId: user.id,
+      postId,
+      kind: 'gore',
+      source: 'auto',
+      reason: `An upload was flagged as possible ${safety.label} by the automatic filter.`,
+    });
+
+    const heldRow = await env.DB.prepare(`${POST_SELECT} WHERE p.id = ?`).bind(postId).first<PostRow>();
+    const [heldPost] = await hydratePosts(env, origin, user.id, [heldRow!]);
+    return json(
+      {
+        post: heldPost,
+        video: heldPost,
+        filtered: true,
+        warning: { count: warning.count, limit: safety.warningLimit, banned: warning.banned },
+        message: warning.banned
+          ? 'That upload was flagged as possible gore, and it was the third warning, so the account is suspended now. Check your email for the appeal link.'
+          : `That upload was held back by the automatic safety check and a moderator will look at it. This is warning ${warning.count} of ${safety.warningLimit}; if the filter got it wrong, the email you have been sent has an appeal link.`,
+      },
+      201,
+    );
+  }
 
   const row = await env.DB.prepare(`${POST_SELECT} WHERE p.id = ?`).bind(postId).first<PostRow>();
   const [post] = await hydratePosts(env, origin, user.id, [row!]);

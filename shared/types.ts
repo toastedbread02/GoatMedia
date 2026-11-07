@@ -164,7 +164,10 @@ export type NotificationType =
   | 'removed'
   | 'support'
   | 'milestone'
-  | 'weekly';
+  | 'weekly'
+  | 'warning'
+  | 'ban'
+  | 'appeal';
 
 export interface NotificationDTO {
   id: string;
@@ -239,6 +242,8 @@ export interface AdminUserRow {
   createdAt: number;
   videoCount: number;
   followerCount: number;
+  /** Warnings that still count: an accepted appeal removes one. */
+  warningCount: number;
 }
 
 export interface ModerationCounts {
@@ -248,8 +253,41 @@ export interface ModerationCounts {
   removed: number;
   openReports: number;
   openTickets: number;
+  openAppeals: number;
   users: number;
   newUsersThisWeek: number;
+}
+
+/** An appeal as the moderator queue sees it. */
+export interface AppealDTO {
+  id: string;
+  kind: 'ban' | 'warning';
+  reason: string;
+  status: 'sent' | 'open' | 'accepted' | 'declined';
+  message: string | null;
+  createdAt: number;
+  submittedAt: number | null;
+  username: string;
+  displayName: string;
+  email: string;
+  accountStatus: string;
+  warningCount: number;
+  /** Whether the notice email actually left the building. */
+  mailStatus: 'sent' | 'failed' | 'skipped' | null;
+}
+
+/** What the public appeal page is allowed to know about its link. */
+export interface AppealLinkDTO {
+  kind: 'ban' | 'warning';
+  reason: string;
+  status: 'sent' | 'open' | 'accepted' | 'declined';
+  submittedAt: number | null;
+  createdAt: number;
+  resolvedAt: number | null;
+  decisionNote: string | null;
+  username: string;
+  warnings: number;
+  accountStatus: string;
 }
 
 export interface SupportTicketDTO {

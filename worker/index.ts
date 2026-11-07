@@ -70,6 +70,7 @@ import { avatar, photo, poster, sound, video } from './routes/media';
 import { putChunk, putPoster, startUpload } from './routes/uploads';
 import { recordVisit, traffic } from './routes/traffic';
 import { purge as storagePurge, usage as storageUsage } from './routes/storage';
+import { adminAppeals, decideAppeal, readAppeal, submitAppeal, warnUser } from './routes/appeals';
 import { changePassword, usernameAvailable } from './routes/auth';
 import { creatorStats } from './routes/stats';
 import { daily, highlights, setDaily } from './routes/daily';
@@ -247,6 +248,12 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   // ---- contact ------------------------------------------------------------
   if (root === 'contact' && method === 'POST') return createTicket(req, env);
 
+  // ---- appeals (the emailed link is the authorisation) ---------------------
+  if (root === 'appeals' && second) {
+    if (method === 'GET') return readAppeal(req, env, second);
+    if (method === 'POST') return submitAppeal(req, env, second);
+  }
+
   // ---- posts (and the original /api/videos names) -------------------------
   if (root === 'posts' || root === 'videos') {
     if (!second && method === 'POST') return createPost(req, env, origin);
@@ -336,6 +343,13 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
       return admin.queue(req, env, origin, url);
     }
     if (second === 'daily' && !third && method === 'POST') return setDaily(req, env);
+    if (second === 'appeals' && !third && method === 'GET') return adminAppeals(req, env, url);
+    if (second === 'appeals' && third && fourth === 'resolve' && method === 'POST') {
+      return decideAppeal(req, env, third);
+    }
+    if (second === 'users' && third && fourth === 'warn' && method === 'POST') {
+      return warnUser(req, env, third);
+    }
     if ((second === 'posts' || second === 'videos') && third) {
       if (!fourth && method === 'GET') return admin.detail(req, env, origin, third);
       if (fourth === 'approve' && method === 'POST') return admin.decide(req, env, third, 'approve');

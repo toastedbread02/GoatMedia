@@ -66,12 +66,44 @@ class D1Shim {
   }
 }
 
+/** What the fake vision model answers with; the tests set this per upload. */
+let aiProbability = 0;
+const aiCalls: number[] = [];
+
+/** Every message the Worker tried to email, captured instead of sent. */
+const outbox: { to: string; subject: string; text: string }[] = [];
+
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url =
+    typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+  if (url.includes('sendgrid') || url.includes('brevo')) {
+    const payload = JSON.parse(String(init?.body ?? '{}'));
+    outbox.push({
+      to: payload.personalizations?.[0]?.to?.[0]?.email ?? payload.to?.[0]?.email ?? '',
+      subject: payload.subject ?? '',
+      text: payload.content?.find((part: { type: string }) => part.type === 'text/plain')?.value ?? payload.textContent ?? '',
+    });
+    return new Response('', { status: 202 });
+  }
+  return realFetch(input as never, init as never);
+}) as typeof fetch;
+
 const env = {
   DB: new D1Shim(),
   ALLOWED_ORIGINS: 'http://localhost:5173',
   PASSWORD_PEPPER: 'local-test-pepper',
   PASSWORD_ITERATIONS: '1000',
   ADMIN_SETUP_TOKEN: 'local-setup-code',
+  SENDGRID_API_KEY: 'test-key',
+  MAIL_FROM: 'moderator@example.com',
+  MAIL_FROM_NAME: 'GoatMedia',
+  AI: {
+    async run() {
+      aiCalls.push(aiProbability);
+      return { answers: { gore: { noul: aiProbability } } };
+    },
+  },
 } as unknown as Env;
 
 const ORIGIN = 'http://localhost:8788';
@@ -1116,6 +1148,194 @@ async function run() {
     stats.body.series.every((day: { date: string }) => /^\d{4}-\d{2}-\d{2}$/.test(day.date)),
     'each day is labelled with a date',
   );
+
+  console.log('\n[automatic gore filter]');
+  const cass = await call('/api/auth/register', {
+    method: 'POST',
+    // Sign-ups are limited to five an hour per address, and the accounts above
+    // have used that up. A different test IP keeps this check independent.
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.77' },
+    body: JSON.stringify({
+      email: 'cass@example.com',
+      username: 'cass',
+      displayName: 'Cass',
+      password: 'correct-horse-battery',
+      birthDate: '1992-02-02',
+    }),
+  });
+  ok(cass.status === 201, 'a third account registers for the filter tests', cass.body);
+  const tokenC = cass.body.token;
+  const cassId = cass.body.user.id;
+
+  // The model says 0.94: this upload should be rejected, not queued.
+  aiProbability = 0.94;
+  const flagged = await call('/api/posts', {
+    method: 'POST',
+    token: tokenC,
+    body: photoForm([{ bytes: PNG, type: 'image/png' }], {
+      caption: 'Something the filter will flag',
+      category: 'farm-life',
+      kind: 'photos',
+    }),
+  });
+  ok(flagged.status === 201, 'a flagged upload is still accepted so it can be reviewed', flagged.body);
+  ok(flagged.body.post?.status === 'rejected', 'a flagged upload goes to the rejected pile', flagged.body.post?.status);
+  ok(flagged.body.filtered === true, 'the response says the filter held it back');
+  ok(flagged.body.warning?.count === 1, 'the first flag records warning one', flagged.body.warning);
+  ok(aiCalls.length > 0, 'the vision model was actually asked');
+
+  const firstMail = outbox.find((mail) => mail.subject.includes('warning'));
+  ok(Boolean(firstMail), 'the warning was emailed');
+  ok(Boolean(firstMail && /\/appeal\/[A-Za-z0-9_-]{16,}/.test(firstMail.text)), 'the warning email carries an appeal link');
+
+  const override = await call(`/api/admin/posts/${flagged.body.post.id}/approve`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  ok(override.status === 200 && override.body.status === 'approved', 'a moderator can still approve a flagged post');
+
+  const missingReason = await call(`/api/admin/users/${cassId}/suspend`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  ok(missingReason.status === 400, 'a suspension is refused without a reason', missingReason.body);
+
+  aiProbability = 0.88;
+  const flaggedAgain = await call('/api/posts', {
+    method: 'POST',
+    token: tokenC,
+    body: photoForm([{ bytes: PNG, type: 'image/png' }], {
+      caption: 'Trying the filter again',
+      category: 'farm-life',
+      kind: 'photos',
+    }),
+  });
+  ok(flaggedAgain.body.warning?.count === 2, 'a second flag records warning two', flaggedAgain.body.warning);
+  ok(flaggedAgain.body.warning?.banned === false, 'two warnings do not suspend the account');
+
+  aiProbability = 0.97;
+  const third = await call('/api/posts', {
+    method: 'POST',
+    token: tokenC,
+    body: photoForm([{ bytes: PNG, type: 'image/png' }], {
+      caption: 'A third attempt at the same thing',
+      category: 'farm-life',
+      kind: 'photos',
+    }),
+  });
+  ok(third.body.warning?.count === 3, 'the third flag reaches the warning limit', third.body.warning);
+  ok(third.body.warning?.banned === true, 'the third warning suspends the account automatically');
+
+  const banMail = [...outbox].reverse().find((mail) => mail.subject.includes('suspended'));
+  ok(Boolean(banMail), 'the suspension was emailed');
+  ok(
+    Boolean(banMail && /warning limit reached \(3 warnings on record\)/i.test(banMail.text)),
+    'the email states the reason',
+    banMail?.text,
+  );
+  const appealToken = banMail?.text.match(/\/appeal\/([A-Za-z0-9_-]{16,})/)?.[1] ?? '';
+  ok(Boolean(appealToken), 'the suspension email carries an appeal token');
+
+  const blockedLogin = await call('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ identifier: 'cass', password: 'correct-horse-battery' }),
+  });
+  ok(
+    blockedLogin.body.user?.status === 'suspended' && blockedLogin.body.user?.suspendedReason,
+    'the suspended account shows its reason on sign-in',
+    blockedLogin.body.user?.status,
+  );
+
+  console.log('\n[appeals]');
+  const appealRead = await call(`/api/appeals/${appealToken}`);
+  ok(appealRead.status === 200 && appealRead.body.kind === 'ban', 'the emailed link opens without a session');
+  ok(/warning limit reached/i.test(appealRead.body.reason), 'the appeal page shows the reason', appealRead.body.reason);
+
+  const tooShort = await call(`/api/appeals/${appealToken}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'no' }),
+  });
+  ok(tooShort.status === 400, 'a one-word appeal is refused');
+
+  const filed = await call(`/api/appeals/${appealToken}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: 'It was a goat standing in a red barn. Nothing in the clip is gore.',
+      context: 'Filmed on a phone, no edits.',
+    }),
+  });
+  ok(filed.status === 200, 'the appeal is accepted', filed.body);
+
+  const replay = await call(`/api/appeals/${appealToken}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Trying to send this appeal twice in a row.' }),
+  });
+  ok(replay.status === 400, 'the same appeal cannot be filed twice');
+
+  const appealQueue = await call('/api/admin/appeals?status=open', { token: adminToken });
+  ok(appealQueue.status === 200 && appealQueue.body.items.length >= 1, 'the moderator sees the appeal', appealQueue.body);
+  const queued = appealQueue.body.items.find((item: { kind: string }) => item.kind === 'ban');
+  ok(queued?.username === 'cass', 'the appeal names the account');
+  ok(queued?.mailStatus === 'sent', 'the queue shows the notice was delivered');
+
+  const notMine = await call(`/api/admin/appeals/${queued?.id}/resolve`, {
+    method: 'POST',
+    token: tokenC,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'accept' }),
+  });
+  ok(notMine.status === 401, 'an ordinary account cannot decide appeals');
+
+  const accepted = await call(`/api/admin/appeals/${queued?.id}/resolve`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'accept', note: 'Watched it: a goat, as described. Sorry about that.' }),
+  });
+  ok(accepted.status === 200, 'the moderator can accept the appeal', accepted.body);
+
+  const backAgain = await call('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ identifier: 'cass', password: 'correct-horse-battery' }),
+  });
+  ok(backAgain.body.user?.status === 'active', 'accepting the appeal reinstates the account');
+  ok(Boolean(outbox.find((mail) => mail.subject.includes('reversed'))), 'the decision is emailed');
+
+  const decided = await call(`/api/appeals/${appealToken}`);
+  ok(decided.body.status === 'accepted', 'the appeal page shows the decision');
+
+  console.log('\n[moderator warnings]');
+  // A second account, so this warning does not push cass back over the limit
+  // the accepted appeal just cleared the suspension from.
+  const manual = await call(`/api/admin/users/${b.body.user.id}/warn`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'Posting the same clip six times in one afternoon.' }),
+  });
+  ok(manual.status === 200 && manual.body.count === 1, 'a moderator can warn an account by hand', manual.body);
+  ok(manual.body.banned === false, 'one manual warning does not suspend the account', manual.body);
+  const manualMail = [...outbox].reverse().find((mail) => mail.subject.includes('warning'));
+  ok(Boolean(manualMail && manualMail.text.includes('six times')), 'the manual warning is emailed with its reason');
+
+  const warnedProfile = await call('/api/users/boaz');
+  ok(warnedProfile.status === 200, 'a warned account stays public');
+  const notWarned = await call(`/api/admin/users/${b.body.user.id}/warn`, {
+    method: 'POST',
+    token: tokenB,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'Not the moderator' }),
+  });
+  ok(notWarned.status === 401, 'ordinary accounts cannot warn people');
 
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);

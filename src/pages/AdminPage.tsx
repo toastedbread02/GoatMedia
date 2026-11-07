@@ -24,11 +24,12 @@ import { StatusTag } from '../components/StatusTag.tsx';
 import { DailyPanel } from '../components/DailyPanel.tsx';
 import { AdminSkeleton, RowSkeleton } from '../components/Skeleton.tsx';
 import { SupportQueue } from '../components/SupportQueue.tsx';
+import { AppealQueue } from '../components/AppealQueue.tsx';
 import { TrafficPanel } from '../components/TrafficPanel.tsx';
 import { StoragePanel } from '../components/StoragePanel.tsx';
 
 type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'daily' | 'reports' | 'accounts' | 'traffic';
-type ReportView = 'content' | 'support';
+type ReportView = 'content' | 'support' | 'appeals';
 
 const VIDEO_TAB_STATUS: Record<string, string> = {
   pending: 'pending',
@@ -79,9 +80,10 @@ export function AdminPage() {
       ? requested
       : 'pending';
   });
-  const [reportView, setReportView] = useState<ReportView>(() =>
-    searchParams.get('view') === 'support' ? 'support' : 'content',
-  );
+  const [reportView, setReportView] = useState<ReportView>(() => {
+    const requested = searchParams.get('view');
+    return requested === 'support' || requested === 'appeals' ? requested : 'content';
+  });
   const focusTicket = searchParams.get('ticket');
   const [counts, setCounts] = useState<ModerationCounts | null>(null);
   const [videos, setVideos] = useState<AdminQueueItem[]>([]);
@@ -105,6 +107,8 @@ export function AdminPage() {
   const [removeReason, setRemoveReason] = useState('');
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
+  const [warnOpen, setWarnOpen] = useState(false);
+  const [warnReason, setWarnReason] = useState('');
   const [removeAccountOpen, setRemoveAccountOpen] = useState(false);
   const [removeAccountReason, setRemoveAccountReason] = useState('');
   const [claimToken, setClaimToken] = useState('');
@@ -119,6 +123,7 @@ export function AdminPage() {
     setRejecting(false);
     setRemoving(false);
     setSuspendOpen(false);
+    setWarnOpen(false);
     setRemoveAccountOpen(false);
     setActionError(null);
   }, [tab, isAdmin]);
@@ -130,7 +135,8 @@ export function AdminPage() {
       setTab(requested);
     }
     if (requested === 'reports') {
-      setReportView(searchParams.get('view') === 'support' ? 'support' : 'content');
+      const view = searchParams.get('view');
+      setReportView(view === 'support' || view === 'appeals' ? view : 'content');
     }
   }, [searchParams]);
 
@@ -222,8 +228,10 @@ export function AdminPage() {
       setRejecting(false);
       setRemoving(false);
       setSuspendOpen(false);
+      setWarnOpen(false);
       setRemoveAccountOpen(false);
       setRemoveAccountReason('');
+      setWarnReason('');
       setRejectPreset('');
       setRejectNote('');
       setRemoveReason('');
@@ -389,7 +397,9 @@ export function AdminPage() {
           }}
         >
           Report center
-          <span className="admin-tab__count">{(counts?.openReports ?? 0) + (counts?.openTickets ?? 0)}</span>
+          <span className="admin-tab__count">
+            {(counts?.openReports ?? 0) + (counts?.openTickets ?? 0) + (counts?.openAppeals ?? 0)}
+          </span>
         </button>
         <button
           type="button"
@@ -447,9 +457,19 @@ export function AdminPage() {
             >
               Support requests <span>{counts?.openTickets ?? 0}</span>
             </button>
+            <button
+              type="button"
+              className={`admin-subtab${reportView === 'appeals' ? ' is-active' : ''}`}
+              aria-pressed={reportView === 'appeals'}
+              onClick={() => setReportView('appeals')}
+            >
+              Appeals <span>{counts?.openAppeals ?? 0}</span>
+            </button>
           </div>
 
-          {reportView === 'support' ? (
+          {reportView === 'appeals' ? (
+            <AppealQueue onChanged={refresh} />
+          ) : reportView === 'support' ? (
             <SupportQueue
               focusTicket={focusTicket}
               onChanged={refresh}
@@ -689,6 +709,10 @@ export function AdminPage() {
                     <dd>{selectedAccount.role === 'admin' ? 'Moderator' : 'Member'}</dd>
                   </div>
                   <div>
+                    <dt>Warnings</dt>
+                    <dd>{selectedAccount.warningCount} of 3</dd>
+                  </div>
+                  <div>
                     <dt>Status</dt>
                     <dd>
                       {selectedAccount.status === 'deleted'
@@ -764,9 +788,21 @@ export function AdminPage() {
                           </button>
                           <button
                             type="button"
+                            className="btn btn--quiet btn--sm"
+                            onClick={() => {
+                              setWarnOpen((current) => !current);
+                              setSuspendOpen(false);
+                              setRemoveAccountOpen(false);
+                            }}
+                          >
+                            Warn account
+                          </button>
+                          <button
+                            type="button"
                             className="btn btn--danger btn--sm"
                             onClick={() => {
                               setSuspendOpen((current) => !current);
+                              setWarnOpen(false);
                               setRemoveAccountOpen(false);
                             }}
                           >
@@ -780,6 +816,7 @@ export function AdminPage() {
                         onClick={() => {
                           setRemoveAccountOpen((current) => !current);
                           setSuspendOpen(false);
+                          setWarnOpen(false);
                         }}
                       >
                         Remove account
@@ -792,30 +829,73 @@ export function AdminPage() {
                   <div className="mod-panel">
                     <div className="field">
                       <label className="field__label" htmlFor="suspend-reason">
-                        Reason for suspension
+                        Reason for the suspension
                       </label>
                       <textarea
                         id="suspend-reason"
                         className="textarea"
                         value={suspendReason}
                         onChange={(event) => setSuspendReason(event.target.value)}
-                        placeholder="Shown to the account holder if they contact you."
+                        placeholder="Be specific: this sentence is emailed to them and is what they appeal against."
+                        required
                       />
+                      <p className="field__hint">
+                        Required. At least 6 characters. They receive it with an appeal link, and the account cannot
+                        sign in until an appeal is accepted or you reinstate it.
+                      </p>
                     </div>
                     <div className="form-actions">
                       <button
                         type="button"
                         className="btn btn--danger btn--sm"
-                        disabled={busy || suspendReason.trim().length < 3}
+                        disabled={busy || suspendReason.trim().length < 6}
                         onClick={() =>
                           runAction(() =>
                             api.post(`/api/admin/users/${selectedAccount.id}/suspend`, { reason: suspendReason }),
                           )
                         }
                       >
-                        Suspend
+                        Suspend and email the reason
                       </button>
                       <button type="button" className="btn btn--quiet btn--sm" onClick={() => setSuspendOpen(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {warnOpen ? (
+                  <div className="mod-panel">
+                    <div className="field">
+                      <label className="field__label" htmlFor="warn-reason">
+                        Reason for the warning
+                      </label>
+                      <textarea
+                        id="warn-reason"
+                        className="textarea"
+                        value={warnReason}
+                        onChange={(event) => setWarnReason(event.target.value)}
+                        placeholder="What they did, in one sentence. This is emailed to them."
+                      />
+                      <p className="field__hint">
+                        The warning is emailed with an appeal link. The third active warning suspends the account
+                        automatically.
+                      </p>
+                    </div>
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--sm"
+                        disabled={busy || warnReason.trim().length < 6}
+                        onClick={() =>
+                          runAction(() =>
+                            api.post(`/api/admin/users/${selectedAccount.id}/warn`, { reason: warnReason }),
+                          )
+                        }
+                      >
+                        Send warning
+                      </button>
+                      <button type="button" className="btn btn--quiet btn--sm" onClick={() => setWarnOpen(false)}>
                         Cancel
                       </button>
                     </div>

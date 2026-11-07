@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
 import { AdminPage } from './pages/AdminPage.tsx';
 import { ContactPage } from './pages/ContactPage.tsx';
+import { AppealPage } from './pages/AppealPage.tsx';
 import { DailyPage } from './pages/DailyPage.tsx';
 import {
   AboutPage,
@@ -69,6 +70,7 @@ export default function App() {
       <Route path="/cookies" element={<CookiesPage />} />
       <Route path="/copyright" element={<CopyrightPage />} />
       <Route path="/about" element={<AboutPage />} />
+      <Route path="/appeal/:token" element={<AppealPage />} />
 
       <Route element={<AppFrame />}>
         <Route path="/" element={<FeedPage key="foryou" tab="foryou" />} />

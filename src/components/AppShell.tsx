@@ -63,7 +63,10 @@ function notificationText(item: NotificationDTO) {
         : 'A guest sent a support request';
     case 'milestone':
     case 'weekly':
-      return item.detail || 'An update about your goats';
+    case 'warning':
+    case 'ban':
+    case 'appeal':
+      return item.detail || 'An update about your account';
     default:
       return 'New activity';
   }
@@ -89,6 +92,12 @@ function notificationIcon(type: NotificationDTO['type']): IconName {
       return 'spark';
     case 'weekly':
       return 'chart';
+    case 'warning':
+      return 'alert';
+    case 'ban':
+      return 'shield';
+    case 'appeal':
+      return 'flag';
     default:
       return 'comment';
   }
@@ -368,6 +377,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </div>
         </header>
+
+        {user?.status === 'suspended' ? (
+          <div className="suspend-banner" role="status">
+            <Icon name="shield" size={18} />
+            <div>
+              <strong>This account is suspended</strong>
+              <p>
+                {user.suspendedReason || 'A moderator suspended this account.'} Posting, liking and commenting are
+                paused. The reason and an appeal link were sent to your email; if it did not arrive,{' '}
+                <Link to="/contact">contact the moderator</Link>.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <main id="main" className="main">
           {children}

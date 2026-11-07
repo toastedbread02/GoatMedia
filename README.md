@@ -81,6 +81,24 @@ configurable quotas (80% personalized / 15% discovery / 5% trending) with a
 two-posts-per-creator cap, freshness decay and an exposure penalty. Users can see
 and reset what the model has learned under Settings → Feed.
 
+**Automatic screening** — Before a moderator ever sees an upload, a vision
+model on Workers AI looks at the poster frame or the first photos and scores it
+for graphic gore. A post over the threshold goes to the rejected pile instead of
+the queue, with the score on the row, and a moderator can still approve it after
+watching. The filter is a pre-filter, never a decision, and it never deletes
+anything. If Workers AI is unavailable the upload simply queues for a person, so
+a broken model can never publish or lose a post.
+
+**Warnings and appeals** — A flagged upload records a warning: the first two
+warn and email the reason, the third suspends the account. Moderators can also
+warn an account by hand. Every warning and every suspension (manual or
+automatic) emails the reason and a single-use appeal link; the link opens without
+signing in, because a suspended account cannot sign in. Appeals land in
+`/admin?tab=reports&view=appeals`, where accepting a suspension reinstates the
+account and puts back the posts that were hidden with it, and accepting a
+warning removes it from the tally. Decisions are emailed too. Accounts show
+`n of 3` warnings in the control center.
+
 **Accounts** — Sign-up records a date of birth to enforce a 13+ minimum, server
 side. Settings covers profile, appearance (light, dark or follow the system),
 reduced motion, privacy (private follower lists, opt out of people search),date of birth and account security. Pages render layout-matched skeletons while data
@@ -156,7 +174,7 @@ own account are protected.
 
 ```bash
 npm run typecheck     # app + Worker
-npm run api:check     # 183 checks: auth, age gate, privacy, moderation, shared roles, feeds, media, streaming, CORS
+npm run api:check     # 235 checks: auth, age gate, privacy, moderation, shared roles, feeds, media, streaming, CORS, gore filter, warnings, appeals
 API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev node scripts/live-check.mjs
 ```
 
@@ -165,9 +183,10 @@ and posts. It is a smoke test, not a load test.
 
 ## Known limitations
 
-- **No email provider connected.** Password reset links are shown on screen
-  instead of being emailed. Wire an email service into
-  `worker/routes/auth.ts` before opening the site widely.
+- **No email provider connected out of the box.** Ban notices, warning notices
+  and appeal decisions are composed and logged either way, but nothing leaves the
+  building until `SENDGRID_API_KEY` or `BREVO_API_KEY` and `MAIL_FROM` are set.
+  Password reset links are still shown on screen instead of being emailed.
 - **Manual moderation is a human queue.** Roles can be shared, but a backlog is
   still a feature of the design, not a bug, and it has no SLA.
 - **Browser compression takes time.** A six-second 1440p60 clip took about 13 s

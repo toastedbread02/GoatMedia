@@ -3,6 +3,7 @@ import { requireAdmin, requireUser } from '../session';
 import { hydratePosts, PostRow, POST_SELECT } from '../models';
 import { rejectionReasons } from '../config';
 import { invalidateTrending } from '../recommend';
+import { banAccount, unbanAccount } from '../safety';
 
 /**
  * One-time promotion of the first moderator. The token is a Worker secret, so
@@ -41,6 +42,9 @@ export async function counts(req: Request, env: Env) {
   const openTickets = await env.DB.prepare(
     "SELECT COUNT(*) AS n FROM support_tickets WHERE status <> 'closed'",
   ).first<{ n: number }>();
+  const openAppeals = await env.DB.prepare("SELECT COUNT(*) AS n FROM appeals WHERE status = 'open'").first<{
+    n: number;
+  }>();
   const users = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
   const recent = await env.DB.prepare(
     'SELECT COUNT(*) AS n FROM users WHERE created_at > ?',
@@ -56,6 +60,7 @@ export async function counts(req: Request, env: Env) {
     removed: map.get('removed') ?? 0,
     openReports: openReports?.n ?? 0,
     openTickets: openTickets?.n ?? 0,
+    openAppeals: openAppeals?.n ?? 0,
     users: users?.n ?? 0,
     newUsersThisWeek: recent?.n ?? 0,
   });
@@ -451,7 +456,8 @@ export async function users(req: Request, env: Env, url: URL) {
     `SELECT u.id, u.username, u.display_name, u.email, u.role, u.status, u.suspended_reason,
             u.deleted_at, u.deleted_reason, u.created_at,
             (SELECT COUNT(*) FROM posts p WHERE p.owner_id = u.id) AS post_count,
-            (SELECT COUNT(*) FROM follows f WHERE f.following_id = u.id) AS follower_count
+            (SELECT COUNT(*) FROM follows f WHERE f.following_id = u.id) AS follower_count,
+            (SELECT COUNT(*) FROM warnings w WHERE w.user_id = u.id AND w.appeal_status <> 'accepted') AS warning_count
        FROM users u
       WHERE (? = '' OR LOWER(u.username) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(u.display_name) LIKE ?)
       ORDER BY (u.role = 'admin') DESC, u.created_at DESC LIMIT 50`,
@@ -473,6 +479,7 @@ export async function users(req: Request, env: Env, url: URL) {
     postCount: Number(row.post_count),
     videoCount: Number(row.post_count),
     followerCount: Number(row.follower_count),
+    warningCount: Number(row.warning_count ?? 0),
   }));
   return json({ users: items, items });
 }
@@ -480,9 +487,6 @@ export async function users(req: Request, env: Env, url: URL) {
 export async function suspendUser(req: Request, env: Env, id: string, on: boolean) {
   const admin = await requireAdmin(req, env);
   if (id === admin.id) throw bad('You cannot suspend your own account.');
-  const body = on ? await readJson(req) : {};
-  const reason = optionalStr((body as { reason?: string }).reason, 200);
-  if (on && !reason) throw bad('Give a reason so the account can be told why.');
 
   const target = await env.DB.prepare('SELECT id, role, deleted_at FROM users WHERE id = ?')
     .bind(id)
@@ -491,23 +495,38 @@ export async function suspendUser(req: Request, env: Env, id: string, on: boolea
   if (target.role === 'admin') throw bad('Moderator accounts cannot be suspended here.');
   if (target.deleted_at) throw bad('Restore this account before suspending it.');
 
-  const statements = [
-    env.DB.prepare('UPDATE users SET status = ?, suspended_reason = ? WHERE id = ?').bind(
-      on ? 'suspended' : 'active',
-      on ? reason : null,
-      id,
-    ),
-  ];
-  if (on) {
-    statements.push(env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id));
-    statements.push(
-      env.DB.prepare("UPDATE posts SET status = 'removed', removed_reason = ? WHERE owner_id = ? AND status = 'approved'")
-        .bind('Creator account suspended', id),
-    );
+  if (!on) {
+    await unbanAccount(env, id);
+    // A suspension that is lifted by hand answers any appeal still waiting.
+    await env.DB.prepare(
+      `UPDATE appeals SET status = 'accepted', resolved_at = ?, resolved_by = ?,
+         decision_note = COALESCE(decision_note, 'Lifted by a moderator.')
+        WHERE user_id = ? AND kind = 'ban' AND status = 'open'`,
+    )
+      .bind(now(), admin.id, id)
+      .run();
+    invalidateTrending();
+    return json({ ok: true, suspended: false, message: 'Account reinstated and its posts are back.' });
   }
-  await env.DB.batch(statements);
+
+  // A ban is a serious action, so the reason is required rather than optional:
+  // it is shown to the person and it is what they appeal against.
+  const body = await readJson(req);
+  const reason = str(body.reason, 'Reason for the suspension', 300, 6);
+
+  const result = await banAccount(env, { userId: id, reason, adminId: admin.id });
   invalidateTrending();
-  return json({ ok: true, suspended: on });
+  return json({
+    ok: true,
+    suspended: true,
+    email: result.mailStatus,
+    message:
+      result.mailStatus === 'sent'
+        ? 'Account suspended. The reason and an appeal link have been emailed to them.'
+        : result.mailStatus === 'failed'
+          ? 'Account suspended, but the notice email failed to send. The reason is on the account.'
+          : 'Account suspended. No email provider is configured, so the appeal link was only recorded.',
+  });
 }
 
 /** Soft-delete: the row stays so the moderator can restore the account. */

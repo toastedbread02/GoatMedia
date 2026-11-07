@@ -16,6 +16,17 @@ export interface Env {
   PASSWORD_PEPPER?: string;
   PASSWORD_ITERATIONS?: string;
   ADMIN_SETUP_TOKEN?: string;
+  /** Workers AI, used to screen uploads for gore. Absent means no screening. */
+  AI?: { run: (model: string, input: unknown) => Promise<unknown> };
+  /** Path the frontend is served from, when it is not the domain root. */
+  SITE_BASE_PATH?: string;
+  /** Public origin of the site, used for appeal links in emails. */
+  SITE_ORIGIN?: string;
+  /** Mail provider: whichever key is set is used. */
+  SENDGRID_API_KEY?: string;
+  BREVO_API_KEY?: string;
+  MAIL_FROM?: string;
+  MAIL_FROM_NAME?: string;
 }
 
 export class HttpError extends Error {

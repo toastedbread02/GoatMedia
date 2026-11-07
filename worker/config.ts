@@ -92,5 +92,18 @@ export const guidelines = [
   'Every post is looked at by a human before it goes live.',
 ];
 
+/**
+ * Automatic screening. This is a pre-filter, not a decision: anything it flags
+ * still goes to a person, and the person can approve it.
+ */
+export const safety = {
+  /** Probability the vision model must reach before a post is held back. */
+  goreThreshold: 0.72,
+  /** Warnings on record that suspend an account without anyone watching. */
+  warningLimit: 3,
+  /** What the filter is looking for, in the words used to the creator. */
+  label: 'graphic gore',
+};
+
 /** Manual moderation is the default at every size. */
 export const moderation = 'manual' as const;
