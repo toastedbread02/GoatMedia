@@ -518,7 +518,9 @@ export function SettingsPage() {
               <ul className="mini-list">
                 {blocked.map((person) => (
                   <li key={person.id} className="mini-video">
-                    <Avatar displayName={person.displayName} username={person.username} avatarUrl={person.avatarUrl} size={36} />
+                    <Link to={`/u/${person.username}`}>
+                      <Avatar displayName={person.displayName} username={person.username} avatarUrl={person.avatarUrl} size={36} />
+                    </Link>
                     <div className="mini-video__body">
                       <Link to={`/u/${person.username}`}>{person.displayName}</Link>
                       <span className="field__hint">@{person.username}</span>

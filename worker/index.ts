@@ -51,6 +51,7 @@ import {
   block,
   blockedUsers,
   follow,
+  followList,
   hiddenPosts,
   interests,
   markNotificationsRead,
@@ -249,6 +250,8 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (third === 'videos' && method === 'GET') return myPosts(req, env, origin, url, second);
     if (third === 'follow' && method === 'POST') return follow(req, env, second, true);
     if (third === 'follow' && method === 'DELETE') return follow(req, env, second, false);
+    if (third === 'followers' && method === 'GET') return followList(req, env, origin, second, 'followers', url);
+    if (third === 'following' && method === 'GET') return followList(req, env, origin, second, 'following', url);
     if (third === 'block' && method === 'POST') return block(req, env, second, true);
     if (third === 'block' && method === 'DELETE') return block(req, env, second, false);
     if (third === 'report' && method === 'POST') return reportUser(req, env, second);

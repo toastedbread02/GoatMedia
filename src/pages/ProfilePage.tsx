@@ -12,6 +12,7 @@ import { Popover } from '../components/Popover.tsx';
 import { VideoCard } from '../components/VideoCard.tsx';
 
 type Tab = 'published' | 'pending' | 'rejected' | 'removed';
+type PeopleList = 'followers' | 'following';
 
 const TAB_LABEL: Record<Tab, string> = {
   published: 'Published',
@@ -21,7 +22,7 @@ const TAB_LABEL: Record<Tab, string> = {
 };
 
 const EMPTY_COPY: Record<Tab, string> = {
-  published: 'Nothing published yet. The first approved video will show up here.',
+  published: 'Nothing published yet. The first approved post will show up here.',
   pending: 'Nothing waiting for review right now.',
   rejected: 'No videos have been turned down.',
   removed: 'No videos have been removed.',
@@ -42,6 +43,13 @@ export function ProfilePage() {
   const [followPending, setFollowPending] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  const [people, setPeople] = useState<PeopleList | null>(null);
+  const [peopleItems, setPeopleItems] = useState<PublicUser[] | null>(null);
+  const [peoplePage, setPeoplePage] = useState(1);
+  const [peopleHasMore, setPeopleHasMore] = useState(false);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [peopleError, setPeopleError] = useState<string | null>(null);
+  const [followPendingIds, setFollowPendingIds] = useState<Record<string, boolean>>({});
 
   useDocumentTitle(profile ? `${profile.displayName} (@${profile.username})` : 'Profile');
 
@@ -53,6 +61,7 @@ export function ProfilePage() {
     setCounts(null);
     setTab('published');
     setConfirmBlock(false);
+    setPeople(null);
     api
       .get<{ user: PublicUser }>(`/api/users/${username}`)
       .then((data) => {
@@ -89,6 +98,84 @@ export function ProfilePage() {
       cancelled = true;
     };
   }, [profile, username, tab]);
+
+  useEffect(() => {
+    if (!people) {
+      setPeopleItems(null);
+      setPeopleHasMore(false);
+      setPeoplePage(1);
+      setPeopleError(null);
+      return;
+    }
+    let cancelled = false;
+    setPeopleItems(null);
+    setPeopleError(null);
+    setPeoplePage(1);
+    setPeopleHasMore(false);
+    api
+      .get<{ users: PublicUser[]; hasMore: boolean }>(`/api/users/${username}/${people}?page=1`)
+      .then((data) => {
+        if (cancelled) return;
+        setPeopleItems(data.users);
+        setPeopleHasMore(data.hasMore);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setPeopleItems([]);
+        setPeopleError(loadError instanceof Error ? loadError.message : 'That list could not be loaded.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [people, username]);
+
+  const loadMorePeople = async () => {
+    if (!people || peopleLoading) return;
+    const next = peoplePage + 1;
+    setPeopleLoading(true);
+    try {
+      const data = await api.get<{ users: PublicUser[]; hasMore: boolean }>(
+        `/api/users/${username}/${people}?page=${next}`,
+      );
+      setPeopleItems((current) => [...(current ?? []), ...data.users]);
+      setPeopleHasMore(data.hasMore);
+      setPeoplePage(next);
+    } catch {
+      notify('Could not load more people.', { tone: 'error' });
+    } finally {
+      setPeopleLoading(false);
+    }
+  };
+
+  const togglePersonFollow = async (person: PublicUser) => {
+    if (!user) {
+      notify('Sign in to follow this creator.', {
+        actionLabel: 'Sign in',
+        onAction: () => navigate(`/login?next=${encodeURIComponent(location.pathname)}`),
+      });
+      return;
+    }
+    const next = !person.isFollowing;
+    setFollowPendingIds((current) => ({ ...current, [person.id]: true }));
+    setPeopleItems((current) =>
+      current?.map((item) => (item.id === person.id ? { ...item, isFollowing: next } : item)) ?? current,
+    );
+    try {
+      if (next) await api.post(`/api/users/${person.id}/follow`);
+      else await api.delete(`/api/users/${person.id}/follow`);
+    } catch {
+      setPeopleItems((current) =>
+        current?.map((item) => (item.id === person.id ? { ...item, isFollowing: !next } : item)) ?? current,
+      );
+      notify('Could not update that follow.', { tone: 'error' });
+    } finally {
+      setFollowPendingIds((current) => {
+        const copy = { ...current };
+        delete copy[person.id];
+        return copy;
+      });
+    }
+  };
 
   if (profileError) {
     return (
@@ -183,15 +270,33 @@ export function ProfilePage() {
           <p className="profile-username">@{profile.username}</p>
           <p className="profile-bio">{profile.bio || (isSelf ? 'Add a short bio in settings.' : 'No bio yet.')}</p>
           <p className="profile-counts">
-            <strong>{profile.followerCount}</strong> {plural(profile.followerCount, 'follower')}
+            <button
+              type="button"
+              className={`profile-count${people === 'followers' ? ' is-active' : ''}`}
+              aria-expanded={people === 'followers'}
+              aria-controls="profile-people"
+              onClick={() => setPeople(people === 'followers' ? null : 'followers')}
+            >
+              <strong>{profile.followerCount}</strong> {plural(profile.followerCount, 'follower')}
+            </button>
             <span className="meta-sep" aria-hidden="true">
               ·
             </span>
-            <strong>{profile.followingCount}</strong> following
+            <button
+              type="button"
+              className={`profile-count${people === 'following' ? ' is-active' : ''}`}
+              aria-expanded={people === 'following'}
+              aria-controls="profile-people"
+              onClick={() => setPeople(people === 'following' ? null : 'following')}
+            >
+              <strong>{profile.followingCount}</strong> following
+            </button>
             <span className="meta-sep" aria-hidden="true">
               ·
             </span>
-            <strong>{profile.videoCount}</strong> {plural(profile.videoCount, 'video')}
+            <span>
+              <strong>{profile.videoCount}</strong> {plural(profile.videoCount, 'post')}
+            </span>
           </p>
           <p className="profile-joined">Joined {monthYear(profile.createdAt)}</p>
         </div>
@@ -277,6 +382,72 @@ export function ProfilePage() {
         </div>
       </header>
 
+      {people ? (
+        <section id="profile-people" className="profile-people" aria-label={`${people === 'followers' ? 'Followers' : 'Following'} of @${profile.username}`}>
+          <div className="profile-people__head">
+            <h2>{people === 'followers' ? 'Followers' : 'Following'}</h2>
+            <button type="button" className="textlink" onClick={() => setPeople(null)}>
+              Close
+            </button>
+          </div>
+
+          {peopleItems === null ? (
+            <p className="section-note" role="status">
+              Loading…
+            </p>
+          ) : peopleError ? (
+            <p className="section-note">{peopleError}</p>
+          ) : peopleItems.length === 0 ? (
+            <p className="section-note">
+              {people === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}
+            </p>
+          ) : (
+            <ul className="mini-list">
+              {peopleItems.map((person) => (
+                <li key={person.id} className="mini-video">
+                  <Link to={`/u/${person.username}`} className="mini-video__avatar">
+                    <Avatar
+                      displayName={person.displayName}
+                      username={person.username}
+                      avatarUrl={person.avatarUrl}
+                      size={40}
+                    />
+                  </Link>
+                  <div className="mini-video__body">
+                    <Link to={`/u/${person.username}`}>{person.displayName}</Link>
+                    <span className="field__hint">
+                      @{person.username}
+                      {person.bio ? ` · ${person.bio}` : ''}
+                    </span>
+                  </div>
+                  {person.isSelf ? (
+                    <span className="field__hint">You</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={`btn btn--sm ${person.isFollowing ? 'btn--quiet is-following' : 'btn--primary'}`}
+                      onClick={() => togglePersonFollow(person)}
+                      disabled={Boolean(followPendingIds[person.id])}
+                      aria-pressed={person.isFollowing}
+                    >
+                      {person.isFollowing ? 'Following' : 'Follow'}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {peopleHasMore ? (
+            <div className="profile-people__more">
+              <button type="button" className="btn btn--quiet btn--sm" onClick={loadMorePeople} disabled={peopleLoading}>
+                {peopleLoading ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {blocked ? (
         <div className="notice">
           <Icon name="eye-off" size={18} />
@@ -334,18 +505,18 @@ export function ProfilePage() {
         </div>
       ) : videos.length === 0 ? (
         <div className="empty-state">
-          <h2>{tab === 'published' && isSelf ? 'No videos yet' : EMPTY_COPY[tab]}</h2>
+          <h2>{tab === 'published' && isSelf ? 'Nothing posted yet' : EMPTY_COPY[tab]}</h2>
           <p>
             {tab === 'published' && isSelf
-              ? 'Upload a video of your goats. It will appear here after the moderator approves it.'
+              ? 'Post a video or a set of photos of your goats. It will appear here after the moderator approves it.'
               : tab === 'published'
-                ? 'This creator has not had a video approved yet.'
+                ? 'This creator has not had a post approved yet.'
                 : 'That is a good sign.'}
           </p>
           {isSelf && tab === 'published' ? (
             <div className="empty-state__actions">
               <Link className="btn btn--primary" to="/upload">
-                Upload a video
+                Upload a post
               </Link>
             </div>
           ) : null}

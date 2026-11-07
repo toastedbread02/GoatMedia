@@ -2820,6 +2820,55 @@ ol {
   font-weight: 600;
 }
 
+.profile-count {
+  font: inherit;
+  color: inherit;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 1px;
+  transition: border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+
+.profile-count:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.profile-count.is-active {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.profile-people {
+  margin-top: 20px;
+}
+
+.profile-people__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.profile-people__head h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.profile-people .mini-video {
+  padding: 8px 6px;
+}
+
+.profile-people .mini-video__body .field__hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-people__more {
+  margin-top: 8px;
+}
+
 .profile-joined {
   font-size: 12px;
   color: var(--ink-3);

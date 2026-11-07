@@ -229,7 +229,9 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
                         <Link to={`/u/${comment.author.username}`} className="comment__name" onClick={close}>
                           {comment.author.displayName}
                         </Link>
-                        <span className="comment__handle">@{comment.author.username}</span>
+                        <Link to={`/u/${comment.author.username}`} className="comment__handle" onClick={close}>
+                          @{comment.author.username}
+                        </Link>
                         <span className="comment__handle">{timeAgo(comment.createdAt)}</span>
                       </div>
                       <p className="comment__text">{comment.body}</p>

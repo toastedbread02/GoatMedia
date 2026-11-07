@@ -54,6 +54,59 @@ export async function follow(req: Request, env: Env, username: string, on: boole
   return json({ following: on, followerCount: count?.n ?? 0 });
 }
 
+/**
+ * Who follows this account, or who it follows. Both directions are public,
+ * ordered newest first, and page the same way the feeds do.
+ */
+export async function followList(
+  req: Request,
+  env: Env,
+  origin: string,
+  username: string,
+  kind: 'followers' | 'following',
+  url: URL,
+) {
+  const viewer = await currentUser(req, env);
+  const viewerId = viewer?.id ?? null;
+  const target = await env.DB.prepare('SELECT id FROM users WHERE username = ?')
+    .bind(username)
+    .first<{ id: string }>();
+  if (!target) throw missing('No creator with that username.');
+
+  const page = Math.max(1, Math.min(200, Number(url.searchParams.get('page') || 1) || 1));
+  const size = 20;
+  const offset = (page - 1) * size;
+  const join =
+    kind === 'followers'
+      ? `JOIN follows f ON f.follower_id = u.id WHERE f.following_id = ? AND u.status = 'active'`
+      : `JOIN follows f ON f.following_id = u.id WHERE f.follower_id = ? AND u.status = 'active'`;
+  const countSql =
+    kind === 'followers'
+      ? `SELECT COUNT(*) AS n FROM follows f JOIN users u ON u.id = f.follower_id
+          WHERE f.following_id = ? AND u.status = 'active'`
+      : `SELECT COUNT(*) AS n FROM follows f JOIN users u ON u.id = f.following_id
+          WHERE f.follower_id = ? AND u.status = 'active'`;
+
+  const [rows, total] = await Promise.all([
+    env.DB.prepare(
+      `${USER_SELECT(viewerId)} ${join} ORDER BY f.created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...(viewerId ? [viewerId, viewerId] : []), target.id, size, offset)
+      .all<UserRow>(),
+    env.DB.prepare(countSql).bind(target.id).first<{ n: number }>(),
+  ]);
+
+  const users = (rows.results || []).map((row) => publicUser(origin, row, viewerId));
+  const totalCount = total?.n ?? 0;
+  return json({
+    users,
+    items: users,
+    total: totalCount,
+    page,
+    hasMore: offset + users.length < totalCount,
+  });
+}
+
 export async function block(req: Request, env: Env, username: string, on: boolean) {
   const user = await requireActive(req, env);
   const target = await env.DB.prepare('SELECT id FROM users WHERE username = ?')

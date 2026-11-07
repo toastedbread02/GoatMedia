@@ -344,6 +344,18 @@ async function run() {
   const profile = await call('/api/users/ada');
   ok(profile.body.user.followerCount === 1 && profile.body.user.postCount === 1, 'profile counts are live');
 
+  const followers = await call('/api/users/ada/followers');
+  ok(followers.status === 200 && followers.body.users.length === 1, 'followers list shows who follows an account');
+  ok(followers.body.users[0].username === 'boaz', 'the follower list names the account');
+  ok(followers.body.users[0].bio !== undefined && !('email' in followers.body.users[0]), 'follower entries carry no private fields');
+  const followingList = await call('/api/users/boaz/following');
+  ok(
+    followingList.body.users.some((person: any) => person.username === 'ada'),
+    'following list shows who an account follows',
+  );
+  const missingFollowers = await call('/api/users/nobody-here/followers');
+  ok(missingFollowers.status === 404, 'a follower list needs a real account');
+
   console.log('\n[recommendations]');
   const interests = await call('/api/me/interests', { token: tokenB });
   ok(interests.body.interests.some((i: any) => i.kind === 'category' && i.value === 'baby-goats'), 'likes and comments move the interest model');
