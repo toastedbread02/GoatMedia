@@ -1319,6 +1319,68 @@ ol {
   margin-top: 2px;
 }
 
+.sound-credit {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.sound-credit__play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  transition: transform var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+}
+
+.sound-credit__play:hover {
+  background: var(--accent);
+}
+
+.sound-credit__play:active {
+  transform: scale(0.97);
+}
+
+.sound-credit__play:disabled {
+  background: var(--line);
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.sound-credit__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sound-credit.is-playing .sound-credit__title {
+  color: var(--ink);
+}
+
+.sound-credit__owner {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.sound-credit__owner:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.video-sound {
+  margin-top: 10px;
+}
+
 .feed-follow {
   flex: none;
 }

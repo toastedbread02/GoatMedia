@@ -384,6 +384,15 @@ async function run() {
 
   const library = await call('/api/sounds', { token: tokenA });
   ok(library.body.sounds.some((s: any) => s.id === soundId), 'approved sounds appear in the library');
+
+  const publicAlbum = await call(`/api/posts/${withSound.body.post.id}`);
+  ok(publicAlbum.body.post?.sound?.id === soundId, 'an approved album keeps its sound for the public page');
+  ok(publicAlbum.body.post?.sound?.owner?.username?.length > 0, 'the public album sound names its creator');
+  const publicSound = await call(`/media/sounds/${soundId}`);
+  ok(
+    publicSound.status === 200 && (publicSound.headers.get('content-type') || '').startsWith('audio/'),
+    'approved album sounds stream without a session',
+  );
   const reuse = await call('/api/posts', {
     method: 'POST',
     token: tokenA,

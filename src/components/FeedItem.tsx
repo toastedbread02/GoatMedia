@@ -11,6 +11,7 @@ import { Icon } from './Icon.tsx';
 import { Popover } from './Popover.tsx';
 import { Player, type WatchStats } from './Player.tsx';
 import { PhotoAlbum } from './PhotoAlbum.tsx';
+import { SoundCredit } from './SoundCredit.tsx';
 import { CommentsPanel } from './CommentsPanel.tsx';
 import { ReportDialog } from './ReportDialog.tsx';
 
@@ -255,6 +256,10 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             ),
           )}
         </p>
+
+        {video.kind === 'photos' && video.sound ? (
+          <SoundCredit sound={video.sound} active={active} />
+        ) : null}
 
         <div className="feed-meta-line">
           <span>{compactNumber(video.viewCount)} views</span>

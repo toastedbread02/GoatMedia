@@ -11,6 +11,7 @@ import { useDocumentTitle } from '../lib/hooks.ts';
 import { Player } from '../components/Player.tsx';
 import { AuthorizedPlayer } from '../components/AuthorizedMedia.tsx';
 import { PhotoAlbum } from '../components/PhotoAlbum.tsx';
+import { SoundCredit } from '../components/SoundCredit.tsx';
 import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { Popover } from '../components/Popover.tsx';
@@ -208,6 +209,10 @@ export function VideoPage() {
               />
             )}
           </div>
+
+          {video.kind === 'photos' && video.sound ? (
+            <SoundCredit sound={video.sound} gated={video.status !== 'approved'} className="video-sound" />
+          ) : null}
 
           {video.status !== 'approved' ? (
             <div className={`owner-notice owner-notice--${video.status}`}>
