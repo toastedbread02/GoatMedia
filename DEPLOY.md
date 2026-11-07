@@ -25,7 +25,7 @@ toastedbread02.github.io/GoatMedia   goatmedia-api.<account>.workers.dev
 | Site | https://toastedbread02.github.io/GoatMedia/ |
 | API | https://goatmedia-api.dominikkoba22.workers.dev |
 | D1 database | `goatmedia` — `99f990ab-4246-4b49-9353-9269a5ccd115` |
-| Video shards | `goatmedia-media-1` … `-7`, bound as `MEDIA_1` … `MEDIA_7` |
+| Video shards | `goatmedia-media-1` … `-9`, bound as `MEDIA_1` … `MEDIA_9` |
 | Repo variable | `API_ORIGIN` = the Worker URL (used by the Pages build) |
 | Optional variable | `CUSTOM_DOMAIN` = a domain you control, e.g. `goatmedia.is-a.dev` |
 
@@ -50,8 +50,8 @@ A new video shard needs three things: the database itself, a `MEDIA_n` entry in
 `wrangler.jsonc`, and this table inside it:
 
 ```bash
-npx wrangler d1 create goatmedia-media-8
-npx wrangler d1 execute goatmedia-media-8 --remote --command \
+npx wrangler d1 create goatmedia-media-10
+npx wrangler d1 execute goatmedia-media-10 --remote --command \
   "CREATE TABLE IF NOT EXISTS media_chunks (upload_id TEXT NOT NULL, idx INTEGER NOT NULL, bytes BLOB NOT NULL, PRIMARY KEY (upload_id, idx));"
 ```
 

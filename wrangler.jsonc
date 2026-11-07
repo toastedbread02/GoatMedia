@@ -25,6 +25,8 @@
     { "binding": "MEDIA_4", "database_name": "goatmedia-media-4", "database_id": "752414fe-13b9-4117-abea-bc6e28693b18" },
     { "binding": "MEDIA_5", "database_name": "goatmedia-media-5", "database_id": "e23ebe42-9713-406c-a91a-98bfc00f5da4" },
     { "binding": "MEDIA_6", "database_name": "goatmedia-media-6", "database_id": "1c80f1c5-ddb2-4ae4-bbac-60c32a47938f" },
-    { "binding": "MEDIA_7", "database_name": "goatmedia-media-7", "database_id": "5a8d5429-cec6-4989-9b6e-070bc9741eac" }
+    { "binding": "MEDIA_7", "database_name": "goatmedia-media-7", "database_id": "5a8d5429-cec6-4989-9b6e-070bc9741eac" },
+    { "binding": "MEDIA_8", "database_name": "goatmedia-media-8", "database_id": "a844fc57-4712-4e48-858a-e144bd573eca" },
+    { "binding": "MEDIA_9", "database_name": "goatmedia-media-9", "database_id": "796ebd20-ec73-4c6b-ae43-259896a7558b" }
   ]
 }

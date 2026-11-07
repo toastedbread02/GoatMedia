@@ -27,7 +27,7 @@ seeking. Each blob is capped well under D1's 2 MB row limit, and the browser
 re-encodes photos before upload (which also strips EXIF/GPS).
 
 A free D1 database stops at 500 MB, which a video library reaches quickly, so
-chunks are spread over seven extra databases (`MEDIA_1`…`MEDIA_7`) while the
+chunks are spread over nine extra databases (`MEDIA_1`…`MEDIA_9`) while the
 main database keeps captions, likes, comments, photos and audio. Each upload
 records its shard, new uploads go to the least-full one, and deletion clears
 the shard explicitly because the foreign key only points from post to upload.
@@ -145,8 +145,8 @@ own account are protected.
 - Source clips up to 2 GB can be compressed in the browser; output is capped at
   720p (540p for a full 3 minutes, where the 25 MB budget binds) so clips stay
   small enough for the free D1 storage allowance
-- Storage: 500 MB per free database; video chunks spread across 8 of them
-  (~4 GB), plus whatever photos and audio fit in the main one
+- Storage: 500 MB per free database; video chunks spread across 9 shards
+  (~4.5 GB), plus whatever photos and audio fit in the main one
 - 1.5 MB audio, 60 s name field, 400-character comments, 300-character captions
 - 0.4 MB avatars
 - 8 posts/hour, 12 comments/minute, 12 sign-in attempts per 10 minutes per IP
