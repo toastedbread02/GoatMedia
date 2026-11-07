@@ -15,6 +15,8 @@ interface PlayerProps {
   className?: string;
   onWatch?: (stats: WatchStats) => void;
   mutedByDefault?: boolean;
+  /** Buffer this clip while it waits its turn, so it starts without a stall. */
+  warm?: boolean;
 }
 
 const MUTE_KEY = 'goatmedia:muted';
@@ -115,7 +117,7 @@ function VolumeSlider({ value, onChange, label }: { value: number; onChange: (ne
   );
 }
 
-export function Player({ src, poster, active, className = '', onWatch }: PlayerProps) {
+export function Player({ src, poster, active, className = '', onWatch, warm = false }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -127,6 +129,7 @@ export function Player({ src, poster, active, className = '', onWatch }: PlayerP
   const [muted, setMuted] = useState(readMuted);
   const [volume, setVolume] = useState(readVolume);
   const [soundHintDismissed, setSoundHintDismissed] = useState(false);
+  const [preloadMode, setPreloadMode] = useState<'auto' | 'metadata'>(active ? 'auto' : 'metadata');
 
   const lastTime = useRef(0);
   const played = useRef(0);
@@ -155,6 +158,25 @@ export function Player({ src, poster, active, className = '', onWatch }: PlayerP
     video.volume = volume;
     video.muted = muted;
   }, [volume, muted]);
+
+  // Warm the next clip only once the current one has started, so the clip on
+  // screen gets the bandwidth first. Saving data and slow links skip it.
+  useEffect(() => {
+    if (active) {
+      setPreloadMode('auto');
+      return;
+    }
+    if (!warm) {
+      setPreloadMode('metadata');
+      return;
+    }
+    const connection = (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }).connection;
+    if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType ?? '')) return;
+    const timer = window.setTimeout(() => setPreloadMode('auto'), 1200);
+    return () => window.clearTimeout(timer);
+  }, [active, warm]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -299,7 +321,7 @@ export function Player({ src, poster, active, className = '', onWatch }: PlayerP
         src={src}
         poster={poster ?? undefined}
         playsInline
-        preload={active ? 'auto' : 'metadata'}
+        preload={preloadMode}
         onClick={togglePlay}
         muted={muted}
         aria-label="Goat video"

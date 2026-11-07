@@ -130,6 +130,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
           src={video.videoUrl}
           poster={video.posterUrl}
           active={active}
+          warm={index === activeIndex + 1}
           onWatch={(stats: WatchStats) => {
             api
               .post(`/api/videos/${video.id}/events`, {
