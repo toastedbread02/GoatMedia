@@ -1,11 +1,11 @@
 // How full the database is. Video bytes dominate and would otherwise mean
 // pulling every blob through the Worker on each dashboard visit, so they are
-// counted from stored chunk count instead: the answer is within one chunk of
-// the truth and costs a handful of rows to read.
+// read from the size each upload recorded instead: exact to the byte, and a
+// handful of rows rather than every chunk.
 
 import { Env, json } from '../lib';
 import { requireAdmin } from '../session';
-import { VIDEO_CHUNK_BYTES, storageBudget } from '../config';
+import { storageBudget } from '../config';
 import { invalidateTrending } from '../recommend';
 import { availableShards, dropShardChunks, pickShard } from '../media-shards';
 
@@ -14,7 +14,7 @@ const DORMANT = "p.status IN ('rejected', 'removed')";
 const DORMANT_PLAIN = "status IN ('rejected', 'removed')";
 
 interface MediaCounts {
-  chunks: number;
+  video_bytes: number;
   videos: number;
   photo_bytes: number;
   photos: number;
@@ -25,7 +25,7 @@ interface MediaCounts {
   poster_bytes: number;
   dormant_posts: number;
   dormant_videos: number;
-  dormant_chunks: number;
+  dormant_video_bytes: number;
   dormant_photo_bytes: number;
 }
 
@@ -34,7 +34,7 @@ export async function usage(req: Request, env: Env) {
 
   const row = await env.DB.prepare(
     `SELECT
-       (SELECT COALESCE(SUM(chunk_count), 0) FROM uploads) AS chunks,
+       (SELECT COALESCE(SUM(size), 0) FROM uploads) AS video_bytes,
        (SELECT COUNT(*) FROM uploads WHERE chunk_count > 0) AS videos,
        (SELECT COALESCE(SUM(size), 0) FROM post_photos) AS photo_bytes,
        (SELECT COUNT(*) FROM post_photos) AS photos,
@@ -45,16 +45,16 @@ export async function usage(req: Request, env: Env) {
        (SELECT COALESCE(SUM(LENGTH(poster_bytes)), 0) FROM uploads WHERE poster_bytes IS NOT NULL) AS poster_bytes,
        (SELECT COUNT(*) FROM posts p WHERE ${DORMANT}) AS dormant_posts,
        (SELECT COUNT(*) FROM posts p WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL) AS dormant_videos,
-       (SELECT COALESCE(SUM(chunk_count), 0) FROM uploads
+       (SELECT COALESCE(SUM(size), 0) FROM uploads
          WHERE id IN (SELECT p.video_upload_id FROM posts p
-                       WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS dormant_chunks,
+                       WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS dormant_video_bytes,
        (SELECT COALESCE(SUM(size), 0) FROM post_photos ph
          WHERE ph.bytes IS NOT NULL
            AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS dormant_photo_bytes`,
   ).first<MediaCounts>();
 
   const counts: MediaCounts = row || {
-    chunks: 0,
+    video_bytes: 0,
     videos: 0,
     photo_bytes: 0,
     photos: 0,
@@ -65,13 +65,13 @@ export async function usage(req: Request, env: Env) {
     poster_bytes: 0,
     dormant_posts: 0,
     dormant_videos: 0,
-    dormant_chunks: 0,
+    dormant_video_bytes: 0,
     dormant_photo_bytes: 0,
   };
 
-  // A full chunk for every chunk written, which rounds up by at most one chunk
-  // per clip. Erring high keeps the meter honest about how close the wall is.
-  const videoBytes = counts.chunks * VIDEO_CHUNK_BYTES;
+  // The exact size recorded when the upload finished, rather than a chunk count
+  // multiplied by the chunk size, which rounded every clip up to the next slot.
+  const videoBytes = counts.video_bytes;
   const breakdown = [
     { kind: 'videos', bytes: videoBytes, count: counts.videos },
     { kind: 'photos', bytes: counts.photo_bytes, count: counts.photos },
@@ -95,14 +95,14 @@ export async function usage(req: Request, env: Env) {
   // Where the bytes actually sit, one row per database, plus which shard the
   // next upload will land in so the list answers "what is this one for".
   const perShard = await env.DB.prepare(
-    'SELECT shard, COALESCE(SUM(chunk_count), 0) AS chunks FROM uploads GROUP BY shard',
-  ).all<{ shard: number; chunks: number }>();
-  const shardChunks = new Map<number, number>();
-  for (const row of perShard.results || []) shardChunks.set(row.shard, row.chunks);
+    'SELECT shard, COALESCE(SUM(size), 0) AS bytes FROM uploads GROUP BY shard',
+  ).all<{ shard: number; bytes: number }>();
+  const shardBytes = new Map<number, number>();
+  for (const row of perShard.results || []) shardBytes.set(row.shard, row.bytes);
 
   const shardList = availableShards(env);
   const activeShard = shardList.length ? await pickShard(env) : 0;
-  const mainBytes = usedBytes - videoBytes + (shardChunks.get(0) ?? 0) * VIDEO_CHUNK_BYTES;
+  const mainBytes = usedBytes - videoBytes + (shardBytes.get(0) ?? 0);
   const databaseList = [
     {
       id: 'main',
@@ -116,7 +116,7 @@ export async function usage(req: Request, env: Env) {
       id: `media-${shard}`,
       label: `Videos ${shard}`,
       detail: 'Video chunks',
-      usedBytes: (shardChunks.get(shard) ?? 0) * VIDEO_CHUNK_BYTES,
+      usedBytes: shardBytes.get(shard) ?? 0,
       limitBytes: perDatabase,
       active: shard === activeShard,
     })),
@@ -139,7 +139,7 @@ export async function usage(req: Request, env: Env) {
     reclaimable: {
       posts: counts.dormant_posts,
       videos: counts.dormant_videos,
-      bytes: counts.dormant_chunks * VIDEO_CHUNK_BYTES + counts.dormant_photo_bytes,
+      bytes: counts.dormant_video_bytes + counts.dormant_photo_bytes,
     },
   });
 }
@@ -157,15 +157,15 @@ export async function purge(req: Request, env: Env) {
     `SELECT
        (SELECT COUNT(*) FROM posts p WHERE ${DORMANT}) AS posts,
        (SELECT COUNT(*) FROM posts p WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL) AS videos,
-       (SELECT COALESCE(SUM(chunk_count), 0) FROM uploads
+       (SELECT COALESCE(SUM(size), 0) FROM uploads
          WHERE id IN (SELECT p.video_upload_id FROM posts p
-                       WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS chunks,
+                       WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS video_bytes,
        (SELECT COALESCE(SUM(size), 0) FROM post_photos ph
          WHERE ph.bytes IS NOT NULL
            AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS photo_bytes`,
-  ).first<{ posts: number; videos: number; chunks: number; photo_bytes: number }>();
+  ).first<{ posts: number; videos: number; video_bytes: number; photo_bytes: number }>();
 
-  const counts = before || { posts: 0, videos: 0, chunks: 0, photo_bytes: 0 };
+  const counts = before || { posts: 0, videos: 0, video_bytes: 0, photo_bytes: 0 };
   const uploads = await env.DB.prepare(
     `SELECT p.video_upload_id AS id, up.shard AS shard FROM posts p
        JOIN uploads up ON up.id = p.video_upload_id
@@ -201,6 +201,6 @@ export async function purge(req: Request, env: Env) {
   return json({
     posts: counts.posts,
     videos: counts.videos,
-    freedBytes: counts.chunks * VIDEO_CHUNK_BYTES + counts.photo_bytes,
+    freedBytes: counts.video_bytes + counts.photo_bytes,
   });
 }

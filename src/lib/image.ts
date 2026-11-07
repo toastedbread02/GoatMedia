@@ -22,10 +22,10 @@ async function encodeWithin(
   type: string,
   maxBytes: number,
 ): Promise<Blob | null> {
-  const probe = await encode(canvas, type, 0.86);
+  const probe = await encode(canvas, type, 0.8);
   if (!probe || probe.type !== type) return null;
   if (probe.size <= maxBytes) return probe;
-  for (const quality of [0.74, 0.6, 0.45]) {
+  for (const quality of [0.72, 0.62, 0.5]) {
     const blob = await encode(canvas, type, quality);
     if (blob && blob.size <= maxBytes) return blob;
   }

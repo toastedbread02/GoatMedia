@@ -17,7 +17,11 @@ import {
 } from 'mediabunny';
 import { ENCODE_SHORT_EDGE } from './videoTarget.ts';
 
-const AUDIO_BUDGET_BPS = 160_000;
+/**
+ * 112 kbps stereo is transparent for the ambient sound in these clips, and the
+ * 48 kbps it saves buys roughly half a megabyte on a three-minute upload.
+ */
+const AUDIO_BUDGET_BPS = 112_000;
 /**
  * Ceiling for the video track. At 720p this is a clear picture for handheld
  * footage, and it keeps a one-minute clip near 12 MB — the free storage
