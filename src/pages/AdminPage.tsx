@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type {
   AdminQueueItem,
   AdminUserRow,
@@ -22,8 +22,10 @@ import { PhotoAlbum } from '../components/PhotoAlbum.tsx';
 import { SoundStrip } from '../components/SoundStrip.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
 import { AdminSkeleton, RowSkeleton } from '../components/Skeleton.tsx';
+import { SupportQueue } from '../components/SupportQueue.tsx';
 
 type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts';
+type ReportView = 'content' | 'support';
 
 const VIDEO_TAB_STATUS: Record<string, string> = {
   pending: 'pending',
@@ -66,8 +68,16 @@ export function AdminPage() {
   const config = useConfig();
   const { notify } = useToast();
   const isAdmin = user?.role === 'admin';
+  const [searchParams] = useSearchParams();
 
-  const [tab, setTab] = useState<Tab>('pending');
+  const [tab, setTab] = useState<Tab>(() => {
+    const requested = searchParams.get('tab');
+    return requested === 'reports' || requested === 'accounts' ? requested : 'pending';
+  });
+  const [reportView, setReportView] = useState<ReportView>(() =>
+    searchParams.get('view') === 'support' ? 'support' : 'content',
+  );
+  const focusTicket = searchParams.get('ticket');
   const [counts, setCounts] = useState<ModerationCounts | null>(null);
   const [videos, setVideos] = useState<AdminQueueItem[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -90,6 +100,8 @@ export function AdminPage() {
   const [removeReason, setRemoveReason] = useState('');
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
+  const [removeAccountOpen, setRemoveAccountOpen] = useState(false);
+  const [removeAccountReason, setRemoveAccountReason] = useState('');
   const [claimToken, setClaimToken] = useState('');
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -102,8 +114,18 @@ export function AdminPage() {
     setRejecting(false);
     setRemoving(false);
     setSuspendOpen(false);
+    setRemoveAccountOpen(false);
     setActionError(null);
   }, [tab, isAdmin]);
+
+  // Notifications for support requests deep-link to a specific ticket.
+  useEffect(() => {
+    const requested = searchParams.get('tab');
+    if (requested === 'reports' || requested === 'accounts') setTab(requested);
+    if (requested === 'reports') {
+      setReportView(searchParams.get('view') === 'support' ? 'support' : 'content');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -189,6 +211,8 @@ export function AdminPage() {
       setRejecting(false);
       setRemoving(false);
       setSuspendOpen(false);
+      setRemoveAccountOpen(false);
+      setRemoveAccountReason('');
       setRejectPreset('');
       setRejectNote('');
       setRemoveReason('');
@@ -312,7 +336,10 @@ export function AdminPage() {
             <strong>{counts?.pending ?? 0}</strong> waiting
           </span>
           <span>
-            <strong>{counts?.openReports ?? 0}</strong> open reports
+            <strong>{(counts?.openReports ?? 0) + (counts?.openTickets ?? 0)}</strong> open reports
+          </span>
+          <span>
+            <strong>{counts?.openTickets ?? 0}</strong> support
           </span>
         </div>
       </div>
@@ -336,10 +363,13 @@ export function AdminPage() {
           role="tab"
           aria-selected={tab === 'reports'}
           className={`admin-tab${tab === 'reports' ? ' is-active' : ''}`}
-          onClick={() => setTab('reports')}
+          onClick={() => {
+            setTab('reports');
+            setReportView('content');
+          }}
         >
-          Reports
-          <span className="admin-tab__count">{counts?.openReports ?? 0}</span>
+          Report center
+          <span className="admin-tab__count">{(counts?.openReports ?? 0) + (counts?.openTickets ?? 0)}</span>
         </button>
         <button
           type="button"
@@ -348,7 +378,7 @@ export function AdminPage() {
           className={`admin-tab${tab === 'accounts' ? ' is-active' : ''}`}
           onClick={() => setTab('accounts')}
         >
-          Accounts
+          Control center
         </button>
       </div>
 
@@ -363,6 +393,36 @@ export function AdminPage() {
       ) : null}
 
       {tab === 'reports' ? (
+        <>
+          <div className="admin-subtabs" role="group" aria-label="Report type">
+            <button
+              type="button"
+              className={`admin-subtab${reportView === 'content' ? ' is-active' : ''}`}
+              aria-pressed={reportView === 'content'}
+              onClick={() => setReportView('content')}
+            >
+              Content reports <span>{counts?.openReports ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-subtab${reportView === 'support' ? ' is-active' : ''}`}
+              aria-pressed={reportView === 'support'}
+              onClick={() => setReportView('support')}
+            >
+              Support requests <span>{counts?.openTickets ?? 0}</span>
+            </button>
+          </div>
+
+          {reportView === 'support' ? (
+            <SupportQueue
+              focusTicket={focusTicket}
+              onChanged={refresh}
+              onManageAccount={(username) => {
+                setAccountQuery(username);
+                setTab('accounts');
+              }}
+            />
+          ) : (
         <div className="admin-layout">
           <div className="admin-list">
             {loadingList ? (
@@ -453,14 +513,27 @@ export function AdminPage() {
 
                 {actionError ? <p className="field__error">{actionError}</p> : null}
                 <div className="admin-actions">
-                  <button
-                    type="button"
-                    className="btn btn--primary"
-                    disabled={busy}
-                    onClick={() => runAction(() => api.post(`/api/admin/reports/${selectedReport.id}/resolve`, { action: 'remove_content' }))}
-                  >
-                    Remove content
-                  </button>
+                  {selectedReport.targetType === 'user' ? (
+                    <button
+                      type="button"
+                      className="btn btn--primary"
+                      onClick={() => {
+                        setAccountQuery(selectedReport.userTarget ?? '');
+                        setTab('accounts');
+                      }}
+                    >
+                      Open account controls
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn--primary"
+                      disabled={busy}
+                      onClick={() => runAction(() => api.post(`/api/admin/reports/${selectedReport.id}/resolve`, { action: 'remove_content' }))}
+                    >
+                      Remove content
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn--quiet"
@@ -474,9 +547,15 @@ export function AdminPage() {
             )}
           </div>
         </div>
+          )}
+        </>
       ) : tab === 'accounts' ? (
         <div className="admin-layout">
           <div className="admin-list">
+            <p className="admin-list__note">
+              Suspend signs an account out and hides their posts. Remove hides the account and its content but keeps it
+              recoverable.
+            </p>
             <div className="admin-list__search">
               <div className="searchbox">
                 <Icon name="search" size={17} />
@@ -511,7 +590,11 @@ export function AdminPage() {
                           @{account.username} · {account.videoCount} videos
                         </span>
                       </span>
-                      {account.status === 'suspended' ? <span className="queue-row__type">Suspended</span> : null}
+                      {account.status === 'deleted' ? (
+                        <span className="queue-row__type">Removed</span>
+                      ) : account.status === 'suspended' ? (
+                        <span className="queue-row__type">Suspended</span>
+                      ) : null}
                     </button>
                   </li>
                 ))}
@@ -537,9 +620,13 @@ export function AdminPage() {
                     </div>
                   </div>
                   <span
-                    className={`status-tag status-tag--${selectedAccount.status === 'suspended' ? 'rejected' : 'approved'}`}
+                    className={`status-tag status-tag--${selectedAccount.status === 'active' ? 'approved' : 'rejected'}`}
                   >
-                    {selectedAccount.status === 'suspended' ? 'Suspended' : 'Active'}
+                    {selectedAccount.status === 'deleted'
+                      ? 'Removed'
+                      : selectedAccount.status === 'suspended'
+                        ? 'Suspended'
+                        : 'Active'}
                   </span>
                 </div>
 
@@ -566,35 +653,73 @@ export function AdminPage() {
                   </div>
                   <div>
                     <dt>Status</dt>
-                    <dd>{selectedAccount.status === 'suspended' ? 'Suspended' : 'Active'}</dd>
+                    <dd>
+                      {selectedAccount.status === 'deleted'
+                        ? 'Removed'
+                        : selectedAccount.status === 'suspended'
+                          ? 'Suspended'
+                          : 'Active'}
+                    </dd>
                   </div>
                 </dl>
 
-                {selectedAccount.suspendedReason ? (
+                {selectedAccount.deletedReason ? (
+                  <p className="report-note">Removal reason: {selectedAccount.deletedReason}</p>
+                ) : selectedAccount.suspendedReason ? (
                   <p className="report-note">Suspension reason: {selectedAccount.suspendedReason}</p>
                 ) : null}
 
                 <div className="admin-actions">
-                  <Link className="btn btn--quiet btn--sm" to={`/u/${selectedAccount.username}`}>
-                    Open profile
-                  </Link>
-                  {selectedAccount.role === 'admin' ? null : selectedAccount.status === 'suspended' ? (
+                  {selectedAccount.status !== 'deleted' ? (
+                    <Link className="btn btn--quiet btn--sm" to={`/u/${selectedAccount.username}`}>
+                      Open profile
+                    </Link>
+                  ) : null}
+                  {selectedAccount.role === 'admin' ? (
+                    <span className="section-note">Moderator accounts cannot be suspended or removed here.</span>
+                  ) : selectedAccount.status === 'deleted' ? (
                     <button
                       type="button"
                       className="btn btn--primary btn--sm"
                       disabled={busy}
-                      onClick={() => runAction(() => api.post(`/api/admin/users/${selectedAccount.id}/unsuspend`))}
+                      onClick={() => runAction(() => api.post(`/api/admin/users/${selectedAccount.id}/restore`))}
                     >
-                      Reinstate account
+                      Restore account
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      className="btn btn--danger btn--sm"
-                      onClick={() => setSuspendOpen((current) => !current)}
-                    >
-                      Suspend account
-                    </button>
+                    <>
+                      {selectedAccount.status === 'suspended' ? (
+                        <button
+                          type="button"
+                          className="btn btn--primary btn--sm"
+                          disabled={busy}
+                          onClick={() => runAction(() => api.post(`/api/admin/users/${selectedAccount.id}/unsuspend`))}
+                        >
+                          Reinstate account
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn--danger btn--sm"
+                          onClick={() => {
+                            setSuspendOpen((current) => !current);
+                            setRemoveAccountOpen(false);
+                          }}
+                        >
+                          Suspend account
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--sm"
+                        onClick={() => {
+                          setRemoveAccountOpen((current) => !current);
+                          setSuspendOpen(false);
+                        }}
+                      >
+                        Remove account
+                      </button>
+                    </>
                   )}
                 </div>
 
@@ -626,6 +751,51 @@ export function AdminPage() {
                         Suspend
                       </button>
                       <button type="button" className="btn btn--quiet btn--sm" onClick={() => setSuspendOpen(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {removeAccountOpen ? (
+                  <div className="mod-panel">
+                    <div className="field">
+                      <label className="field__label" htmlFor="remove-account-reason">
+                        Reason for removing the account
+                      </label>
+                      <textarea
+                        id="remove-account-reason"
+                        className="textarea"
+                        value={removeAccountReason}
+                        onChange={(event) => setRemoveAccountReason(event.target.value)}
+                        placeholder="What happened? The reason is kept with the account so it can be reviewed if they ask to come back."
+                      />
+                    </div>
+                    <p className="admin-hint">
+                      The account is signed out, hidden from profiles, and its posts and comments come down. You can
+                      restore the account later, but removed posts stay down.
+                    </p>
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--sm"
+                        disabled={busy || removeAccountReason.trim().length < 3}
+                        onClick={() =>
+                          runAction(() =>
+                            api.post(`/api/admin/users/${selectedAccount.id}/remove`, {
+                              reason: removeAccountReason,
+                            }),
+                          )
+                        }
+                      >
+                        {busy ? <span className="btn__spinner" /> : null}
+                        Remove account
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--quiet btn--sm"
+                        onClick={() => setRemoveAccountOpen(false)}
+                      >
                         Cancel
                       </button>
                     </div>

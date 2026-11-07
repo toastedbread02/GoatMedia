@@ -157,13 +157,16 @@ export async function login(req: Request, env: Env, origin: string) {
   );
 
   const row = await env.DB.prepare(
-    'SELECT id, password_hash FROM users WHERE email = ? OR username = ?',
+    'SELECT id, password_hash, deleted_at FROM users WHERE email = ? OR username = ?',
   )
     .bind(identifier, identifier)
-    .first<{ id: string; password_hash: string }>();
+    .first<{ id: string; password_hash: string; deleted_at: number | null }>();
   const password = typeof body.password === 'string' ? body.password : '';
   const ok = row ? await verifyPassword(env, password, row.password_hash) : false;
   if (!row || !ok) throw bad('That email, username or password is not right.');
+  if (row.deleted_at) {
+    throw bad('This account was removed. Use the contact form if you think that is a mistake.');
+  }
 
   const session = await createSession(env, row.id);
   return json({ token: session.token, user: await meFor(env, origin, row.id) });
@@ -191,11 +194,11 @@ export async function requestReset(req: Request, env: Env, origin: string) {
     60 * 60 * 1000,
     'Too many reset requests. Try again later.',
   );
-  const row = await env.DB.prepare('SELECT id, display_name FROM users WHERE email = ?')
+  const row = await env.DB.prepare('SELECT id, display_name, deleted_at FROM users WHERE email = ?')
     .bind(email)
-    .first<{ id: string; display_name: string }>();
+    .first<{ id: string; display_name: string; deleted_at: number | null }>();
   // Always answer the same way so the endpoint cannot be used to find accounts.
-  if (!row) return json({ ok: true, resetPath: null });
+  if (!row || row.deleted_at) return json({ ok: true, resetPath: null });
 
   const token = randomToken(24);
   const createdAt = now();
@@ -318,7 +321,7 @@ export async function publicProfile(
   username: string,
   viewerId: string | null,
 ) {
-  const row = await env.DB.prepare(`${USER_SELECT(viewerId)} WHERE u.username = ?`)
+  const row = await env.DB.prepare(`${USER_SELECT(viewerId)} WHERE u.username = ? AND u.deleted_at IS NULL`)
     .bind(...(viewerId ? [viewerId, viewerId] : []), username)
     .first<UserRow>();
   if (!row) throw missing('No creator with that username.');

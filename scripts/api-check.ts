@@ -682,6 +682,27 @@ async function run() {
   });
   ok(resolve.status === 200, 'reports can be resolved');
 
+  const removalReport = await call(`/api/posts/${withSound.body.post.id}/report`, {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'Animal mistreatment', note: 'This needs to come down.' }),
+  });
+  const removalList = await call('/api/admin/reports?status=open', { token: adminToken });
+  const removalTarget = removalList.body.reports.find((item: any) => item.id === removalReport.body.report?.id) ??
+    removalList.body.reports[0];
+  const removedContent = await call(`/api/admin/reports/${removalTarget.id}/resolve`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'remove_content' }),
+  });
+  ok(removedContent.status === 200, 'a report can take its content down', removedContent.body);
+  const removedByReport = await call(`/api/posts/${withSound.body.post.id}`, { token: tokenA });
+  ok(removedByReport.body.post?.status === 'removed', 'the reported post is actually removed');
+  const publicRemoved = await call(`/api/posts/${withSound.body.post.id}`);
+  ok(publicRemoved.status === 404, 'removed content disappears from the public site');
+
   const suspend = await call(`/api/admin/users/${b.body.user.id}/suspend`, {
     method: 'POST',
     token: adminToken,
@@ -845,6 +866,130 @@ async function run() {
     'the feed carries both videos and photo albums',
     mixedFeed.body.items.map((item: any) => item.kind),
   );
+
+  console.log('\n[contact and moderation centers]');
+  const noDevice = await call('/api/contact', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.61' },
+    body: JSON.stringify({
+      category: 'account',
+      email: 'boaz@example.com',
+      body: 'I cannot sign in after replacing my phone.',
+      device: '',
+    }),
+  });
+  ok(noDevice.status === 400, 'contact messages need device details', noDevice.body);
+
+  const noTarget = await call('/api/contact', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.62' },
+    body: JSON.stringify({
+      category: 'person',
+      email: 'boaz@example.com',
+      body: 'This account keeps posting things that are not goats.',
+      device: 'Firefox on Windows · desktop · 1366×768',
+    }),
+  });
+  ok(noTarget.status === 400, 'reporting a person needs their username');
+
+  const ticket = await call('/api/contact', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.63' },
+    body: JSON.stringify({
+      category: 'account',
+      targetUsername: 'boaz',
+      email: 'boaz@example.com',
+      body: 'I cannot sign in after replacing my phone. Please help me get the account back.',
+      device: 'Chrome on macOS · desktop · 1512×982',
+      pageUrl: 'https://toastedbread02.github.io/GoatMedia/contact',
+    }),
+  });
+  ok(ticket.status === 201 && ticket.body.id, 'a guest can open a support request', ticket.body);
+
+  const ticketId = ticket.body.id;
+  const supportCounts = await call('/api/admin/counts', { token: adminToken });
+  ok(supportCounts.body.openTickets >= 1, 'open support requests are counted for the dashboard');
+  const adminNotices = await call('/api/me/notifications', { token: adminToken });
+  const supportNotice = adminNotices.body.notifications.find((notice: any) => notice.ticketId === ticketId);
+  ok(supportNotice?.type === 'support', 'the moderator is notified about a support request', supportNotice);
+  ok(supportNotice?.detail?.includes('Recover an account'), 'the notification names the request type');
+
+  const guestInbox = await call('/api/admin/tickets');
+  ok(guestInbox.status === 401, 'the support inbox is moderator-only');
+  const nonAdminInbox = await call('/api/admin/tickets', { token: tokenB });
+  ok(nonAdminInbox.status === 401, 'ordinary accounts cannot read support requests');
+
+  const inbox = await call('/api/admin/tickets?status=open', { token: adminToken });
+  const queuedTicket = inbox.body.items.find((item: any) => item.id === ticketId);
+  ok(queuedTicket?.category === 'account', 'the report center lists the support request');
+  ok(queuedTicket?.device.includes('Chrome on macOS'), 'the report center keeps the device details');
+  ok(queuedTicket?.targetUsername === 'boaz', 'the report center keeps the account being reported');
+
+  const reviewing = await call(`/api/admin/tickets/${ticketId}/resolve`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'reviewing' }),
+  });
+  ok(reviewing.body.status === 'reviewing', 'a support request can be marked as reviewing');
+  const closed = await call(`/api/admin/tickets/${ticketId}/resolve`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'closed', note: 'Checked the account with the reported owner.' }),
+  });
+  ok(closed.body.status === 'closed', 'a support request can be closed');
+  const afterClose = await call('/api/admin/tickets?status=open', { token: adminToken });
+  ok(
+    afterClose.body.items.every((item: any) => item.id !== ticketId),
+    'closed requests leave the open inbox',
+  );
+
+  console.log('\n[account control center]');
+  const nonAdminRemove = await call(`/api/admin/users/${b.body.user.id}/remove`, {
+    method: 'POST',
+    token: tokenB,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'Not the moderator' }),
+  });
+  ok(nonAdminRemove.status === 401, 'ordinary accounts cannot remove people');
+
+  const removed = await call(`/api/admin/users/${b.body.user.id}/remove`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'Repeated guideline problems' }),
+  });
+  ok(removed.status === 200, 'the moderator can remove an account', removed.body);
+  const removedProfile = await call('/api/users/boaz');
+  ok(removedProfile.status === 404, 'a removed account has no public profile');
+  const removedLogin = await call('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ identifier: 'boaz', password: 'correct-horse-battery' }),
+  });
+  ok(removedLogin.status === 400 && /removed/i.test(removedLogin.body.error), 'a removed account cannot sign in');
+
+  const accountList = await call('/api/admin/users?q=boaz', { token: adminToken });
+  const removedAccount = accountList.body.items.find((item: any) => item.id === b.body.user.id);
+  ok(removedAccount?.status === 'deleted', 'the control center marks the account as removed');
+  ok(removedAccount?.deletedReason === 'Repeated guideline problems', 'the removal reason is kept');
+
+  const restored = await call(`/api/admin/users/${b.body.user.id}/restore`, {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  ok(restored.status === 200, 'the moderator can restore an account');
+  const restoredProfile = await call('/api/users/boaz');
+  ok(restoredProfile.status === 200, 'a restored account has a profile again');
+  const restoredLogin = await call('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ identifier: 'boaz', password: 'correct-horse-battery' }),
+  });
+  ok(restoredLogin.status === 200 && restoredLogin.body.token, 'a restored account can sign in again');
 
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);

@@ -21,6 +21,7 @@ function DocLayout({ title, children }: { title: string; children: ReactNode }) 
         <Link to="/privacy">Privacy</Link>
         <Link to="/terms">Terms</Link>
         <Link to="/about">About GoatMedia</Link>
+        <Link to="/contact">Contact the moderator</Link>
       </footer>
     </div>
   );

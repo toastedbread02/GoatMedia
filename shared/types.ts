@@ -1,5 +1,7 @@
 // Types shared by the API and the browser app.
 
+import type { ContactCategory } from './policy.ts';
+
 export type VideoStatus = 'pending' | 'approved' | 'rejected' | 'removed';
 
 export interface Category {
@@ -147,7 +149,7 @@ export interface AppConfigDTO {
   adminClaimable: boolean;
 }
 
-export type NotificationType = 'approved' | 'rejected' | 'follow' | 'comment' | 'removed';
+export type NotificationType = 'approved' | 'rejected' | 'follow' | 'comment' | 'removed' | 'support';
 
 export interface NotificationDTO {
   id: string;
@@ -156,6 +158,8 @@ export interface NotificationDTO {
   read: boolean;
   /** True when this comment notification answers the reader's own comment. */
   isReply: boolean;
+  /** Set only on moderator notifications about a contact request. */
+  ticketId: string | null;
   videoId: string | null;
   videoCaption: string | null;
   actorUsername: string | null;
@@ -203,6 +207,8 @@ export interface ReportDTO {
     creatorUsername: string;
   } | null;
   comment: { id: string; body: string; authorUsername: string; videoId: string; status: string } | null;
+  /** Username when the report points at an account. */
+  userTarget?: string | null;
 }
 
 export interface AdminUserRow {
@@ -211,8 +217,10 @@ export interface AdminUserRow {
   displayName: string;
   email: string;
   role: string;
-  status: 'active' | 'suspended';
+  status: 'active' | 'suspended' | 'deleted';
   suspendedReason: string | null;
+  deletedAt: number | null;
+  deletedReason: string | null;
   createdAt: number;
   videoCount: number;
   followerCount: number;
@@ -224,8 +232,31 @@ export interface ModerationCounts {
   rejected: number;
   removed: number;
   openReports: number;
+  openTickets: number;
   users: number;
   newUsersThisWeek: number;
+}
+
+export interface SupportTicketDTO {
+  id: string;
+  category: ContactCategory;
+  categoryLabel: string;
+  email: string;
+  targetUsername: string | null;
+  body: string;
+  device: string;
+  pageUrl: string | null;
+  status: 'open' | 'reviewing' | 'closed';
+  createdAt: number;
+  resolvedAt: number | null;
+  resolutionNote: string | null;
+  reporter: { id: string; username: string; displayName: string } | null;
+  targetAccount: {
+    id: string;
+    username: string;
+    displayName: string;
+    status: 'active' | 'suspended' | 'deleted';
+  } | null;
 }
 
 export interface ModerationHistoryEntry extends ModerationEventDTO {

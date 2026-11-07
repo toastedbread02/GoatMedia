@@ -10,6 +10,36 @@ export const VIDEO_REPORT_REASONS = [
 
 export const COMMENT_REPORT_REASONS = ['Spam', 'Harassment', 'Hate speech', 'Something else'];
 
+/** What the contact form can be used for. The server owns these ids. */
+export const CONTACT_CATEGORIES = [
+  {
+    id: 'problem',
+    label: 'Report a problem',
+    hint: 'A page, upload, video or photo that is not working as it should.',
+  },
+  {
+    id: 'person',
+    label: 'Report a person',
+    hint: 'Harassment, impersonation, spam or an account breaking the guidelines.',
+  },
+  {
+    id: 'account',
+    label: 'Recover an account',
+    hint: 'You cannot sign in, your account was suspended, or you think it was removed by mistake.',
+  },
+  {
+    id: 'other',
+    label: 'Something else',
+    hint: 'A question or a problem that does not fit the categories above.',
+  },
+] as const;
+
+export type ContactCategory = (typeof CONTACT_CATEGORIES)[number]['id'];
+
+export function contactCategory(id: string) {
+  return CONTACT_CATEGORIES.find((category) => category.id === id) ?? null;
+}
+
 export const REJECTION_REASONS = [
   'Not goat-related',
   'Looks like animal mistreatment',

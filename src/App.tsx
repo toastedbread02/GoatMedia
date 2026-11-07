@@ -9,6 +9,7 @@ import { UploadPage } from './pages/UploadPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
 import { AdminPage } from './pages/AdminPage.tsx';
+import { ContactPage } from './pages/ContactPage.tsx';
 import { AboutPage, GuidelinesPage, PrivacyPage, TermsPage } from './pages/DocsPages.tsx';
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
 
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/contact" element={<ContactPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

@@ -191,7 +191,7 @@ export async function search(req: Request, env: Env, origin: string, url: URL) {
 export async function notifications(req: Request, env: Env, url: URL) {
   const user = await requireActive(req, env);
   const rows = await env.DB.prepare(
-    `SELECT n.id, n.type, n.post_id, n.detail, n.is_reply, n.created_at, n.read_at,
+    `SELECT n.id, n.type, n.post_id, n.detail, n.is_reply, n.ticket_id, n.created_at, n.read_at,
             p.caption AS post_caption,
             a.username AS actor_username, a.display_name AS actor_display_name
        FROM notifications n
@@ -208,6 +208,7 @@ export async function notifications(req: Request, env: Env, url: URL) {
       post_id: string | null;
       detail: string | null;
       is_reply: number;
+      ticket_id: string | null;
       created_at: number;
       read_at: number | null;
       post_caption: string | null;
@@ -232,6 +233,7 @@ export async function notifications(req: Request, env: Env, url: URL) {
     actorDisplayName: row.actor_display_name,
     detail: row.detail,
     isReply: Boolean(row.is_reply),
+    ticketId: row.ticket_id,
     createdAt: row.created_at,
     read: Boolean(row.read_at),
   }));

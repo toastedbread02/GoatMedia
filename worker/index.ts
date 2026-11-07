@@ -62,6 +62,7 @@ import {
   search,
 } from './routes/social';
 import * as admin from './routes/admin';
+import { createTicket, resolveTicket, tickets } from './routes/support';
 import { avatar, photo, poster, sound, video } from './routes/media';
 import { putChunk, putPoster, startUpload } from './routes/uploads';
 import { changePassword, usernameAvailable } from './routes/auth';
@@ -214,6 +215,9 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   if (root === 'search' && method === 'GET') return search(req, env, origin, url);
   if (root === 'sounds' && method === 'GET') return soundLibrary(req, env, url);
 
+  // ---- contact ------------------------------------------------------------
+  if (root === 'contact' && method === 'POST') return createTicket(req, env);
+
   // ---- posts (and the original /api/videos names) -------------------------
   if (root === 'posts' || root === 'videos') {
     if (!second && method === 'POST') return createPost(req, env, origin);
@@ -278,6 +282,16 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     }
     if (second === 'users' && third && fourth === 'unsuspend' && method === 'POST') {
       return admin.suspendUser(req, env, third, false);
+    }
+    if (second === 'users' && third && fourth === 'remove' && method === 'POST') {
+      return admin.removeUser(req, env, third);
+    }
+    if (second === 'users' && third && fourth === 'restore' && method === 'POST') {
+      return admin.restoreUser(req, env, third);
+    }
+    if (second === 'tickets' && !third && method === 'GET') return tickets(req, env, url);
+    if (second === 'tickets' && third && fourth === 'resolve' && method === 'POST') {
+      return resolveTicket(req, env, third);
     }
     if (second === 'sounds' && method === 'GET') return admin.adminSounds(req, env, url);
     if ((second === 'posts' || second === 'videos') && !third && method === 'GET') {

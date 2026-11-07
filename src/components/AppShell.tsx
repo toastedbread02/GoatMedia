@@ -53,6 +53,10 @@ function notificationText(item: NotificationDTO) {
       return item.isReply
         ? `@${item.actorUsername} replied to your comment`
         : `@${item.actorUsername} commented on your post`;
+    case 'support':
+      return item.actorUsername
+        ? `@${item.actorUsername} sent a support request`
+        : 'A guest sent a support request';
     default:
       return 'New activity';
   }
@@ -68,6 +72,8 @@ function notificationIcon(type: NotificationDTO['type']): IconName {
       return 'eye-off';
     case 'follow':
       return 'user';
+    case 'support':
+      return 'flag';
     default:
       return 'comment';
   }
@@ -148,7 +154,13 @@ function NotificationsButton({
           ) : (
             <ul className="notifications__list">
               {(items ?? []).map((item) => {
-                const to = item.videoId ? `/v/${item.videoId}` : item.actorUsername ? `/u/${item.actorUsername}` : '/settings';
+                const to = item.ticketId
+                  ? `/admin?tab=reports&view=support&ticket=${item.ticketId}`
+                  : item.videoId
+                    ? `/v/${item.videoId}`
+                    : item.actorUsername
+                      ? `/u/${item.actorUsername}`
+                      : '/settings';
                 return (
                   <li key={item.id}>
                     <Link
@@ -191,6 +203,9 @@ function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
         <Link className="btn btn--quiet btn--sm" to="/login">
           Sign in
         </Link>
+        <Link className="btn btn--ghost btn--sm" to="/contact">
+          Contact
+        </Link>
       </div>
     );
   }
@@ -218,6 +233,9 @@ function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
           </Link>
           <Link to="/settings" className="menu-item" onClick={() => { close(); onNavigate?.(); }}>
             <Icon name="settings" size={17} /> Settings
+          </Link>
+          <Link to="/contact" className="menu-item" onClick={() => { close(); onNavigate?.(); }}>
+            <Icon name="flag" size={17} /> Contact the moderator
           </Link>
           {user.role === 'admin' ? (
             <Link to="/admin" className="menu-item" onClick={() => { close(); onNavigate?.(); }}>
@@ -319,6 +337,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="topbar__actions">
             <Link to="/search" className="iconbtn" aria-label="Search">
               <Icon name="search" size={21} />
+            </Link>
+            <Link to="/contact" className="iconbtn" aria-label="Contact and reports" title="Contact and reports">
+              <Icon name="flag" size={20} />
             </Link>
             {user ? <NotificationsButton onReadAll={clearUnread} onReadOne={readOne} unreadCount={unread} /> : null}
             {user ? (

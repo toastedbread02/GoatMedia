@@ -15,7 +15,7 @@ appears anywhere public.
 | `src/` | The browser app (React, TypeScript, Vite, BrowserRouter) |
 | `worker/` | The API: routing, auth, posts, feeds, moderation, media |
 | `migrations/` | D1 schema (users, posts, videos, photos, sounds, moderation, reports…) |
-| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (129 checks) |
+| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (171 checks) |
 | `scripts/live-check.mjs` | End-to-end checks against the deployed Worker (31 checks) |
 | `wrangler.jsonc` | Worker config, D1 binding, allowed site origins |
 
@@ -49,7 +49,9 @@ visible only to their author and the moderator. The dashboard reviews pending,
 approved, rejected and removed posts with video playback and photo preview,
 creator details, moderation history and reports. Editing the caption of a live
 post puts it back in the queue. The moderator can remove live posts, suspend
-accounts, and handle video/comment/account reports.
+accounts, and handle video/comment/account reports. A report center also holds
+contact requests from the public, including the sender's device and page, and a
+control center can suspend, remove and restore accounts without a second tool.
 
 **Recommendations** — An explainable scoring model, no machine learning. Signals
 are weighted (complete +5, rewatch +6, like +3, comment +2, follow +4, skip −4,
@@ -60,9 +62,9 @@ and reset what the model has learned under Settings → Feed.
 
 **Accounts** — Sign-up records a date of birth to enforce a 13+ minimum, server
 side. Settings covers profile, appearance (light, dark or follow the system),
-reduced motion, privacy (private follower lists, opt out of people search), date
-of birth and account security. Pages render layout-matched skeletons while data
-loads.
+reduced motion, privacy (private follower lists, opt out of people search),date of birth and account security. Pages render layout-matched skeletons while data
+loads. A contact button on every page opens a report form for problems, people and
+account recovery; guests can use it, and every message notifies the moderator.
 
 Manual moderation is the default at every size. Passing 1,000 accounts does not
 change it; that remains an explicit decision.

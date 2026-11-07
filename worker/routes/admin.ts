@@ -1,4 +1,4 @@
-import { Env, bad, json, missing, now, optionalStr, pageOf, readJson, uid } from '../lib';
+import { Env, bad, json, missing, now, optionalStr, pageOf, readJson, str, uid } from '../lib';
 import { requireAdmin, requireUser } from '../session';
 import { hydratePosts, PostRow, POST_SELECT } from '../models';
 import { rejectionReasons } from '../config';
@@ -38,6 +38,9 @@ export async function counts(req: Request, env: Env) {
   const openReports = await env.DB.prepare(
     "SELECT COUNT(*) AS n FROM reports WHERE status = 'open'",
   ).first<{ n: number }>();
+  const openTickets = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM support_tickets WHERE status <> 'closed'",
+  ).first<{ n: number }>();
   const users = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
   const recent = await env.DB.prepare(
     'SELECT COUNT(*) AS n FROM users WHERE created_at > ?',
@@ -52,6 +55,7 @@ export async function counts(req: Request, env: Env) {
     rejected: map.get('rejected') ?? 0,
     removed: map.get('removed') ?? 0,
     openReports: openReports?.n ?? 0,
+    openTickets: openTickets?.n ?? 0,
     users: users?.n ?? 0,
     newUsersThisWeek: recent?.n ?? 0,
   });
@@ -334,12 +338,68 @@ export async function reports(req: Request, env: Env, url: URL) {
 }
 
 export async function resolveReport(req: Request, env: Env, id: string) {
-  await requireAdmin(req, env);
+  const admin = await requireAdmin(req, env);
   const body = await readJson(req);
   const action = String(body.action || '');
   if (!['dismiss', 'action', 'remove_content'].includes(action)) throw bad('Unknown report action.');
-  await env.DB.prepare('UPDATE reports SET status = ?, resolved_at = ? WHERE id = ?')
-    .bind(action === 'dismiss' ? 'dismissed' : 'actioned', now(), id)
+
+  const report = await env.DB.prepare(
+    'SELECT target_type, target_id, reason FROM reports WHERE id = ?',
+  )
+    .bind(id)
+    .first<{ target_type: string; target_id: string; reason: string }>();
+  if (!report) throw missing('That report is gone.');
+
+  if (action === 'remove_content') {
+    const removalReason = `Removed after a report: ${report.reason}`.slice(0, 200);
+    if (report.target_type === 'user') {
+      throw bad('Use the control center to act on an account.');
+    }
+    if (report.target_type === 'comment') {
+      const comment = await env.DB.prepare(
+        "SELECT user_id, post_id FROM comments WHERE id = ? AND status = 'visible'",
+      )
+        .bind(report.target_id)
+        .first<{ user_id: string; post_id: string }>();
+      if (comment) {
+        await env.DB.batch([
+          env.DB.prepare("UPDATE comments SET status = 'removed' WHERE id = ? OR parent_id = ?").bind(
+            report.target_id,
+            report.target_id,
+          ),
+          env.DB.prepare(
+            `UPDATE posts SET comment_count = (
+               SELECT COUNT(*) FROM comments c WHERE c.post_id = posts.id AND c.status = 'visible'
+             ) WHERE id = ?`,
+          ).bind(comment.post_id),
+        ]);
+      }
+    } else {
+      const post = await env.DB.prepare('SELECT owner_id, status FROM posts WHERE id = ?')
+        .bind(report.target_id)
+        .first<{ owner_id: string; status: string }>();
+      if (post && post.status !== 'removed') {
+        const changedAt = now();
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE posts SET status = 'removed', removed_reason = ?, updated_at = ? WHERE id = ?",
+          ).bind(removalReason, changedAt, report.target_id),
+          env.DB.prepare(
+            `INSERT INTO moderation_events (id, post_id, admin_id, action, reason, created_at)
+             VALUES (?, ?, ?, 'remove', ?, ?)`,
+          ).bind(uid('mod'), report.target_id, admin.id, removalReason, changedAt),
+          env.DB.prepare(
+            `INSERT INTO notifications (id, user_id, type, post_id, detail, created_at)
+             VALUES (?, ?, 'removed', ?, ?, ?)`,
+          ).bind(uid('ntf'), post.owner_id, report.target_id, removalReason, changedAt),
+        ]);
+      }
+    }
+    invalidateTrending();
+  }
+
+  await env.DB.prepare('UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ? WHERE id = ?')
+    .bind(action === 'dismiss' ? 'dismissed' : 'actioned', now(), admin.id, id)
     .run();
   return json({ ok: true });
 }
@@ -349,7 +409,8 @@ export async function users(req: Request, env: Env, url: URL) {
   const q = (url.searchParams.get('q') || '').trim().toLowerCase();
   const like = `%${q}%`;
   const rows = await env.DB.prepare(
-    `SELECT u.id, u.username, u.display_name, u.email, u.role, u.status, u.suspended_reason, u.created_at,
+    `SELECT u.id, u.username, u.display_name, u.email, u.role, u.status, u.suspended_reason,
+            u.deleted_at, u.deleted_reason, u.created_at,
             (SELECT COUNT(*) FROM posts p WHERE p.owner_id = u.id) AS post_count,
             (SELECT COUNT(*) FROM follows f WHERE f.following_id = u.id) AS follower_count
        FROM users u
@@ -365,8 +426,10 @@ export async function users(req: Request, env: Env, url: URL) {
     displayName: String(row.display_name),
     email: String(row.email),
     role: String(row.role),
-    status: String(row.status),
+    status: row.deleted_at ? 'deleted' : String(row.status),
     suspendedReason: (row.suspended_reason as string | null) ?? null,
+    deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
+    deletedReason: (row.deleted_reason as string | null) ?? null,
     createdAt: Number(row.created_at),
     postCount: Number(row.post_count),
     videoCount: Number(row.post_count),
@@ -382,11 +445,12 @@ export async function suspendUser(req: Request, env: Env, id: string, on: boolea
   const reason = optionalStr((body as { reason?: string }).reason, 200);
   if (on && !reason) throw bad('Give a reason so the account can be told why.');
 
-  const target = await env.DB.prepare('SELECT id, role FROM users WHERE id = ?')
+  const target = await env.DB.prepare('SELECT id, role, deleted_at FROM users WHERE id = ?')
     .bind(id)
-    .first<{ id: string; role: string }>();
+    .first<{ id: string; role: string; deleted_at: number | null }>();
   if (!target) throw missing('No such account.');
   if (target.role === 'admin') throw bad('Moderator accounts cannot be suspended here.');
+  if (target.deleted_at) throw bad('Restore this account before suspending it.');
 
   const statements = [
     env.DB.prepare('UPDATE users SET status = ?, suspended_reason = ? WHERE id = ?').bind(
@@ -405,6 +469,67 @@ export async function suspendUser(req: Request, env: Env, id: string, on: boolea
   await env.DB.batch(statements);
   invalidateTrending();
   return json({ ok: true, suspended: on });
+}
+
+/** Soft-delete: the row stays so the moderator can restore the account. */
+export async function removeUser(req: Request, env: Env, id: string) {
+  const admin = await requireAdmin(req, env);
+  if (id === admin.id) throw bad('You cannot remove your own account.');
+  const body = await readJson(req);
+  const reason = str(body.reason, 'Reason for removal', 300, 3);
+
+  const target = await env.DB.prepare('SELECT id, role, deleted_at FROM users WHERE id = ?')
+    .bind(id)
+    .first<{ id: string; role: string; deleted_at: number | null }>();
+  if (!target) throw missing('No such account.');
+  if (target.role === 'admin') throw bad('Moderator accounts cannot be removed here.');
+  if (target.deleted_at) throw bad('That account is already removed.');
+
+  const removedAt = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE users SET status = 'suspended', suspended_reason = ?, deleted_at = ?, deleted_reason = ?
+        WHERE id = ?`,
+    ).bind(reason, removedAt, reason, id),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),
+    env.DB.prepare(
+      "UPDATE posts SET status = 'removed', removed_reason = 'Creator account removed' WHERE owner_id = ? AND status <> 'removed'",
+    ).bind(id),
+    env.DB.prepare("UPDATE comments SET status = 'removed' WHERE user_id = ? AND status = 'visible'").bind(id),
+    env.DB.prepare(
+      `UPDATE posts SET comment_count = (
+         SELECT COUNT(*) FROM comments c WHERE c.post_id = posts.id AND c.status = 'visible'
+       )
+       WHERE id IN (SELECT post_id FROM comments WHERE user_id = ?)`,
+    ).bind(id),
+  ]);
+  invalidateTrending();
+  return json({
+    ok: true,
+    removed: true,
+    message: 'Account removed. Their posts and comments are now hidden.',
+  });
+}
+
+export async function restoreUser(req: Request, env: Env, id: string) {
+  const admin = await requireAdmin(req, env);
+  if (id === admin.id) throw bad('Your account is not removed.');
+  const target = await env.DB.prepare('SELECT id, deleted_at FROM users WHERE id = ?')
+    .bind(id)
+    .first<{ id: string; deleted_at: number | null }>();
+  if (!target) throw missing('No such account.');
+  if (!target.deleted_at) throw bad('That account is not removed.');
+
+  await env.DB.prepare(
+    `UPDATE users SET status = 'active', suspended_reason = NULL, deleted_at = NULL, deleted_reason = NULL
+      WHERE id = ?`,
+  )
+    .bind(id)
+    .run();
+  return json({
+    ok: true,
+    message: 'Account restored. Removed posts stay down unless you approve them again.',
+  });
 }
 
 export async function adminSounds(req: Request, env: Env, url: URL) {

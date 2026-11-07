@@ -350,6 +350,18 @@ export function ProfilePage() {
                     >
                       <Icon name="link" size={17} /> Copy profile link
                     </button>
+                    {!isSelf ? (
+                      <button
+                        type="button"
+                        className="menu-item"
+                        onClick={() => {
+                          close();
+                          navigate(`/contact?topic=person&username=${encodeURIComponent(profile.username)}`);
+                        }}
+                      >
+                        <Icon name="flag" size={17} /> Report @{profile.username}
+                      </button>
+                    ) : null}
                     {blocked ? (
                       <button
                         type="button"
