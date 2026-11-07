@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AppShell } from './components/AppShell.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { FeedPage } from './pages/FeedPage.tsx';
@@ -16,6 +16,7 @@ import { recordVisit } from './lib/api.ts';
 
 function AppFrame() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Counted once per load, not per route: that keeps the traffic chart about
   // arrivals instead of about how much someone scrolled.
@@ -23,6 +24,15 @@ function AppFrame() {
     recordVisit(location.pathname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Links shared before a custom domain carry the old /GoatMedia prefix. When
+  // the site moves to the root that prefix is not a route any more, so strip it
+  // rather than answering an old link with Not found.
+  useEffect(() => {
+    const stripped = location.pathname.replace(/^\/GoatMedia(?=\/|$)/i, '');
+    if (stripped === location.pathname) return;
+    navigate(`${stripped || '/'}${location.search}`, { replace: true });
+  }, [location.pathname, location.search, navigate]);
 
   useEffect(() => {
     const main = document.getElementById('main');
