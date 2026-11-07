@@ -43,6 +43,9 @@ export function FeedPage({ tab }: FeedPageProps) {
   const loadedKey = useRef<string | null>(null);
   const activeIndexRef = useRef(activeIndex);
   const frame = useRef(0);
+  const wheelDelta = useRef(0);
+  const wheelResetTimer = useRef(0);
+  const stepLockUntil = useRef(0);
 
   useDocumentTitle(TITLES[tab]);
 
@@ -140,6 +143,78 @@ export function FeedPage({ tab }: FeedPageProps) {
       if (nextActive >= itemsRef.current.length - 2) loadMore();
     });
   };
+
+  // A wheel or trackpad flick can cross two or three posts before snap has a
+  // say. Every gesture is turned into exactly one post, with a short lock so
+  // the momentum that follows the first step is spent rather than repeated.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+
+    const insideScrollable = (target: EventTarget | null, deltaY: number) => {
+      let node = target instanceof Element ? target : null;
+      while (node && node !== element) {
+        const style = window.getComputedStyle(node);
+        if (
+          (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+          node.scrollHeight > node.clientHeight + 1
+        ) {
+          const room =
+            deltaY > 0 ? node.scrollHeight - node.clientHeight - node.scrollTop : node.scrollTop;
+          if (room > 1) return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
+    };
+
+    const step = (direction: 1 | -1) => {
+      const height = element.clientHeight;
+      if (!height) return;
+      const slides = Math.max(1, Math.round((element.scrollHeight - height) / height) + 1);
+      const current = Math.round(element.scrollTop / height);
+      const next = Math.max(0, Math.min(slides - 1, current + direction));
+      if (next === current) return;
+      stepLockUntil.current = performance.now() + 420;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      element.scrollTo({ top: next * height, behavior: reduced ? 'auto' : 'smooth' });
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (insideScrollable(event.target, event.deltaY)) return;
+      const target = event.target instanceof Element ? event.target : null;
+      // Menus, the comment sheet and dialogs own their own scroll: hold the
+      // feed still instead of moving a post behind them.
+      if (target?.closest('.comments-panel, .popover, [role="dialog"], .scrim')) {
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      if (performance.now() < stepLockUntil.current) return;
+
+      const height = element.clientHeight || 1;
+      const delta =
+        event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * height : event.deltaY;
+      wheelDelta.current += delta;
+      window.clearTimeout(wheelResetTimer.current);
+      wheelResetTimer.current = window.setTimeout(() => {
+        wheelDelta.current = 0;
+      }, 160);
+      if (Math.abs(wheelDelta.current) < 30) return;
+      const direction = wheelDelta.current > 0 ? 1 : -1;
+      wheelDelta.current = 0;
+      step(direction);
+    };
+
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      element.removeEventListener('wheel', onWheel);
+      window.clearTimeout(wheelResetTimer.current);
+    };
+    // The scroller only exists once posts have arrived, so re-attach when the
+    // feed switches between empty and populated.
+  }, [items.length > 0]);
 
   useEffect(() => {
     return () => {
@@ -245,10 +320,12 @@ export function FeedPage({ tab }: FeedPageProps) {
           const element = scroller.current;
           if (!element) return;
           const height = element.clientHeight;
+          if (!height) return;
           const index = Math.max(0, activeIndex);
+          const slides = Math.max(1, Math.round((element.scrollHeight - height) / height) + 1);
           if (event.key === 'ArrowDown' || event.key === 'PageDown') {
             event.preventDefault();
-            element.scrollTo({ top: (index + 1) * height, behavior: 'smooth' });
+            element.scrollTo({ top: Math.min(slides - 1, index + 1) * height, behavior: 'smooth' });
           } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
             event.preventDefault();
             element.scrollTo({ top: Math.max(0, index - 1) * height, behavior: 'smooth' });
