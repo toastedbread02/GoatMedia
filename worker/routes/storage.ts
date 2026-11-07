@@ -7,7 +7,7 @@ import { Env, json } from '../lib';
 import { requireAdmin } from '../session';
 import { VIDEO_CHUNK_BYTES, storageBudget } from '../config';
 import { invalidateTrending } from '../recommend';
-import { availableShards, dropShardChunks } from '../media-shards';
+import { availableShards, dropShardChunks, pickShard } from '../media-shards';
 
 const DORMANT = "p.status IN ('rejected', 'removed')";
 /** Same condition for statements that cannot take a table alias. */
@@ -92,10 +92,46 @@ export async function usage(req: Request, env: Env) {
       ? usedBytes / perDatabase
       : Math.max(videoBytes / (perDatabase * shards), (usedBytes - videoBytes) / perDatabase);
 
+  // Where the bytes actually sit, one row per database, plus which shard the
+  // next upload will land in so the list answers "what is this one for".
+  const perShard = await env.DB.prepare(
+    'SELECT shard, COALESCE(SUM(chunk_count), 0) AS chunks FROM uploads GROUP BY shard',
+  ).all<{ shard: number; chunks: number }>();
+  const shardChunks = new Map<number, number>();
+  for (const row of perShard.results || []) shardChunks.set(row.shard, row.chunks);
+
+  const shardList = availableShards(env);
+  const activeShard = shardList.length ? await pickShard(env) : 0;
+  const mainBytes = usedBytes - videoBytes + (shardChunks.get(0) ?? 0) * VIDEO_CHUNK_BYTES;
+  const databaseList = [
+    {
+      id: 'main',
+      label: 'Main',
+      detail: 'Captions, photos, audio',
+      usedBytes: mainBytes,
+      limitBytes: perDatabase,
+      active: shardList.length === 0,
+    },
+    ...shardList.map((shard) => ({
+      id: `media-${shard}`,
+      label: `Videos ${shard}`,
+      detail: 'Video chunks',
+      usedBytes: (shardChunks.get(shard) ?? 0) * VIDEO_CHUNK_BYTES,
+      limitBytes: perDatabase,
+      active: shard === activeShard,
+    })),
+  ];
+  const leftBytes = databaseList.reduce(
+    (total, database) => total + Math.max(0, database.limitBytes - database.usedBytes),
+    0,
+  );
+
   return json({
     limitBytes,
     usedBytes,
-    databases: 1 + shards,
+    leftBytes,
+    inUse: databaseList.filter((database) => database.usedBytes > 0).length,
+    databaseList,
     percent: Math.min(100, Math.round(ratio * 1000) / 10),
     warnAt: storageBudget.warnAt,
     averageVideoBytes: counts.videos ? Math.round(videoBytes / counts.videos) : 0,

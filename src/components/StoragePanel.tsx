@@ -83,8 +83,8 @@ export function StoragePanel() {
           <h2 id="storage-heading">Storage</h2>
           <p>
             {data
-              ? `Videos are spread across ${data.databases} free databases of 500 MB each.`
-              : 'Videos are spread across the free databases.'}
+              ? `Video chunks are spread across ${data.databaseList.length - 1} free databases of 500 MB each.`
+              : 'Video chunks are spread across the free databases.'}
           </p>
         </div>
         {data ? (
@@ -123,6 +123,35 @@ export function StoragePanel() {
               ? 'Uploads start failing once this is full, and storage does not reset overnight the way the daily limits do.'
               : 'Uploads keep working until it is full.'}
           </p>
+
+          <div className="storage__databases-head">
+            <h3>Databases</h3>
+            <p>
+              {data.inUse} of {data.databaseList.length} in use, {size(data.leftBytes)} left in
+              total
+            </p>
+          </div>
+
+          <ul className="storage__databases">
+            {data.databaseList.map((database) => {
+              const share = Math.min(100, Math.round((database.usedBytes / database.limitBytes) * 100));
+              return (
+                <li key={database.id} className={database.active ? 'is-active' : undefined}>
+                  <span className="storage__db-name">
+                    {database.label}
+                    {database.active ? <span className="storage__db-flag">next clip</span> : null}
+                  </span>
+                  <span className="storage__db-meter" aria-hidden="true">
+                    <span style={{ width: `${Math.max(share, database.usedBytes > 0 ? 2 : 0)}%` }} />
+                  </span>
+                  <span className="storage__db-size">
+                    {database.usedBytes > 0 ? size(database.usedBytes) : 'empty'}
+                    <span className="storage__db-of"> of {size(database.limitBytes)}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
 
           <ul className="storage__rows">
             {data.breakdown.map((row) => {

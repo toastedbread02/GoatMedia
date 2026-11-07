@@ -308,10 +308,23 @@ export interface StorageRow {
   count: number;
 }
 
+export interface StorageDatabase {
+  id: string;
+  label: string;
+  detail: string;
+  usedBytes: number;
+  limitBytes: number;
+  /** The shard the next upload will be written to. */
+  active: boolean;
+}
+
 export interface StorageDTO {
   limitBytes: number;
-  /** How many databases the capacity is spread across. */
-  databases: number;
+  /** Free space summed across every database. */
+  leftBytes: number;
+  /** Databases holding at least one byte. */
+  inUse: number;
+  databaseList: StorageDatabase[];
   usedBytes: number;
   /** Share of the limit in use, 0 to 100. */
   percent: number;
