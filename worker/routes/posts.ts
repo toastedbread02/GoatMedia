@@ -18,6 +18,8 @@ import { categoryById, limits, postReportReasons } from '../config';
 import { hydratePosts, PostRow, POST_SELECT } from '../models';
 import { followingFeed, forYouFeed, trendingFeed, invalidateTrending } from '../recommend';
 import { applySignal, recordEvent, undoEvent } from '../interests';
+import { firstCommentMilestone, likeMilestone } from '../milestones';
+import { todaysPick } from './daily';
 import { completeUpload, dimensionFromForm, durationFromForm } from './uploads';
 
 const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -76,8 +78,31 @@ export async function feed(req: Request, env: Env, origin: string, url: URL) {
         ? await followingFeed(env, viewer!.id, page)
         : await forYouFeed(env, viewer?.id ?? null, page);
 
-  const items = await hydratePosts(env, origin, viewer?.id ?? null, result.rows);
-  for (const item of items) item.reason = result.reasons.get(item.id) || null;
+  // Today's Goat of the day is pinned above the personalised feed. It is left
+  // out of the recommendations below so the same clip cannot appear twice.
+  let rows = result.rows;
+  let pinnedId: string | null = null;
+  if (tab === 'foryou' && page === 1) {
+    const pick = await todaysPick(env);
+    if (pick) {
+      // The pick may already be somewhere in this page of recommendations; it
+      // still has to move to the top rather than appear in both places.
+      const rest = rows.filter((row) => row.id !== pick);
+      const pickRow =
+        rows.find((row) => row.id === pick) ??
+        (await env.DB.prepare(`${POST_SELECT} WHERE p.id = ?`).bind(pick).first<PostRow>());
+      if (pickRow && pickRow.status === 'approved') {
+        rows = [pickRow, ...rest];
+        pinnedId = pick;
+      }
+    }
+  }
+
+  const items = await hydratePosts(env, origin, viewer?.id ?? null, rows);
+  for (const item of items) {
+    item.reason = result.reasons.get(item.id) || null;
+    if (item.id === pinnedId) item.goatOfDay = true;
+  }
   return json({ items, hasMore: result.hasMore, page });
 }
 
@@ -391,6 +416,7 @@ export async function toggleLike(req: Request, env: Env, id: string) {
           .bind(uid('ntf'), post.owner_id, id, user.id, now())
           .run();
       }
+      await likeMilestone(env, id, post.owner_id);
     }
   }
 
@@ -624,6 +650,8 @@ export async function addComment(req: Request, env: Env, id: string) {
       ),
     );
   }
+
+  if (post.owner_id !== user.id) await firstCommentMilestone(env, id, post.owner_id);
 
   const origin = new URL(req.url).origin;
   const count = await env.DB.prepare('SELECT comment_count FROM posts WHERE id = ?')

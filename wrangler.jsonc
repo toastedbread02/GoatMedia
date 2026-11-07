@@ -4,6 +4,8 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-01-01",
   "observability": { "enabled": true },
+  // One weekly note to creators, Monday 09:00 UTC.
+  "triggers": { "crons": ["0 9 * * 1"] },
   "vars": {
     // goatmedia.js.org is allowed ahead of time so the site works the moment
     // the domain starts serving. The old Pages origin stays until links fade.

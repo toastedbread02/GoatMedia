@@ -72,10 +72,19 @@ import { recordVisit, traffic } from './routes/traffic';
 import { purge as storagePurge, usage as storageUsage } from './routes/storage';
 import { changePassword, usernameAvailable } from './routes/auth';
 import { creatorStats } from './routes/stats';
+import { daily, highlights, setDaily } from './routes/daily';
+import { weeklyDigest } from './milestones';
 
 const CONFIG_CACHE = 'public, max-age=300';
 
+/** Monday morning, matching the weekly cron in wrangler.jsonc. */
+const WEEKLY_CRON = '0 9 * * 1';
+
 export default {
+  async scheduled(event: ScheduledController, env: Env): Promise<void> {
+    if (event.cron === WEEKLY_CRON) await weeklyDigest(env);
+  },
+
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return preflight(req, env);
@@ -225,7 +234,11 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   }
 
   // ---- feed --------------------------------------------------------------
+  if (root === 'feed' && second === 'highlights' && method === 'GET') {
+    return highlights(req, env, origin, url);
+  }
   if (root === 'feed' && method === 'GET') return feed(req, env, origin, url);
+  if (root === 'daily' && method === 'GET') return daily(req, env, origin);
   if (root === 'category' && second && method === 'GET') return categoryPosts(req, env, origin, url, second);
   if (root === 'search' && method === 'GET') return search(req, env, origin, url);
   if (root === 'sounds' && method === 'GET') return soundLibrary(req, env, url);
@@ -322,6 +335,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if ((second === 'posts' || second === 'videos') && !third && method === 'GET') {
       return admin.queue(req, env, origin, url);
     }
+    if (second === 'daily' && !third && method === 'POST') return setDaily(req, env);
     if ((second === 'posts' || second === 'videos') && third) {
       if (!fourth && method === 'GET') return admin.detail(req, env, origin, third);
       if (fourth === 'approve' && method === 'POST') return admin.decide(req, env, third, 'approve');

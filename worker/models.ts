@@ -116,6 +116,8 @@ export interface PostDTO {
     isModerator: boolean;
   };
   reason: string | null;
+  goatOfDay?: boolean;
+  day?: string | null;
 }
 
 function parseHashtags(raw: string): string[] {

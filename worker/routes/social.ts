@@ -2,6 +2,7 @@ import { Env, bad, forbidden, json, missing, now, rateLimit, uid } from '../lib'
 import { currentUser, requireActive } from '../session';
 import { hydratePosts, PostRow, POST_SELECT, publicUser, USER_SELECT, UserRow } from '../models';
 import { applySignal } from '../interests';
+import { firstFollowerMilestone } from '../milestones';
 
 export async function follow(req: Request, env: Env, username: string, on: boolean) {
   const user = await requireActive(req, env);
@@ -34,6 +35,7 @@ export async function follow(req: Request, env: Env, username: string, on: boole
       )
         .bind(uid('ntf'), target.id, user.id, now())
         .run();
+      await firstFollowerMilestone(env, target.id);
       const recent = await env.DB.prepare(
         `SELECT id FROM posts WHERE owner_id = ? AND status = 'approved' ORDER BY published_at DESC LIMIT 3`,
       )

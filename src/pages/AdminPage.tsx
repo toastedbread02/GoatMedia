@@ -1121,6 +1121,17 @@ export function AdminPage() {
                       <div className="admin-actions">
                         <button
                           type="button"
+                          className="btn btn--quiet"
+                          disabled={busy}
+                          onClick={() =>
+                            runAction(() => api.post('/api/admin/daily', { postId: selected.id }))
+                          }
+                        >
+                          <Icon name="spark" size={17} />
+                          Make Goat of the day
+                        </button>
+                        <button
+                          type="button"
                           className="btn btn--danger"
                           onClick={() => setRemoving(true)}
                           disabled={busy}

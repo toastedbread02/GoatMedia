@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
 import { AdminPage } from './pages/AdminPage.tsx';
 import { ContactPage } from './pages/ContactPage.tsx';
+import { DailyPage } from './pages/DailyPage.tsx';
 import { AboutPage, GuidelinesPage, PrivacyPage, TermsPage } from './pages/DocsPages.tsx';
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
 import { recordVisit } from './lib/api.ts';
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/trending" element={<FeedPage key="trending" tab="trending" />} />
         <Route path="/following" element={<FeedPage key="following" tab="following" />} />
         <Route path="/v/:id" element={<VideoPage />} />
+        <Route path="/daily" element={<DailyPage />} />
         <Route path="/u/:username" element={<ProfilePage />} />
         <Route path="/upload" element={<UploadPage />} />
         <Route path="/settings" element={<SettingsPage />} />

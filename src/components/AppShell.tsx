@@ -61,6 +61,9 @@ function notificationText(item: NotificationDTO) {
       return item.actorUsername
         ? `@${item.actorUsername} sent a support request`
         : 'A guest sent a support request';
+    case 'milestone':
+    case 'weekly':
+      return item.detail || 'An update about your goats';
     default:
       return 'New activity';
   }
@@ -82,6 +85,10 @@ function notificationIcon(type: NotificationDTO['type']): IconName {
       return 'play';
     case 'support':
       return 'flag';
+    case 'milestone':
+      return 'spark';
+    case 'weekly':
+      return 'chart';
     default:
       return 'comment';
   }

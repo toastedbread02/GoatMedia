@@ -69,6 +69,10 @@ export interface VideoDTO {
   credit: string | null;
   watchProgress: number | null;
   notInterested: boolean;
+  /** True for the moderator's pick of the day, pinned above For You. */
+  goatOfDay?: boolean;
+  /** Calendar day of that pick, on the archive list. */
+  day?: string | null;
 }
 
 export interface CommentDTO {
@@ -158,7 +162,9 @@ export type NotificationType =
   | 'like'
   | 'new_post'
   | 'removed'
-  | 'support';
+  | 'support'
+  | 'milestone'
+  | 'weekly';
 
 export interface NotificationDTO {
   id: string;
@@ -372,5 +378,14 @@ export interface TrafficDTO {
   days: number;
   series: TrafficDayDTO[];
   sources: { source: string; visits: number }[];
-  totals: { visits: number; views: number; signups: number; visitors: number };
+  totals: {
+    visits: number;
+    views: number;
+    signups: number;
+    visitors: number;
+    /** Distinct visitors over the last seven days. */
+    weekVisitors: number;
+    /** Those who appeared on two or more different days in that week. */
+    returning: number;
+  };
 }

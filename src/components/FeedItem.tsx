@@ -301,6 +301,11 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
           </p>
         ) : null}
 
+        {video.goatOfDay ? (
+          <Link className="feed-dotd" to="/daily">
+            Goat of the day
+          </Link>
+        ) : null}
         <p className="feed-caption">
           {caption.split(/(#[\w]{2,24})/g).map((part, partIndex) =>
             part.startsWith('#') ? (

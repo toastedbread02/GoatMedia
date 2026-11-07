@@ -145,6 +145,24 @@ export async function traffic(req: Request, env: Env, url: URL) {
     .bind(since)
     .first<{ n: number }>();
 
+  // The number that decides whether any of this is working: how many people
+  // came back on a second day inside the last week. Counted per visitor key, so
+  // two visits in one evening do not read as a returning reader.
+  const weekAgo = startOfToday - 6 * 86_400_000;
+  const returning = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM (
+       SELECT visitor_key, COUNT(DISTINCT ${dayBucket('created_at')}) AS active_days
+         FROM visits WHERE created_at >= ? GROUP BY visitor_key
+     ) WHERE active_days >= 2`,
+  )
+    .bind(weekAgo)
+    .first<{ n: number }>();
+  const weekVisitors = await env.DB.prepare(
+    'SELECT COUNT(DISTINCT visitor_key) AS n FROM visits WHERE created_at >= ?',
+  )
+    .bind(weekAgo)
+    .first<{ n: number }>();
+
   const byDay = (rows: DailyRow[] | undefined) =>
     new Map((rows || []).map((row) => [row.day, Number(row.n)]));
   const visitMap = byDay(visits.results);
@@ -173,6 +191,8 @@ export async function traffic(req: Request, env: Env, url: URL) {
       views: sum('views'),
       signups: sum('signups'),
       visitors: Number(visitors?.n ?? 0),
+      weekVisitors: Number(weekVisitors?.n ?? 0),
+      returning: Number(returning?.n ?? 0),
     },
   });
 }

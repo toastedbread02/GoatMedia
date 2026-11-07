@@ -1615,6 +1615,116 @@ ol {
   color: var(--ink);
 }
 
+/* The moderator's pick, marked quietly above the caption. */
+.feed-dotd {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--accent-ink, var(--ink));
+  text-decoration: none;
+}
+
+.feed-dotd::before {
+  content: '';
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.feed-dotd:hover {
+  text-decoration: underline;
+}
+
+.end-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, 100%);
+  margin: 4px 0 2px;
+}
+
+.end-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 10px;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  transition: background 160ms ease-out;
+}
+
+.end-pick:hover {
+  background: var(--paper-2, rgba(0, 0, 0, 0.04));
+}
+
+.end-pick__thumb {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--ink-3, #d9d4cc);
+  color: var(--paper);
+}
+
+.end-pick__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.end-pick__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.end-pick__caption {
+  font-size: 13.5px;
+  color: var(--ink);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.end-pick__meta {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.feed-end__invite {
+  max-width: 380px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.daily-list {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.daily-item__day {
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
 /* ------------------------------ comments panel ---------------------------- */
 
 .scrim {
@@ -5554,9 +5664,17 @@ ol {
 
 .traffic__totals {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 20px;
   margin: 0;
+}
+
+.traffic__sub {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--ink-2);
 }
 
 .traffic__totals dt {

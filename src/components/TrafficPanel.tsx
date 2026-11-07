@@ -59,7 +59,17 @@ export function TrafficPanel() {
       ? `${first.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${last.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
       : '';
 
-  const totals = data?.totals ?? { visits: 0, views: 0, signups: 0, visitors: 0 };
+  const totals = data?.totals ?? {
+    visits: 0,
+    views: 0,
+    signups: 0,
+    visitors: 0,
+    weekVisitors: 0,
+    returning: 0,
+  };
+  const returnShare = totals.weekVisitors
+    ? Math.round((totals.returning / totals.weekVisitors) * 100)
+    : 0;
   const empty = totals.visits === 0 && totals.views === 0;
 
   return (
@@ -114,6 +124,15 @@ export function TrafficPanel() {
             <div>
               <dt>Unique visitors</dt>
               <dd>{compactNumber(totals.visitors)}</dd>
+            </div>
+            <div>
+              <dt>Came back this week</dt>
+              <dd>
+                {compactNumber(totals.returning)}
+                <span className="traffic__sub">
+                  {totals.weekVisitors ? `${returnShare}% of ${compactNumber(totals.weekVisitors)}` : 'no visitors yet'}
+                </span>
+              </dd>
             </div>
           </dl>
 

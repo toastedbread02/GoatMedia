@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { compactNumber } from '../lib/format.ts';
 import { Link, useLocation } from 'react-router-dom';
 import type { FeedResponse, VideoDTO } from '../../shared/types.ts';
 import { api, ApiError } from '../lib/api.ts';
@@ -44,6 +45,9 @@ export function FeedPage({ tab }: FeedPageProps) {
     }
   });
   const watchedAsGuest = useRef<Set<string>>(new Set());
+  const [highlights, setHighlights] = useState<VideoDTO[] | null>(null);
+  const [invite, setInvite] = useState<{ comments: number } | null>(null);
+  const askedHighlights = useRef(false);
   const location = useLocation();
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -76,6 +80,26 @@ export function FeedPage({ tab }: FeedPageProps) {
       current ?? { username: item.creator.username, displayName: item.creator.displayName },
     );
   }, [activeIndex, items, user, nudgeDismissed, tab]);
+
+  // The closing card is worth one request: a few recent clips that did well,
+  // and a nudge for anyone who keeps commenting but never posts.
+  useEffect(() => {
+    if (hasMore || loading || askedHighlights.current) return;
+    askedHighlights.current = true;
+    const exclude = itemsRef.current
+      .map((item) => item.id)
+      .slice(0, 40)
+      .join(',');
+    api
+      .get<{ items: VideoDTO[]; invite: { comments: number } | null }>(
+        `/api/feed/highlights?exclude=${encodeURIComponent(exclude)}`,
+      )
+      .then((data) => {
+        setHighlights(data.items);
+        setInvite(data.invite);
+      })
+      .catch(() => setHighlights([]));
+  }, [hasMore, loading]);
 
   itemsRef.current = items;
   pageRef.current = page;
@@ -407,14 +431,47 @@ export function FeedPage({ tab }: FeedPageProps) {
 
         {!hasMore ? (
           <div className="feed-item feed-end">
-            <strong>That is every goat for now</strong>
-            <p>New posts appear after a person has watched and approved them.</p>
+            <strong>{highlights && highlights.length ? 'You are caught up' : 'That is every goat for now'}</strong>
+            <p>
+              Every post is watched and approved by a person, so the shelf refills slowly.
+              {highlights && highlights.length ? ' In the meantime, these did well this week.' : ''}
+            </p>
+            {highlights && highlights.length ? (
+              <div className="end-picks">
+                {highlights.map((item) => {
+                  const thumb = item.posterUrl || item.photos[0]?.url || null;
+                  return (
+                    <Link key={item.id} to={`/v/${item.id}`} className="end-pick">
+                      <span className="end-pick__thumb">
+                        {thumb ? (
+                          <img src={thumb} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <Icon name="play" size={16} />
+                        )}
+                      </span>
+                      <span className="end-pick__text">
+                        <span className="end-pick__caption">{item.caption || 'A goat post'}</span>
+                        <span className="end-pick__meta">
+                          @{item.creator.username} · {compactNumber(item.viewCount)} views
+                        </span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+            {invite ? (
+              <p className="feed-end__invite">
+                You have commented {invite.comments} times. If you have goats of your own, they
+                would fit right in here.
+              </p>
+            ) : null}
             <div className="empty-state__actions">
-              <Link className="btn btn--quiet btn--sm" to="/trending">
-                Try trending
-              </Link>
               <Link className="btn btn--primary btn--sm" to={user ? '/upload' : '/login?next=/upload'}>
                 Upload yours
+              </Link>
+              <Link className="btn btn--quiet btn--sm" to="/trending">
+                Try trending
               </Link>
             </div>
           </div>
