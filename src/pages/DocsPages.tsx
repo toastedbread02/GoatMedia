@@ -83,6 +83,10 @@ export function PrivacyPage() {
       <h2>What we store</h2>
       <ul>
         <li>Your email address, username, display name and password hash. Passwords are never stored in plain text.</li>
+        <li>
+          Your date of birth, so accounts can be kept to people 13 and older. It is never shown on your profile, and
+          the public site only ever sees needs-to-be-13-or-older, not the date.
+        </li>
         <li>Your bio, profile photo and the videos and captions you upload.</li>
         <li>Which videos you watched, how long for, and the likes, comments and follows you make. This powers your feed.</li>
         <li>A session cookie so you stay signed in. It is HTTP-only and cannot be read by page scripts.</li>
@@ -93,9 +97,10 @@ export function PrivacyPage() {
       </ul>
       <h2>What is public</h2>
       <p>
-        Your username, display name, bio, photo, approved videos and follower counts are public. Your email address,
-        hidden videos, watch history and moderation reasons are not shown on your profile. Email addresses are visible
-        only to the moderator, for account support.
+        Your username, display name, bio, photo and approved videos are public. Your email address, date of birth,
+        hidden videos, watch history and moderation reasons are not shown on your profile. Follower and following
+        counts are public unless you make your follower lists private in settings; the lists themselves then stay
+        visible only to you. Email addresses are visible only to the moderator, for account support.
       </p>
       <h2>Location metadata</h2>
       <p>
@@ -109,8 +114,8 @@ export function PrivacyPage() {
       </p>
       <h2>Retention and control</h2>
       <p>
-        You can delete a comment, remove one of your videos and reset the interests the feed has learned. Blocking an
-        account hides its content from you. To close an account, contact the moderator account that runs this
+        You can delete a comment, remove one of your videos, reset the interests the feed has learned, keep your
+        follower lists private and leave people search from settings. Blocking an account hides its content from you. To close an account, contact the moderator account that runs this
         installation.
       </p>
       <h2>Services</h2>

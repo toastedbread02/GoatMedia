@@ -282,6 +282,9 @@ export interface UserRow {
   avatar_version: number;
   has_avatar: number;
   created_at: number;
+  birth_date: string | null;
+  hide_follows: number;
+  searchable: number;
   follower_count: number;
   following_count: number;
   post_count: number;
@@ -290,6 +293,9 @@ export interface UserRow {
 }
 
 export function publicUser(origin: string, row: UserRow, viewerId: string | null) {
+  const isSelf = viewerId === row.id;
+  const followsPrivate = Boolean(row.hide_follows);
+  const showCounts = !followsPrivate || isSelf;
   return {
     id: row.id,
     username: row.username,
@@ -297,12 +303,13 @@ export function publicUser(origin: string, row: UserRow, viewerId: string | null
     bio: row.bio,
     avatarUrl: avatarUrl(origin, row.id, row.avatar_version, Boolean(row.has_avatar)),
     createdAt: row.created_at,
-    followerCount: row.follower_count,
-    followingCount: row.following_count,
+    followsPrivate,
+    followerCount: showCounts ? row.follower_count : 0,
+    followingCount: showCounts ? row.following_count : 0,
     videoCount: row.post_count,
     postCount: row.post_count,
     isFollowing: Boolean(row.is_following),
-    isSelf: viewerId === row.id,
+    isSelf,
     isBlocked: Boolean(row.is_blocked),
     status: row.status === 'suspended' ? 'suspended' : 'active',
   };
@@ -311,6 +318,7 @@ export function publicUser(origin: string, row: UserRow, viewerId: string | null
 export const USER_SELECT = (viewerId: string | null) => `
   SELECT u.id, u.email, u.username, u.display_name, u.bio, u.role, u.status,
          u.suspended_reason, u.avatar_version, (u.avatar_bytes IS NOT NULL) AS has_avatar, u.created_at,
+         u.birth_date, u.hide_follows, u.searchable,
          (SELECT COUNT(*) FROM follows f WHERE f.following_id = u.id) AS follower_count,
          (SELECT COUNT(*) FROM follows f WHERE f.follower_id = u.id) AS following_count,
          (SELECT COUNT(*) FROM posts p WHERE p.owner_id = u.id AND p.status = 'approved') AS post_count,

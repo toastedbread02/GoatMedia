@@ -7,8 +7,53 @@ import { useConfig } from '../lib/config.tsx';
 import { useToast } from '../lib/toast.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { compactNumber, formatDate } from '../lib/format.ts';
+import { useTheme, type MotionChoice, type ThemeChoice } from '../lib/theme.tsx';
 import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
+import { SettingsSkeleton } from '../components/Skeleton.tsx';
+
+function ageOnDate(iso: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const born = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(born.getTime())) return null;
+  const today = new Date();
+  let age = today.getUTCFullYear() - born.getUTCFullYear();
+  const month = today.getUTCMonth() - born.getUTCMonth();
+  if (month < 0 || (month === 0 && today.getUTCDate() < born.getUTCDate())) age -= 1;
+  return age;
+}
+
+function SettingToggle({
+  title,
+  description,
+  checked,
+  onChange,
+  busy,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  busy?: boolean;
+}) {
+  return (
+    <div className="setting-toggle">
+      <div className="setting-toggle__text">
+        <strong>{title}</strong>
+        <span>{description}</span>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={title}
+        className="switch"
+        onClick={() => onChange(!checked)}
+        disabled={busy}
+      />
+    </div>
+  );
+}
 
 function useUsernameCheck(username: string, current: string) {
   const [state, setState] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
@@ -60,6 +105,13 @@ export function SettingsPage() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
 
+  const { theme, setTheme, motion, setMotion } = useTheme();
+  const [birthDate, setBirthDate] = useState('');
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [hideFollows, setHideFollows] = useState(false);
+  const [searchable, setSearchable] = useState(true);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
+
   const usernameState = useUsernameCheck(username, user?.username ?? '');
 
   useEffect(() => {
@@ -71,20 +123,19 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (!user) return;
+    setBirthDate(user.birthDate ?? '');
+    setHideFollows(Boolean(user.hideFollows));
+    setSearchable(user.searchable !== false);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
     api.get<{ items: InterestView[] }>('/api/me/interests').then((data) => setInterests(data.items)).catch(() => {});
     api.get<{ items: VideoDTO[] }>('/api/me/hidden').then((data) => setHidden(data.items)).catch(() => {});
     api.get<{ items: PublicUser[] }>('/api/me/blocked').then((data) => setBlocked(data.items)).catch(() => {});
   }, [user]);
 
-  if (loading) {
-    return (
-      <div className="page">
-        <div className="feed-empty">
-          <div className="spinner spinner--dark" />
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <SettingsSkeleton />;
 
   if (!user) {
     return (
@@ -99,6 +150,27 @@ export function SettingsPage() {
       </div>
     );
   }
+
+  const savePrivacy = async (patch: { hideFollows?: boolean; searchable?: boolean }) => {
+    const before = { hideFollows, searchable };
+    const next = { hideFollows, searchable, ...patch };
+    setHideFollows(next.hideFollows);
+    setSearchable(next.searchable);
+    setSavingPrivacy(true);
+    try {
+      await api.patch('/api/me', next);
+      setUser({ ...user, ...next });
+      notify('Privacy updated.');
+    } catch (error) {
+      setHideFollows(before.hideFollows);
+      setSearchable(before.searchable);
+      notify(error instanceof Error ? error.message : 'That setting did not save.', { tone: 'error' });
+    } finally {
+      setSavingPrivacy(false);
+    }
+  };
+
+  const age = ageOnDate(birthDate);
 
   const uploadAvatar = async (file: File | undefined) => {
     if (!file) return;
@@ -130,7 +202,7 @@ export function SettingsPage() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Settings</h1>
-          <p className="page-sub">Your profile, sign-in details and what the feed has learned.</p>
+          <p className="page-sub">Your profile, privacy, appearance and what the feed has learned.</p>
         </div>
         <Link className="btn btn--quiet btn--sm" to={`/u/${user.username}`}>
           View profile
@@ -276,6 +348,94 @@ export function SettingsPage() {
 
       <section className="settings-section" aria-labelledby="settings-account">
         <div className="settings-section__intro">
+          <h2 id="settings-appearance">Appearance</h2>
+          <p>Choose how GoatMedia looks. This device remembers your choice.</p>
+        </div>
+        <div className="settings-section__body">
+          <div className="field">
+            <span className="field__label">Theme</span>
+            <div className="choice-row">
+              <div className="choice-group" role="group" aria-label="Theme">
+                {(
+                  [
+                    { id: 'system', label: 'System' },
+                    { id: 'light', label: 'Light' },
+                    { id: 'dark', label: 'Dark' },
+                  ] as { id: ThemeChoice; label: string }[]
+                ).map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className="choice"
+                    aria-pressed={theme === option.id}
+                    onClick={() => setTheme(option.id)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <span className="field__hint">
+              System follows the light or dark setting on your device.
+            </span>
+          </div>
+          <div className="field">
+            <span className="field__label">Motion</span>
+            <div className="choice-row">
+              <div className="choice-group" role="group" aria-label="Motion">
+                {(
+                  [
+                    { id: 'system', label: 'Full' },
+                    { id: 'reduced', label: 'Reduced' },
+                  ] as { id: MotionChoice; label: string }[]
+                ).map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className="choice"
+                    aria-pressed={motion === option.id}
+                    onClick={() => setMotion(option.id)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <span className="field__hint">
+              Reduced turns off decorative transitions and skeleton shimmer. Video playback is unchanged.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="settings-privacy">
+        <div className="settings-section__intro">
+          <h2 id="settings-privacy">Privacy</h2>
+          <p>Your email, date of birth and sign-in details are never public.</p>
+        </div>
+        <div className="settings-section__body">
+          <SettingToggle
+            title="Keep my follower lists private"
+            description="People can still see your follower count, but not who follows you or who you follow. Only you can open those lists."
+            checked={hideFollows}
+            busy={savingPrivacy}
+            onChange={(next) => void savePrivacy({ hideFollows: next })}
+          />
+          <SettingToggle
+            title="Show my profile in search"
+            description="When off, your username and name stop appearing in people search. Your posts can still be found by caption and tags."
+            checked={searchable}
+            busy={savingPrivacy}
+            onChange={(next) => void savePrivacy({ searchable: next })}
+          />
+          <p className="section-note">
+            Blocking an account still hides its posts from your feed and stops it following you.
+          </p>
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="settings-account">
+        <div className="settings-section__intro">
           <h2 id="settings-account">Account</h2>
           <p>Sign-in details are never shown on your public profile.</p>
         </div>
@@ -298,6 +458,50 @@ export function SettingsPage() {
             <span className="field__label">Joined</span>
             <span>{formatDate(user.createdAt)}</span>
           </div>
+
+          <form
+            className="form-stack"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSavingDetails(true);
+              try {
+                const data = await api.patch<{ user: MeDTO }>('/api/me', { birthDate });
+                setUser(data.user);
+                notify('Date of birth saved.');
+              } catch (error) {
+                notify(error instanceof Error ? error.message : 'Could not save that date.', { tone: 'error' });
+              } finally {
+                setSavingDetails(false);
+              }
+            }}
+          >
+            <h3>Date of birth</h3>
+            <div className="field" style={{ maxWidth: 260 }}>
+              <label className="field__label" htmlFor="birth-date">
+                Date of birth
+              </label>
+              <input
+                id="birth-date"
+                className="input"
+                type="date"
+                value={birthDate}
+                max={new Date().toISOString().slice(0, 10)}
+                min="1900-01-01"
+                onChange={(event) => setBirthDate(event.target.value)}
+                required
+              />
+              <span className="field__hint">
+                {age !== null ? `${age} years old · ` : ''}
+                Private. Used to keep the community adults-and-teens only and never shown on your profile.
+              </span>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="btn btn--quiet btn--sm" disabled={savingDetails}>
+                {savingDetails ? <span className="btn__spinner" /> : null}
+                Save date
+              </button>
+            </div>
+          </form>
 
           <form
             className="form-stack"

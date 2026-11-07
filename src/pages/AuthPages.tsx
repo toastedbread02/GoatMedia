@@ -115,6 +115,7 @@ export function SignupPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -134,6 +135,7 @@ export function SignupPage() {
               username,
               email,
               password,
+              birthDate,
             });
             setUser(data.user);
             const destination = next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
@@ -203,6 +205,26 @@ export function SignupPage() {
           />
           <span className="field__hint">Used for sign-in and account recovery. Never shown publicly.</span>
           {fieldError(fields, 'email') ? <span className="field__error">{fields.email}</span> : null}
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="birth-date-signup">
+            Date of birth
+          </label>
+          <input
+            id="birth-date-signup"
+            className="input"
+            type="date"
+            value={birthDate}
+            onChange={(event) => setBirthDate(event.target.value)}
+            max={new Date().toISOString().slice(0, 10)}
+            min="1900-01-01"
+            required
+            autoComplete="bday"
+            aria-describedby="birth-date-hint"
+          />
+          <span className="field__hint" id="birth-date-hint">
+            GoatMedia is for people 13 and older. This stays private.
+          </span>
         </div>
         <div className="field">
           <label className="field__label" htmlFor="password">

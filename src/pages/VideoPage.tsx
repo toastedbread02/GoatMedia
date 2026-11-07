@@ -18,6 +18,7 @@ import { Popover } from '../components/Popover.tsx';
 import { CommentsPanel } from '../components/CommentsPanel.tsx';
 import { ReportDialog } from '../components/ReportDialog.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
+import { PostSkeleton } from '../components/Skeleton.tsx';
 
 export function VideoPage() {
   const { id } = useParams();
@@ -142,16 +143,7 @@ export function VideoPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="page">
-        <div className="feed-empty">
-          <div className="spinner spinner--dark" />
-          <p>Loading…</p>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <PostSkeleton />;
 
   if (error || !video) {
     return (

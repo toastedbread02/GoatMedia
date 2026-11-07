@@ -146,6 +146,7 @@ async function run() {
       username: 'ada',
       displayName: 'Ada',
       password: 'correct-horse-battery',
+      birthDate: '1994-04-12',
     }),
   });
   ok(a.status === 201 && a.body.token, 'first account registers', a.body);
@@ -159,6 +160,7 @@ async function run() {
       username: 'boaz',
       displayName: 'Boaz',
       password: 'correct-horse-battery',
+      birthDate: '1990-09-03',
     }),
   });
   const tokenB = b.body.token;
@@ -172,6 +174,7 @@ async function run() {
       username: 'ada',
       displayName: 'Ada Again',
       password: 'correct-horse-battery',
+      birthDate: '1994-04-12',
     }),
   });
   ok(dup.status === 400 && /username is taken/i.test(dup.body.error), 'usernames cannot collide');
@@ -179,9 +182,43 @@ async function run() {
   const weak = await call('/api/auth/register', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'w@example.com', username: 'weakling', displayName: 'W', password: 'short' }),
+    body: JSON.stringify({
+      email: 'w@example.com',
+      username: 'weakling',
+      displayName: 'W',
+      password: 'short',
+      birthDate: '1994-04-12',
+    }),
   });
   ok(weak.status === 400, 'short passwords are rejected');
+
+  const recent = new Date();
+  recent.setUTCFullYear(recent.getUTCFullYear() - 9);
+  const underage = await call('/api/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      email: 'kid@example.com',
+      username: 'kid',
+      displayName: 'Kid',
+      password: 'correct-horse-battery',
+      birthDate: recent.toISOString().slice(0, 10),
+    }),
+  });
+  ok(underage.status === 400 && /at least 13/i.test(underage.body.error || ''), 'underage sign-ups are refused');
+
+  const noBirthDate = await call('/api/auth/register', {
+    method: 'POST',
+    // A separate test IP: sign-ups are deliberately rate limited to five an hour.
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.9' },
+    body: JSON.stringify({
+      email: 'nodob@example.com',
+      username: 'nodob',
+      displayName: 'No Dob',
+      password: 'correct-horse-battery',
+    }),
+  });
+  ok(noBirthDate.status === 400, 'a date of birth is required');
 
   const badLogin = await call('/api/auth/login', {
     method: 'POST',
@@ -360,6 +397,48 @@ async function run() {
   );
   const missingFollowers = await call('/api/users/nobody-here/followers');
   ok(missingFollowers.status === 404, 'a follower list needs a real account');
+
+  const privateLists = await call('/api/me', {
+    method: 'PATCH',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ hideFollows: true }),
+  });
+  ok(privateLists.status === 200 && privateLists.body.user.hideFollows === true, 'follower lists can be made private');
+  const hiddenFollowers = await call('/api/users/ada/followers');
+  ok(hiddenFollowers.status === 403, 'a private follower list is refused to visitors');
+  const ownerFollowers = await call('/api/users/ada/followers', { token: tokenA });
+  ok(ownerFollowers.status === 200 && ownerFollowers.body.users.length === 1, 'the owner still sees their own list');
+  const privateProfile = await call('/api/users/ada');
+  ok(
+    privateProfile.body.user.followsPrivate === true && privateProfile.body.user.followerCount === 0,
+    'a private profile does not publish follower counts',
+  );
+  await call('/api/me', {
+    method: 'PATCH',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ hideFollows: false }),
+  });
+
+  const hiddenSearch = await call('/api/me', {
+    method: 'PATCH',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ searchable: false }),
+  });
+  ok(hiddenSearch.status === 200 && hiddenSearch.body.user.searchable === false, 'people search can be turned off');
+  const searchWithout = await call('/api/search?q=ada');
+  ok(
+    !searchWithout.body.creators.some((person: any) => person.username === 'ada'),
+    'an unsearchable profile stays out of people search',
+  );
+  await call('/api/me', {
+    method: 'PATCH',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ searchable: true }),
+  });
 
   console.log('\n[recommendations]');
   const interests = await call('/api/me/interests', { token: tokenB });

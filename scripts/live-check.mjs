@@ -81,6 +81,7 @@ const registerA = await timed(
       username: `smokea${stamp}`.slice(0, 20),
       displayName: 'Smoke A',
       password,
+      birthDate: '1992-06-15',
     },
   }),
   'register (hash + D1 writes)',
@@ -92,10 +93,10 @@ const registerB = await call('/api/auth/register', {
   method: 'POST',
   body: {
     email: `smoke-b-${stamp}@example.com`,
-    username: `smokeb${stamp}`.slice(0, 20),
-    displayName: 'Smoke B',
-    password,
-  },
+    username: `smokeb${stamp}`.slice(0, 20),      displayName: 'Smoke B',
+      password,
+      birthDate: '1988-02-08',
+    },
 });
 ok(registerB.status === 201, 'account B registers', registerB.body);
 const tokenB = registerB.body.token;

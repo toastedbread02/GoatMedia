@@ -10,6 +10,7 @@ import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { Popover } from '../components/Popover.tsx';
 import { VideoCard } from '../components/VideoCard.tsx';
+import { GridSkeleton, ProfileSkeleton } from '../components/Skeleton.tsx';
 
 type Tab = 'published' | 'pending' | 'rejected' | 'removed';
 type PeopleList = 'followers' | 'following';
@@ -192,16 +193,7 @@ export function ProfilePage() {
     );
   }
 
-  if (!profile || authLoading) {
-    return (
-      <div className="page">
-        <div className="feed-empty">
-          <div className="spinner spinner--dark" />
-          <p>Loading profile…</p>
-        </div>
-      </div>
-    );
-  }
+  if (!profile || authLoading) return <ProfileSkeleton />;
 
   const isSelf = user?.id === profile.id;
 
@@ -270,33 +262,47 @@ export function ProfilePage() {
           <p className="profile-username">@{profile.username}</p>
           <p className="profile-bio">{profile.bio || (isSelf ? 'Add a short bio in settings.' : 'No bio yet.')}</p>
           <p className="profile-counts">
-            <button
-              type="button"
-              className={`profile-count${people === 'followers' ? ' is-active' : ''}`}
-              aria-expanded={people === 'followers'}
-              aria-controls="profile-people"
-              onClick={() => setPeople(people === 'followers' ? null : 'followers')}
-            >
-              <strong>{profile.followerCount}</strong> {plural(profile.followerCount, 'follower')}
-            </button>
-            <span className="meta-sep" aria-hidden="true">
-              ·
-            </span>
-            <button
-              type="button"
-              className={`profile-count${people === 'following' ? ' is-active' : ''}`}
-              aria-expanded={people === 'following'}
-              aria-controls="profile-people"
-              onClick={() => setPeople(people === 'following' ? null : 'following')}
-            >
-              <strong>{profile.followingCount}</strong> following
-            </button>
-            <span className="meta-sep" aria-hidden="true">
-              ·
-            </span>
-            <span>
-              <strong>{profile.videoCount}</strong> {plural(profile.videoCount, 'post')}
-            </span>
+            {profile.followsPrivate && !isSelf ? (
+              <>
+                <span>
+                  <strong>{profile.videoCount}</strong> {plural(profile.videoCount, 'post')}
+                </span>
+                <span className="meta-sep" aria-hidden="true">
+                  ·
+                </span>
+                <span>Follower lists private</span>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={`profile-count${people === 'followers' ? ' is-active' : ''}`}
+                  aria-expanded={people === 'followers'}
+                  aria-controls="profile-people"
+                  onClick={() => setPeople(people === 'followers' ? null : 'followers')}
+                >
+                  <strong>{profile.followerCount}</strong> {plural(profile.followerCount, 'follower')}
+                </button>
+                <span className="meta-sep" aria-hidden="true">
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className={`profile-count${people === 'following' ? ' is-active' : ''}`}
+                  aria-expanded={people === 'following'}
+                  aria-controls="profile-people"
+                  onClick={() => setPeople(people === 'following' ? null : 'following')}
+                >
+                  <strong>{profile.followingCount}</strong> following
+                </button>
+                <span className="meta-sep" aria-hidden="true">
+                  ·
+                </span>
+                <span>
+                  <strong>{profile.videoCount}</strong> {plural(profile.videoCount, 'post')}
+                </span>
+              </>
+            )}
           </p>
           <p className="profile-joined">Joined {monthYear(profile.createdAt)}</p>
         </div>
@@ -382,7 +388,7 @@ export function ProfilePage() {
         </div>
       </header>
 
-      {people ? (
+      {people && !(profile.followsPrivate && !isSelf) ? (
         <section id="profile-people" className="profile-people" aria-label={`${people === 'followers' ? 'Followers' : 'Following'} of @${profile.username}`}>
           <div className="profile-people__head">
             <h2>{people === 'followers' ? 'Followers' : 'Following'}</h2>
@@ -498,11 +504,7 @@ export function ProfilePage() {
       ) : null}
 
       {videos === null ? (
-        <div className="video-grid" aria-busy="true">
-          {[0, 1, 2].map((index) => (
-            <div className="video-skeleton" key={index} />
-          ))}
-        </div>
+        <GridSkeleton count={6} label="Loading posts" />
       ) : videos.length === 0 ? (
         <div className="empty-state">
           <h2>{tab === 'published' && isSelf ? 'Nothing posted yet' : EMPTY_COPY[tab]}</h2>

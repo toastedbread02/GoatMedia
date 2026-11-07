@@ -12,6 +12,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Resolve the saved appearance before the first paint so a dark-theme
+      // reader never gets a flash of paper-white.
+      (function () {
+        try {
+          var choice = localStorage.getItem('gm-theme') || 'system';
+          var dark =
+            choice === 'dark' ||
+            (choice !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+          if (localStorage.getItem('gm-motion') === 'reduced') {
+            document.documentElement.dataset.motion = 'reduced';
+          }
+        } catch (error) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -7,6 +7,7 @@ import { useDebouncedValue, useDocumentTitle } from '../lib/hooks.ts';
 import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { VideoCard } from '../components/VideoCard.tsx';
+import { GridSkeleton } from '../components/Skeleton.tsx';
 
 export function SearchPage() {
   const [params] = useSearchParams();
@@ -90,11 +91,7 @@ export function SearchPage() {
           </div>
         </div>
       ) : loading && !results ? (
-        <div className="search-results" aria-busy="true">
-          {[0, 1, 2].map((index) => (
-            <div className="video-skeleton" key={index} />
-          ))}
-        </div>
+        <GridSkeleton count={6} label="Searching" />
       ) : error ? (
         <div className="empty-state">
           <Icon name="alert" size={24} />

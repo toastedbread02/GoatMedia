@@ -9,6 +9,8 @@ export const limits = {
   maxBioLength: 200,
   maxCommentsPerMinute: 12,
   maxPostsPerHour: 8,
+  /** Minimum age for an account. Enforced on sign-up, never shown publicly. */
+  minAge: 13,
   feedPageSize: 6,
   commentsPageSize: 20,
   // Video bytes live in chunked D1 rows, so the ceiling is generous but finite.

@@ -1,4 +1,4 @@
-import { Env, bad, json, missing, now, rateLimit, uid } from '../lib';
+import { Env, bad, forbidden, json, missing, now, rateLimit, uid } from '../lib';
 import { currentUser, requireActive } from '../session';
 import { hydratePosts, PostRow, POST_SELECT, publicUser, USER_SELECT, UserRow } from '../models';
 import { applySignal } from '../interests';
@@ -69,10 +69,13 @@ export async function followList(
 ) {
   const viewer = await currentUser(req, env);
   const viewerId = viewer?.id ?? null;
-  const target = await env.DB.prepare('SELECT id FROM users WHERE username = ?')
+  const target = await env.DB.prepare('SELECT id, hide_follows FROM users WHERE username = ?')
     .bind(username)
-    .first<{ id: string }>();
+    .first<{ id: string; hide_follows: number }>();
   if (!target) throw missing('No creator with that username.');
+  if (target.hide_follows && viewerId !== target.id) {
+    throw forbidden('This account keeps its follower lists private.');
+  }
 
   const page = Math.max(1, Math.min(200, Number(url.searchParams.get('page') || 1) || 1));
   const size = 20;
@@ -164,7 +167,8 @@ export async function search(req: Request, env: Env, origin: string, url: URL) {
       .all<PostRow>(),
     env.DB.prepare(
       `${USER_SELECT(viewer?.id ?? null)}
-        WHERE u.status = 'active' AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)
+        WHERE u.status = 'active' AND u.searchable = 1
+          AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)
         ORDER BY follower_count DESC
         LIMIT 8`,
     )

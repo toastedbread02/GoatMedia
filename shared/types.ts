@@ -91,6 +91,8 @@ export interface PublicUser {
   followerCount: number;
   followingCount: number;
   videoCount: number;
+  /** True when the account keeps its follower and following lists to itself. */
+  followsPrivate?: boolean;
   isFollowing: boolean;
   isSelf: boolean;
   isBlocked: boolean;
@@ -102,6 +104,10 @@ export interface MeDTO extends PublicUser {
   role: 'user' | 'admin';
   unreadNotifications: number;
   suspendedReason: string | null;
+  /** YYYY-MM-DD, private to the account holder. */
+  birthDate: string | null;
+  hideFollows: boolean;
+  searchable: boolean;
 }
 
 export interface FeedResponse {
@@ -124,6 +130,7 @@ export interface AppConfigDTO {
     maxAvatarMb: number;
     maxCaptionLength: number;
     maxCommentsPerMinute: number;
+    minAge: number;
   };
   categories: Category[];
   moderation: 'manual';

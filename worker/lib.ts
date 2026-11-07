@@ -18,6 +18,7 @@ export class HttpError extends Error {
 
 export const bad = (message: string) => new HttpError(400, message);
 export const denied = (message = 'You need to sign in for that.') => new HttpError(401, message);
+export const forbidden = (message = 'That is not available.') => new HttpError(403, message);
 export const missing = (message = 'Not found.') => new HttpError(404, message);
 export const tooMany = (message: string) => new HttpError(429, message);
 

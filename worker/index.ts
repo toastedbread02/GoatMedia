@@ -120,6 +120,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
           maxCaptionLength: limits.maxCaptionLength,
           maxBioLength: limits.maxBioLength,
           maxCommentsPerMinute: limits.maxCommentsPerMinute,
+          minAge: limits.minAge,
         },
         categories,
         moderation,

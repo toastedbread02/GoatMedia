@@ -21,6 +21,7 @@ import { AuthorizedImage, AuthorizedPlayer } from '../components/AuthorizedMedia
 import { PhotoAlbum } from '../components/PhotoAlbum.tsx';
 import { SoundStrip } from '../components/SoundStrip.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
+import { AdminSkeleton, RowSkeleton } from '../components/Skeleton.tsx';
 
 type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts';
 
@@ -213,15 +214,7 @@ export function AdminPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="page">
-        <div className="feed-empty">
-          <div className="spinner spinner--dark" />
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <AdminSkeleton />;
 
   if (!isAdmin) {
     const claim = async (event: FormEvent) => {
@@ -373,7 +366,7 @@ export function AdminPage() {
         <div className="admin-layout">
           <div className="admin-list">
             {loadingList ? (
-              <div className="admin-loading">Loading reports…</div>
+              <RowSkeleton count={4} label="Loading reports" />
             ) : reports.length === 0 ? (
               <div className="admin-loading">No open reports. Quiet week for goats.</div>
             ) : (
@@ -498,7 +491,7 @@ export function AdminPage() {
               </div>
             </div>
             {loadingList ? (
-              <div className="admin-loading">Loading accounts…</div>
+              <RowSkeleton count={4} label="Loading accounts" />
             ) : accounts.length === 0 ? (
               <div className="admin-loading">No accounts match that search.</div>
             ) : (
@@ -657,7 +650,7 @@ export function AdminPage() {
               </p>
             ) : null}
             {loadingList ? (
-              <div className="admin-loading">Loading queue…</div>
+              <RowSkeleton count={5} label="Loading queue" />
             ) : (
               <ul>
                 {videos.map((item) => (

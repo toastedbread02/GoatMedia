@@ -8,6 +8,7 @@ import { useToast } from '../lib/toast.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { FeedItem } from '../components/FeedItem.tsx';
 import { Icon } from '../components/Icon.tsx';
+import { FeedSkeleton } from '../components/Skeleton.tsx';
 
 type Tab = 'foryou' | 'trending' | 'following';
 
@@ -266,10 +267,15 @@ export function FeedPage({ tab }: FeedPageProps) {
 
   if (loading && items.length === 0) {
     return (
-      <div className="feed-empty">
-        <div className="spinner spinner--dark" />
-        <p>Finding goats you might like…</p>
-      </div>
+      <FeedSkeleton
+        label={
+          tab === 'trending'
+            ? 'Loading trending posts'
+            : tab === 'following'
+              ? 'Loading posts from creators you follow'
+              : 'Loading your feed'
+        }
+      />
     );
   }
 

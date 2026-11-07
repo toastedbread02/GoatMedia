@@ -76,7 +76,34 @@ async function meFor(env: Env, origin: string, userId: string) {
     role: row.role === 'admin' ? 'admin' : 'user',
     unreadNotifications: unread?.n || 0,
     suspendedReason: row.suspended_reason,
+    birthDate: row.birth_date ?? null,
+    hideFollows: Boolean(row.hide_follows),
+    searchable: Boolean(row.searchable),
   };
+}
+
+function ageFrom(iso: string): number {
+  const born = new Date(`${iso}T00:00:00Z`);
+  const today = new Date();
+  let age = today.getUTCFullYear() - born.getUTCFullYear();
+  const month = today.getUTCMonth() - born.getUTCMonth();
+  if (month < 0 || (month === 0 && today.getUTCDate() < born.getUTCDate())) age -= 1;
+  return age;
+}
+
+/** Accepts YYYY-MM-DD, enforces a plausible age and returns the date as stored. */
+function birthDate(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw bad('Add your date of birth as a real date.');
+  const [y, m, d] = raw.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d || date > new Date()) {
+    throw bad('Add your date of birth as a real date.');
+  }
+  const age = ageFrom(raw);
+  if (age < limits.minAge) throw bad(`You need to be at least ${limits.minAge} to use GoatMedia.`);
+  if (age > 120) throw bad('Add your date of birth as a real date.');
+  return raw;
 }
 
 export async function register(req: Request, env: Env, origin: string) {
@@ -88,6 +115,7 @@ export async function register(req: Request, env: Env, origin: string) {
   const password = body.password;
   const problem = passwordProblem(password);
   if (problem) throw bad(problem);
+  const birth = birthDate(body.birthDate);
 
   const clash = await env.DB.prepare('SELECT email, username FROM users WHERE email = ? OR username = ?')
     .bind(email, username)
@@ -103,10 +131,10 @@ export async function register(req: Request, env: Env, origin: string) {
   const id = uid('usr');
   const passwordHash = await hashPassword(env, password as string);
   await env.DB.prepare(
-    `INSERT INTO users (id, email, username, display_name, bio, password_hash, created_at)
-     VALUES (?, ?, ?, ?, '', ?, ?)`,
+    `INSERT INTO users (id, email, username, display_name, bio, password_hash, birth_date, created_at)
+     VALUES (?, ?, ?, ?, '', ?, ?, ?)`,
   )
-    .bind(id, email, username, displayName, passwordHash, now())
+    .bind(id, email, username, displayName, passwordHash, birth, now())
     .run();
   await env.DB.prepare('INSERT INTO account_events (id, kind, created_at) VALUES (?, ?, ?)')
     .bind(uid('evt'), 'signup', now())
@@ -264,12 +292,24 @@ export async function updateProfile(req: Request, env: Env, origin: string) {
     updates.push('bio = ?');
     values.push(typeof body.bio === 'string' ? body.bio.trim().slice(0, 200) : '');
   }
+  if (body.birthDate !== undefined) {
+    updates.push('birth_date = ?');
+    values.push(body.birthDate ? birthDate(body.birthDate) : null);
+  }
+  if (body.hideFollows !== undefined) {
+    updates.push('hide_follows = ?');
+    values.push(body.hideFollows ? 1 : 0);
+  }
+  if (body.searchable !== undefined) {
+    updates.push('searchable = ?');
+    values.push(body.searchable ? 1 : 0);
+  }
   if (!updates.length) throw bad('Nothing to update.');
 
   await env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`)
     .bind(...values, user.id)
     .run();
-  return json({ user: await meFor(env, origin, user.id) });
+  return json({ user: await meFor(env, origin, user.id), message: 'Settings saved.' });
 }
 
 export async function publicProfile(
