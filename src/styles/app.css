@@ -3145,6 +3145,28 @@ ol {
   font-weight: 600;
 }
 
+.compress-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.compress-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.compress-panel__note {
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.45;
+}
+
 .progressbar {
   height: 6px;
   border-radius: 3px;

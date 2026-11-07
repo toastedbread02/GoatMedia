@@ -12,6 +12,9 @@ import { StatusTag } from '../components/StatusTag.tsx';
 
 const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v'];
 const VIDEO_EXT = /\.(mp4|mov|webm|m4v)$/i;
+// The editor reads from disk, so the source can be much bigger than the
+// upload limit. This is only a guard against absurd files.
+const MAX_SOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 type Kind = 'video' | 'photos';
@@ -59,12 +62,15 @@ export function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [lastUpload, setLastUpload] = useState<VideoDTO | null>(null);
+  const [compressing, setCompressing] = useState<{ progress: number; label: string } | null>(null);
+  const [compressionNote, setCompressionNote] = useState<string | null>(null);
 
   const videoInput = useRef<HTMLInputElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
   const probeId = useRef(0);
   const photoKey = useRef(0);
+  const compressionAbort = useRef<AbortController | null>(null);
 
   const limits = config?.limits ?? {
     maxUploadMb: 25,
@@ -98,6 +104,10 @@ export function UploadPage() {
   }, []);
 
   useEffect(() => {
+    return () => compressionAbort.current?.abort();
+  }, []);
+
+  useEffect(() => {
     if (kind !== 'photos' || soundMode !== 'library') return;
     let cancelled = false;
     api
@@ -117,6 +127,10 @@ export function UploadPage() {
     if (!file) return;
     probeId.current += 1;
     const checked = probeId.current;
+    compressionAbort.current?.abort();
+    compressionAbort.current = null;
+    setCompressing(null);
+    setCompressionNote(null);
     setFileError(null);
     setError(null);
     setFields({});
@@ -126,9 +140,11 @@ export function UploadPage() {
       setFileError('Use an MP4, MOV, WEBM or M4V video. Those are the formats every browser can play.');
       return;
     }
-    if (file.size > limits.maxVideoMb * 1024 * 1024) {
+    if (file.size > MAX_SOURCE_BYTES) {
       setVideo(null);
-      setFileError(`That file is ${formatBytes(file.size)}. The limit is ${limits.maxVideoMb} MB.`);
+      setFileError(
+        `That file is ${formatBytes(file.size)}. Clips up to 2 GB can be prepared here; trim or export it first.`,
+      );
       return;
     }
 
@@ -160,18 +176,86 @@ export function UploadPage() {
         URL.revokeObjectURL(previewUrl);
         return;
       }
-      setPreparing('Grabbing a preview frame…');
-      const shot = duration !== null ? await capturePoster(file, duration) : { poster: null, width, height };
-      if (probeId.current !== checked) return;
-      setVideo({
-        file,
-        previewUrl,
-        duration,
-        width: shot.width || width,
-        height: shot.height || height,
-        poster: shot.poster,
-      });
+      const maxBytes = limits.maxVideoMb * 1024 * 1024;
+
+      // Files that already fit are left untouched: re-encoding costs time and a
+      // little quality, so it is only worth doing when the server would refuse
+      // the original.
+      if (file.size <= maxBytes) {
+        setPreparing('Grabbing a preview frame…');
+        const shot = duration !== null ? await capturePoster(file, duration) : { poster: null, width, height };
+        if (probeId.current !== checked) return;
+        setVideo({
+          file,
+          previewUrl,
+          duration,
+          width: shot.width || width,
+          height: shot.height || height,
+          poster: shot.poster,
+        });
+        setPreparing(null);
+        return;
+      }
+
+      const controller = new AbortController();
+      compressionAbort.current = controller;
       setPreparing(null);
+      setCompressing({ progress: 0, label: 'Reading the clip on this device…' });
+
+      let compression: typeof import('../lib/compress.ts') | null = null;
+      try {
+        // Loaded only when a file actually needs re-encoding; the codec
+        // library is far too large to ship to every visitor.
+        compression = await import('../lib/compress.ts');
+        const result = await compression.compressVideo(file, {
+          maxBytes,
+          signal: controller.signal,
+          onProgress: (value, label) => {
+            if (probeId.current !== checked) return;
+            setCompressing({ progress: Math.round(value * 100), label });
+          },
+        });
+        if (probeId.current !== checked) return;
+
+        setCompressing({ progress: 100, label: 'Preparing the preview…' });
+        const compressedUrl = URL.createObjectURL(result.file);
+        const shot = await capturePoster(result.file, result.duration);
+        if (probeId.current !== checked) {
+          URL.revokeObjectURL(compressedUrl);
+          return;
+        }
+        URL.revokeObjectURL(previewUrl);
+        setVideo({
+          file: result.file,
+          previewUrl: compressedUrl,
+          duration: result.duration || duration,
+          width: result.width || shot.width || width,
+          height: result.height || shot.height || height,
+          poster: shot.poster,
+        });
+        setCompressionNote(
+          `Compressed from ${formatBytes(file.size)} to ${formatBytes(result.file.size)} at ${result.width}×${result.height}. The original stayed on your device.`,
+        );
+        setCompressing(null);
+        compressionAbort.current = null;
+      } catch (compressError) {
+        if (probeId.current !== checked) return;
+        setCompressing(null);
+        compressionAbort.current = null;
+        URL.revokeObjectURL(previewUrl);
+        setVideo(null);
+        setPreparing(null);
+
+        if (compressError instanceof Error && compressError.name === 'CompressionCanceledError') {
+          setCompressionNote(null);
+          return;
+        }
+        const reason =
+          compressError instanceof Error ? compressError.message : 'That clip could not be compressed.';
+        setFileError(
+          `${reason} The file is ${formatBytes(file.size)} and the upload limit is ${limits.maxVideoMb} MB, so it was not sent. Try Chrome, Edge or Safari 16.4+, or export an H.264 MP4 that fits.`,
+        );
+      }
     };
     probe.onerror = () => {
       if (probeId.current !== checked) return;
@@ -265,6 +349,10 @@ export function UploadPage() {
 
   const reset = () => {
     probeId.current += 1;
+    compressionAbort.current?.abort();
+    compressionAbort.current = null;
+    setCompressing(null);
+    setCompressionNote(null);
     if (video) URL.revokeObjectURL(video.previewUrl);
     for (const photo of photos) URL.revokeObjectURL(photo.previewUrl);
     setVideo(null);
@@ -359,7 +447,7 @@ export function UploadPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (fileError) return;
+    if (fileError || compressing) return;
     setError(null);
     setFields({});
 
@@ -485,7 +573,8 @@ export function UploadPage() {
                 <span>
                   <strong>Video</strong>
                   <span className="field__hint">
-                    One clip, up to {durationLimit} and {limits.maxVideoMb} MB.
+                    One clip, up to {durationLimit}. Large files are compressed on this device to fit{' '}
+                    {limits.maxVideoMb} MB before upload.
                   </span>
                 </span>
               </label>
@@ -529,7 +618,7 @@ export function UploadPage() {
                       type="button"
                       className="btn btn--quiet btn--sm"
                       onClick={() => videoInput.current?.click()}
-                      disabled={busy}
+                      disabled={busy || Boolean(compressing)}
                     >
                       Replace
                     </button>
@@ -555,7 +644,7 @@ export function UploadPage() {
                     Choose a video
                   </button>
                   <span className="dropzone__hint">
-                    MP4, MOV, WEBM or M4V · up to {limits.maxVideoMb} MB · {durationLimit} max
+                    MP4, MOV, WEBM or M4V · {durationLimit} max · compressed on your device
                   </span>
                 </div>
               )}
@@ -567,6 +656,31 @@ export function UploadPage() {
                 id="video-file"
                 onChange={(event) => void chooseVideo(event.target.files?.[0])}
               />
+              {compressing ? (
+                <div className="compress-panel" role="status" aria-live="polite">
+                  <div className="compress-panel__head">
+                    <span>Compressing · {compressing.progress}%</span>
+                    <button
+                      type="button"
+                      className="btn btn--quiet btn--sm"
+                      onClick={() => compressionAbort.current?.abort()}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <div
+                    className="progressbar"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={compressing.progress}
+                  >
+                    <div className="progressbar__fill" style={{ width: `${compressing.progress}%` }} />
+                  </div>
+                  <p className="compress-panel__note">{compressing.label} The original stays on your device.</p>
+                </div>
+              ) : null}
+              {compressionNote ? <p className="field__hint">{compressionNote}</p> : null}
               {preparing ? <p className="field__hint">{preparing}</p> : null}
               {fileError ? <p className="field__error">{fileError}</p> : null}
             </section>
@@ -909,10 +1023,18 @@ export function UploadPage() {
           <button
             type="submit"
             className="btn btn--primary btn--lg btn--block"
-            disabled={busy || Boolean(fileError) || (kind === 'video' ? !video : photos.length === 0)}
+            disabled={
+              busy || Boolean(compressing) || Boolean(fileError) || (kind === 'video' ? !video : photos.length === 0)
+            }
           >
-            {busy ? <span className="btn__spinner" /> : null}
-            {phase === 'uploading' ? 'Uploading…' : phase === 'processing' ? 'Sending…' : 'Submit for review'}
+            {busy || compressing ? <span className="btn__spinner" /> : null}
+            {compressing
+              ? 'Compressing…'
+              : phase === 'uploading'
+                ? 'Uploading…'
+                : phase === 'processing'
+                  ? 'Sending…'
+                  : 'Submit for review'}
           </button>
           <p className="upload-side__hint">Nothing is published automatically. A human approves every post.</p>
         </aside>

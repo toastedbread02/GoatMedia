@@ -15,7 +15,7 @@ appears anywhere public.
 | `src/` | The browser app (React, TypeScript, Vite, BrowserRouter) |
 | `worker/` | The API: routing, auth, posts, feeds, moderation, media |
 | `migrations/` | D1 schema (users, posts, videos, photos, sounds, moderation, reports…) |
-| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (171 checks) |
+| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (183 checks) |
 | `scripts/live-check.mjs` | End-to-end checks against the deployed Worker (31 checks) |
 | `wrangler.jsonc` | Worker config, D1 binding, allowed site origins |
 
@@ -26,6 +26,14 @@ reads back only the chunks a byte range touches, so clips stream with normal
 seeking. Each blob is capped well under D1's 2 MB row limit, and the browser
 re-encodes photos before upload (which also strips EXIF/GPS).
 
+Videos too large for the upload cap are re-encoded in the browser first, using
+WebCodecs through [Mediabunny](https://mediabunny.dev). The original never
+leaves the device; the page produces an H.264 MP4 with the AAC audio track
+copied, sized to fit the server limit. The codec library is a separate chunk
+loaded only when compression actually starts. If the browser has no usable
+decoder/encoder (for example Firefox on Android, or HEVC on an unsupported
+device), the upload is stopped with an explanation rather than sent to fail.
+
 ## Features
 
 **Feeds** — For You (personalized), Trending, Following, category pages, search
@@ -35,7 +43,10 @@ and a post is only in a feed when its status is `approved` and its owner is
 active.
 
 **Posts** — Videos (MP4/MOV/WEBM/M4V) play full-screen in the reel with sound and
-playback controls; photo albums hold 1–6 photos in a swipeable carousel with
+playback controls. Clips up to 2 GB can be selected: anything over the 25 MB
+upload cap is compressed on the device first (1080p where the bitrate allows it,
+stepping down for long clips), with progress and a cancel button. Photo albums
+hold 1–6 photos in a swipeable carousel with
 dots, arrows, counter and keyboard support. Caption with hashtags; one category;
 optional shared sound on photo albums. Likes, comments, follows, sharing,
 not-interested, reporting, blocking.
@@ -124,6 +135,8 @@ own account are protected.
 
 - 6 photos per post, 1.8 MB each after browser resizing
 - 25 MB video, 1–180 s (three minutes), MP4/MOV/WEBM/M4V
+- Source clips up to 2 GB can be compressed in the browser; output resolution
+  adapts to the 25 MB budget (1080p for short clips, 540p for a full 3 minutes)
 - 1.5 MB audio, 60 s name field, 400-character comments, 300-character captions
 - 0.4 MB avatars
 - 8 posts/hour, 12 comments/minute, 12 sign-in attempts per 10 minutes per IP
@@ -147,6 +160,10 @@ and posts. It is a smoke test, not a load test.
   `worker/routes/auth.ts` before opening the site widely.
 - **Manual moderation is a human queue.** Roles can be shared, but a backlog is
   still a feature of the design, not a bug, and it has no SLA.
+- **Browser compression takes time.** A six-second 1440p60 clip took about 13 s
+  in desktop Chrome; a full three-minute GoPro clip can take several minutes and
+  warm a phone. Progress and cancel are shown, and clips that already fit skip
+  compression entirely.
 - **D1 blob storage** is a pragmatic answer to a card-free requirement, not the
   cheapest way to serve media at scale. Videos are read chunk-by-chunk on demand,
   but a popular clip still costs D1 reads. R2 with a payment method is the upgrade
