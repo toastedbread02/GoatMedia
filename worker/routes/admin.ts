@@ -65,6 +65,13 @@ export async function queue(req: Request, env: Env, origin: string, url: URL) {
   await requireAdmin(req, env);
   const status = statusOf(url.searchParams.get('status'));
   const { offset, page } = pageOf(url.searchParams.get('page'), 12);
+  // Choosing the daily pick needs to find one old post among hundreds, so the
+  // queue takes a search term. It matches the caption or the creator. Wildcards
+  // are stripped from the term rather than escaped, which keeps the SQL plain.
+  const term = (url.searchParams.get('q') || '').trim().slice(0, 60).replace(/[%_]/g, ' ');
+  const like = term ? `%${term}%` : null;
+  const search = like ? 'AND (p.caption LIKE ? OR u.username LIKE ? OR u.display_name LIKE ?)' : '';
+  const bindings = like ? [status, like, like, like, 13, offset] : [status, 13, offset];
 
   // The queue has to carry the same columns as every other feed, otherwise a
   // video arrives as a photo album with no photos and the review pane is blank.
@@ -75,11 +82,11 @@ export async function queue(req: Request, env: Env, origin: string, url: URL) {
   );
   const rows = await env.DB.prepare(
     `${queueSelect}
-      WHERE p.status = ?
+      WHERE p.status = ? ${search}
       ORDER BY ${status === 'pending' ? 'p.created_at ASC' : 'p.updated_at DESC'}
       LIMIT ? OFFSET ?`,
   )
-    .bind(status, 13, offset)
+    .bind(...bindings)
     .all<PostRow & { creator_email: string; creator_joined_at: number; creator_posts: number }>();
 
   const list = rows.results || [];

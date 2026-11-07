@@ -351,6 +351,34 @@ async function run() {
   ok(history.body.history.length === 2, 'moderation history records submit and approve');
   ok(history.body.history[0].action === 'approve', 'history is newest first');
 
+  console.log('\n[daily pick]');
+  const searched = await call('/api/admin/posts?status=approved&q=kids', { token: adminToken });
+  ok(
+    searched.status === 200 && searched.body.items.some((item: { id: string }) => item.id === postId),
+    'the approved-post search finds a post by its caption',
+  );
+  const noMatch = await call('/api/admin/posts?status=approved&q=nanny', { token: adminToken });
+  ok(noMatch.status === 200 && noMatch.body.items.length === 0, 'an unmatched search returns nothing');
+  const setDaily = await call('/api/admin/daily', {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ postId }),
+  });
+  ok(setDaily.status === 200, 'a photo album can be made goat of the day');
+  const pinnedFeed = await call('/api/feed?tab=foryou');
+  ok(
+    pinnedFeed.body.items[0]?.id === postId && pinnedFeed.body.items[0]?.goatOfDay === true,
+    'the pick is pinned at the top of For You',
+  );
+  const clearDaily = await call('/api/admin/daily', {
+    method: 'POST',
+    token: adminToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clear: true }),
+  });
+  ok(clearDaily.status === 200, 'the pick can be cleared');
+
   console.log('\n[social]');
   const like = await call(`/api/posts/${postId}/like`, { method: 'POST', token: tokenB });
   ok(like.body.liked === true && like.body.likeCount === 1, 'liking works');

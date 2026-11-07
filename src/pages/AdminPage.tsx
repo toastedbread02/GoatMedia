@@ -21,12 +21,13 @@ import { AuthorizedImage, AuthorizedPlayer } from '../components/AuthorizedMedia
 import { PhotoAlbum } from '../components/PhotoAlbum.tsx';
 import { SoundStrip } from '../components/SoundStrip.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
+import { DailyPanel } from '../components/DailyPanel.tsx';
 import { AdminSkeleton, RowSkeleton } from '../components/Skeleton.tsx';
 import { SupportQueue } from '../components/SupportQueue.tsx';
 import { TrafficPanel } from '../components/TrafficPanel.tsx';
 import { StoragePanel } from '../components/StoragePanel.tsx';
 
-type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts' | 'traffic';
+type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'daily' | 'reports' | 'accounts' | 'traffic';
 type ReportView = 'content' | 'support';
 
 const VIDEO_TAB_STATUS: Record<string, string> = {
@@ -142,8 +143,8 @@ export function AdminPage() {
         const nextCounts = await api.get<ModerationCounts>('/api/admin/counts');
         if (cancelled) return;
         setCounts(nextCounts);
-        if (tab === 'traffic') {
-          // The traffic panel loads its own numbers.
+        if (tab === 'traffic' || tab === 'daily') {
+          // Those panels load the posts they need themselves.
           return;
         }
         if (tab === 'reports') {
@@ -151,11 +152,11 @@ export function AdminPage() {
           if (cancelled) return;
           setReports(data.items);
           setSelectedReportId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-        } else if (tab === 'accounts') {
-          const data = await api.get<{ items: AdminUserRow[] }>(
-            `/api/admin/users?q=${encodeURIComponent(debouncedAccountQuery)}`,
-          );
-          if (cancelled) return;
+      } else if (tab === 'accounts') {
+        const data = await api.get<{ items: AdminUserRow[] }>(
+          `/api/admin/users?q=${encodeURIComponent(debouncedAccountQuery)}`,
+        );
+        if (cancelled) return;
           setAccounts(data.items);
           setSelectedUserId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
         } else {
@@ -195,7 +196,7 @@ export function AdminPage() {
         );
         setAccounts(data.items);
         setSelectedUserId((current) => (data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null));
-      } else {
+      } else if (tab !== 'daily') {
         const data = await api.get<{ items: AdminQueueItem[]; hasMore: boolean }>(
           `/api/admin/videos?status=${VIDEO_TAB_STATUS[tab]}&page=1`,
         );
@@ -369,6 +370,15 @@ export function AdminPage() {
         <button
           type="button"
           role="tab"
+          aria-selected={tab === 'daily'}
+          className={`admin-tab${tab === 'daily' ? ' is-active' : ''}`}
+          onClick={() => setTab('daily')}
+        >
+          Goat of the day
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === 'reports'}
           className={`admin-tab${tab === 'reports' ? ' is-active' : ''}`}
           onClick={() => {
@@ -409,7 +419,9 @@ export function AdminPage() {
         </div>
       ) : null}
 
-      {tab === 'traffic' ? (
+      {tab === 'daily' ? (
+        <DailyPanel />
+      ) : tab === 'traffic' ? (
         <>
           <TrafficPanel />
           <StoragePanel />
