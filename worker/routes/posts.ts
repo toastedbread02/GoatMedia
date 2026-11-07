@@ -376,6 +376,7 @@ export async function toggleLike(req: Request, env: Env, id: string) {
     await applySignal(env, user.id, id, 'like');
   }
 
+  invalidateTrending();
   const count = await env.DB.prepare('SELECT like_count FROM posts WHERE id = ?')
     .bind(id)
     .first<{ like_count: number }>();
@@ -474,6 +475,7 @@ export async function addComment(req: Request, env: Env, id: string) {
     env.DB.prepare('UPDATE posts SET comment_count = comment_count + 1 WHERE id = ?').bind(id),
   ]);
   await applySignal(env, user.id, id, 'comment');
+  invalidateTrending();
 
   if (post.owner_id !== user.id) {
     await env.DB.prepare(
@@ -523,6 +525,7 @@ export async function deleteComment(req: Request, env: Env, id: string) {
       row.post_id,
     ),
   ]);
+  invalidateTrending();
   return json({ ok: true });
 }
 

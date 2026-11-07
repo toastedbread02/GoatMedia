@@ -5,8 +5,9 @@ import { applySignal } from '../interests';
 
 export async function follow(req: Request, env: Env, username: string, on: boolean) {
   const user = await requireActive(req, env);
-  const target = await env.DB.prepare('SELECT id, status FROM users WHERE username = ?')
-    .bind(username)
+  // Clients may address an account by handle or id; both are stable to us.
+  const target = await env.DB.prepare('SELECT id, status FROM users WHERE username = ? OR id = ?')
+    .bind(username, username)
     .first<{ id: string; status: string }>();
   if (!target) throw missing('No creator with that username.');
   if (target.id === user.id) throw bad('You cannot follow yourself.');
@@ -109,8 +110,8 @@ export async function followList(
 
 export async function block(req: Request, env: Env, username: string, on: boolean) {
   const user = await requireActive(req, env);
-  const target = await env.DB.prepare('SELECT id FROM users WHERE username = ?')
-    .bind(username)
+  const target = await env.DB.prepare('SELECT id FROM users WHERE username = ? OR id = ?')
+    .bind(username, username)
     .first<{ id: string }>();
   if (!target) throw missing('No creator with that username.');
   if (target.id === user.id) throw bad('You cannot block yourself.');

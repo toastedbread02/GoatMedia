@@ -120,8 +120,8 @@ export function VideoPage() {
     const next = !following;
     setFollowing(next);
     try {
-      if (next) await api.post(`/api/users/${video.creator.id}/follow`, { fromVideoId: video.id });
-      else await api.delete(`/api/users/${video.creator.id}/follow`);
+      if (next) await api.post(`/api/users/${video.creator.username}/follow`, { fromVideoId: video.id });
+      else await api.delete(`/api/users/${video.creator.username}/follow`);
     } catch {
       setFollowing(!next);
       notify('Could not update that follow.', { tone: 'error' });

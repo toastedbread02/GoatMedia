@@ -161,8 +161,8 @@ export function ProfilePage() {
       current?.map((item) => (item.id === person.id ? { ...item, isFollowing: next } : item)) ?? current,
     );
     try {
-      if (next) await api.post(`/api/users/${person.id}/follow`);
-      else await api.delete(`/api/users/${person.id}/follow`);
+      if (next) await api.post(`/api/users/${person.username}/follow`);
+      else await api.delete(`/api/users/${person.username}/follow`);
     } catch {
       setPeopleItems((current) =>
         current?.map((item) => (item.id === person.id ? { ...item, isFollowing: !next } : item)) ?? current,
@@ -221,8 +221,8 @@ export function ProfilePage() {
       followerCount: Math.max(0, profile.followerCount + (next ? 1 : -1)),
     });
     try {
-      if (next) await api.post(`/api/users/${profile.id}/follow`);
-      else await api.delete(`/api/users/${profile.id}/follow`);
+      if (next) await api.post(`/api/users/${profile.username}/follow`);
+      else await api.delete(`/api/users/${profile.username}/follow`);
     } catch {
       setProfile(profile);
       notify('Could not update that follow.', { tone: 'error' });
@@ -233,7 +233,7 @@ export function ProfilePage() {
 
   const block = async () => {
     try {
-      await api.post(`/api/users/${profile.id}/block`);
+      await api.post(`/api/users/${profile.username}/block`);
       setBlocked(true);
       setConfirmBlock(false);
       setProfile({ ...profile, isFollowing: false });
@@ -245,7 +245,7 @@ export function ProfilePage() {
 
   const unblock = async () => {
     try {
-      await api.delete(`/api/users/${profile.id}/block`);
+      await api.delete(`/api/users/${profile.username}/block`);
       setBlocked(false);
       notify(`Unblocked @${profile.username}.`);
     } catch {

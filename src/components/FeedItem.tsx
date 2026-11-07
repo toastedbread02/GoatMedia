@@ -80,9 +80,9 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
     setFollowPending(true);
     try {
       if (next) {
-        await api.post(`/api/users/${video.creator.id}/follow`, { fromVideoId: video.id });
+        await api.post(`/api/users/${video.creator.username}/follow`, { fromVideoId: video.id });
       } else {
-        await api.delete(`/api/users/${video.creator.id}/follow`);
+        await api.delete(`/api/users/${video.creator.username}/follow`);
       }
     } catch {
       setFollowing(!next);

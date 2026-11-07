@@ -530,7 +530,7 @@ export function SettingsPage() {
                       className="btn btn--quiet btn--sm"
                       onClick={async () => {
                         try {
-                          await api.delete(`/api/users/${person.id}/block`);
+                          await api.delete(`/api/users/${person.username}/block`);
                           setBlocked((items) => items.filter((item) => item.id !== person.id));
                           notify(`Unblocked @${person.username}.`);
                         } catch {

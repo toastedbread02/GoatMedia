@@ -174,27 +174,52 @@ interface Scored {
   bucket: 'personalized' | 'discovery' | 'trending';
 }
 
-function quotaFor(total: number) {
-  const raw: Array<[Scored['bucket'], number]> = [
-    ['personalized', feedMix.personalized * total],
-    ['discovery', feedMix.discovery * total],
-    ['trending', feedMix.trending * total],
-  ];
-  const base = raw.map(([bucket, value]) => ({
+type Bucket = Scored['bucket'];
+
+const MIX_ORDER: Bucket[] = ['personalized', 'discovery', 'trending'];
+
+/**
+ * Whole-page quota from the configured mix, measured cumulatively so small
+ * shares are not rounded away. Five percent of eight posts is 0.4, and taking
+ * the floor every page would leave trending with zero forever; rounding the
+ * running total instead gives it a slot on some pages.
+ */
+const MIX_SCALE = 1_000_000;
+
+function quotaThrough(total: number, page: number): Record<Bucket, number> {
+  // Shares are compared as whole numbers of millionths so a 5% share is not
+  // beaten by a float rounding error in the 80% share.
+  const exact = MIX_ORDER.map((bucket) => ({
     bucket,
-    count: Math.floor(value),
-    frac: value - Math.floor(value),
+    value: Math.round(feedMix[bucket] * MIX_SCALE) * total * page,
   }));
-  let remainder = total - base.reduce((sum, item) => sum + item.count, 0);
-  for (const item of [...base].sort((a, b) => b.frac - a.frac)) {
+  const counts = exact.map((item) => ({
+    ...item,
+    count: Math.floor(item.value / MIX_SCALE),
+    frac: item.value % MIX_SCALE,
+  }));
+  let remainder = total * page - counts.reduce((sum, item) => sum + item.count, 0);
+  const order = [...counts].sort((a, b) => {
+    // On a tie the smaller bucket wins, which keeps 5% visible on a short page.
+    return a.frac !== b.frac ? b.frac - a.frac : a.value - b.value;
+  });
+  for (const item of order) {
     if (remainder <= 0) break;
     item.count += 1;
     remainder -= 1;
   }
-  return Object.fromEntries(base.map((item) => [item.bucket, item.count])) as Record<
-    Scored['bucket'],
-    number
-  >;
+  return Object.fromEntries(counts.map((item) => [item.bucket, item.count])) as Record<Bucket, number>;
+}
+
+export function quotasForPage(total: number, page: number) {
+  const previous = quotaThrough(total, Math.max(0, page - 1));
+  const current = quotaThrough(total, page);
+  const quota: Record<Bucket, number> = {
+    personalized: current.personalized - previous.personalized,
+    discovery: current.discovery - previous.discovery,
+    trending: current.trending - previous.trending,
+  };
+  return { previous, quota };
 }
 
 async function candidates(env: Env, userId: string | null): Promise<PostRow[]> {
@@ -318,7 +343,14 @@ export async function forYouFeed(
   discovery.sort((a, b) => b.score - a.score);
   trending.sort((a, b) => b.score - a.score);
 
-  const quota = quotaFor(pageSize);
+  const { quota, previous } = quotasForPage(pageSize, page);
+  // A 5% share of a six-post page rounds to nothing, so the first page would
+  // never hold a popular post. When trending has something to show, it takes
+  // the last personalized slot instead of waiting for a later page.
+  if (page === 1 && quota.trending === 0 && trending.length > 0 && pageSize >= 3) {
+    quota.trending = 1;
+    quota.personalized = Math.max(0, quota.personalized - 1);
+  }
   const picked: Scored[] = [];
   const seen = new Set<string>();
   const perCreator = new Map<string, number>();
@@ -337,10 +369,12 @@ export async function forYouFeed(
     }
   };
 
-  const offsetFor = (bucket: Scored['bucket']) => (page - 1) * (quota[bucket] || 1);
-  take(personalized.slice(offsetFor('personalized')), quota.personalized, 'personalized');
+  const offsetFor = (bucket: Bucket) => previous[bucket];
+  // Trending first: a post can qualify for two buckets, and the shared-slot
+  // check would otherwise let the personalized quota claim its only pick.
   take(trending.slice(offsetFor('trending')), quota.trending, 'trending');
   take(discovery.slice(offsetFor('discovery')), quota.discovery, 'discovery');
+  take(personalized.slice(offsetFor('personalized')), quota.personalized, 'personalized');
 
   if (picked.length < pageSize) {
     for (const list of [personalized, discovery, trending]) {

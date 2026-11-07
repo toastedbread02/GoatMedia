@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import worker from '../worker/index.ts';
 import type { Env } from '../worker/lib.ts';
+import { quotasForPage } from '../worker/recommend.ts';
 
 const DB = new DatabaseSync(':memory:');
 const migrationsDir = new URL('../migrations/', import.meta.url);
@@ -348,6 +349,10 @@ async function run() {
   ok(followers.status === 200 && followers.body.users.length === 1, 'followers list shows who follows an account');
   ok(followers.body.users[0].username === 'boaz', 'the follower list names the account');
   ok(followers.body.users[0].bio !== undefined && !('email' in followers.body.users[0]), 'follower entries carry no private fields');
+  const selfFollowById = await call(`/api/users/${profile.body.user.id}/follow`, { method: 'POST', token: tokenA });
+  ok(/yourself/i.test(selfFollowById.body.error || ''), 'follow resolves an account id as well as a handle');
+  const selfBlockById = await call(`/api/users/${profile.body.user.id}/block`, { method: 'POST', token: tokenA });
+  ok(/yourself/i.test(selfBlockById.body.error || ''), 'block resolves an account id as well as a handle');
   const followingList = await call('/api/users/boaz/following');
   ok(
     followingList.body.users.some((person: any) => person.username === 'ada'),
@@ -374,6 +379,34 @@ async function run() {
   await call(`/api/posts/${postId}/not-interested`, { method: 'DELETE', token: tokenB });
   const reset = await call('/api/me/interests/reset', { method: 'POST', token: tokenB });
   ok(reset.status === 200, 'interests can be reset');
+
+  // A 5% share of a six-post page is 0.3, so the mix has to be rounded over
+  // pages; taking the floor every page would drop trending forever.
+  const totals = { personalized: 0, discovery: 0, trending: 0 };
+  let firstTrendingPage = 0;
+  for (let page = 1; page <= 12; page += 1) {
+    const { quota } = quotasForPage(6, page);
+    totals.personalized += quota.personalized;
+    totals.discovery += quota.discovery;
+    totals.trending += quota.trending;
+    if (!firstTrendingPage && quota.trending > 0) firstTrendingPage = page;
+  }
+  ok(totals.trending >= 3, 'trending earns slots across the feed', totals);
+  ok(firstTrendingPage > 0 && firstTrendingPage <= 3, 'trending shows up within the first pages', {
+    firstTrendingPage,
+    totals,
+  });
+  ok(
+    Math.abs(totals.personalized / 72 - 0.8) < 0.05 && Math.abs(totals.discovery / 72 - 0.15) < 0.05,
+    'page quotas stay close to the configured mix',
+    totals,
+  );
+  const trendingFeed = await call('/api/feed?tab=foryou');
+  ok(
+    trendingFeed.body.items.some((item: any) => /popular/i.test(item.reason || '')),
+    'the first For You page carries a trending post',
+    trendingFeed.body.items.map((item: any) => item.reason),
+  );
 
   console.log('\n[sounds]');
   const withSound = await call('/api/posts', {
