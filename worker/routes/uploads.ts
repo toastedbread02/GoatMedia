@@ -64,8 +64,16 @@ export async function startUpload(req: Request, env: Env) {
     throw bad(`Clips need to run between ${limits.minDurationSeconds} and ${limits.maxDurationSeconds} seconds.`);
   }
 
-  // Opportunistic clean-up of abandoned uploads.
-  await env.DB.prepare('DELETE FROM uploads WHERE created_at < ?').bind(now() - 2 * 60 * 60 * 1000).run();
+  // Opportunistic clean-up of abandoned uploads. An upload a post points at is
+  // never abandoned: the foreign key cascades, so removing it would delete the
+  // post and its video along with it.
+  await env.DB.prepare(
+    `DELETE FROM uploads
+      WHERE created_at < ?
+        AND id NOT IN (SELECT video_upload_id FROM posts WHERE video_upload_id IS NOT NULL)`,
+  )
+    .bind(now() - 2 * 60 * 60 * 1000)
+    .run();
 
   const id = uid('upl');
   await env.DB.prepare(
