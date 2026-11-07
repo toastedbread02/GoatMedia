@@ -4,6 +4,34 @@
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 
+/**
+ * WebP at the same setting is roughly half the size of JPEG, so it is tried
+ * first. A browser without a WebP encoder answers with PNG instead of failing,
+ * which is why the returned type is checked rather than assumed.
+ */
+async function encode(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality: number,
+): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob((value) => resolve(value), type, quality));
+}
+
+async function encodeWithin(
+  canvas: HTMLCanvasElement,
+  type: string,
+  maxBytes: number,
+): Promise<Blob | null> {
+  const probe = await encode(canvas, type, 0.86);
+  if (!probe || probe.type !== type) return null;
+  if (probe.size <= maxBytes) return probe;
+  for (const quality of [0.74, 0.6, 0.45]) {
+    const blob = await encode(canvas, type, quality);
+    if (blob && blob.size <= maxBytes) return blob;
+  }
+  return null;
+}
+
 export async function resizePhoto(
   file: File,
   options: { maxDimension?: number; maxBytes: number } = { maxBytes: 1_800_000 },
@@ -30,11 +58,9 @@ export async function resizePhoto(
   context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close?.();
 
-  for (const quality of [0.86, 0.74, 0.6, 0.45]) {
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((value) => resolve(value), 'image/jpeg', quality),
-    );
-    if (blob && blob.size <= options.maxBytes) return blob;
+  for (const type of ['image/webp', 'image/jpeg']) {
+    const blob = await encodeWithin(canvas, type, options.maxBytes);
+    if (blob) return blob;
   }
   throw new Error('That photo is too large even after resizing. Try a smaller one.');
 }
@@ -80,9 +106,10 @@ export async function capturePoster(
     const context = canvas.getContext('2d');
     if (!context) return { poster: null, width, height };
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const poster = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((value) => resolve(value), 'image/jpeg', 0.74),
-    );
+    // Posters are a still behind the player, so WebP costs nothing visually and
+    // saves about half the bytes of the JPEG this used to send.
+    let poster = await encode(canvas, 'image/webp', 0.74);
+    if (!poster || poster.type !== 'image/webp') poster = await encode(canvas, 'image/jpeg', 0.74);
     return { poster, width, height };
   } catch {
     return { poster: null, width: 0, height: 0 };
