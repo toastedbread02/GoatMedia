@@ -55,6 +55,8 @@ function notificationText(item: NotificationDTO) {
         : `@${item.actorUsername} commented on your post`;
     case 'like':
       return `@${item.actorUsername} liked your post`;
+    case 'new_post':
+      return `@${item.actorUsername} posted something new`;
     case 'support':
       return item.actorUsername
         ? `@${item.actorUsername} sent a support request`
@@ -76,6 +78,8 @@ function notificationIcon(type: NotificationDTO['type']): IconName {
       return 'user';
     case 'like':
       return 'heart';
+    case 'new_post':
+      return 'play';
     case 'support':
       return 'flag';
     default:

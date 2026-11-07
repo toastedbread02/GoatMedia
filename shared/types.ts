@@ -156,6 +156,7 @@ export type NotificationType =
   | 'follow'
   | 'comment'
   | 'like'
+  | 'new_post'
   | 'removed'
   | 'support';
 

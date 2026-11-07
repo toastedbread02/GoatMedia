@@ -247,6 +247,38 @@ export async function decide(
 
   await env.DB.batch(statements);
   invalidateTrending();
+
+  // Approving is the moment a post becomes public, so it is also the moment
+  // followers hear about it. A post that is removed and later approved again
+  // does not ping the same people twice.
+  if (action === 'approve') {
+    const already = await env.DB.prepare(
+      "SELECT 1 AS n FROM notifications WHERE post_id = ? AND type = 'new_post' LIMIT 1",
+    )
+      .bind(id)
+      .first<{ n: number }>();
+    if (!already) {
+      const caption = await env.DB.prepare('SELECT caption FROM posts WHERE id = ?')
+        .bind(id)
+        .first<{ caption: string }>();
+      const detail = (caption?.caption || '').slice(0, 80) || null;
+      await env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, post_id, actor_id, detail, created_at)
+         SELECT 'ntf_' || lower(hex(randomblob(12))), f.follower_id, 'new_post', ?, ?, ?, ?
+           FROM follows f JOIN users u ON u.id = f.follower_id
+          WHERE f.following_id = ?
+            AND u.status = 'active'
+            AND NOT EXISTS (
+              SELECT 1 FROM blocks b
+               WHERE (b.blocker_id = f.follower_id AND b.blocked_id = ?)
+                  OR (b.blocker_id = ? AND b.blocked_id = f.follower_id)
+            )`,
+      )
+        .bind(id, post.owner_id, detail, createdAt, post.owner_id, post.owner_id, post.owner_id)
+        .run();
+    }
+  }
+
   return json({
     ok: true,
     status,
