@@ -81,39 +81,37 @@ the Cloudflare Worker exactly as it is.
 [is-a.dev](https://www.is-a.dev) and [js.org](https://js.org) hand out free
 subdomains through a pull request to their own repository.
 
-**js.org only accepts sites about the JavaScript ecosystem** — npm packages and
-tools, not products that happen to be written in JavaScript. GoatMedia is a goat
-video site, so that request is likely to be closed. The exact request is still
-prepared in [domain/js-org-request](domain/js-org-request/README.md), with the
-reasoning, if you want to try anyway. Steps for is-a.dev, which has no subject
-rule:
+**Neither service is a general free-domain giveaway.** js.org only accepts sites
+about the JavaScript ecosystem — npm packages and tools, not products that happen
+to be written in JavaScript — so the prepared request in
+[domain/js-org-request](domain/js-org-request/README.md) is likely to be closed.
+is-a.dev now asks for websites that are "software development related" and
+non-commercial, and [its repository forbids agent-written pull
+requests](https://github.com/is-a-dev/register/blob/main/AGENTS.md), so the
+correct record for `goatmedia.is-a.dev` is prepared in
+[domain/is-a-dev](domain/is-a-dev/README.md) for you to submit yourself. That
+folder also lists the free services with no subject rule, such as FreeDNS and
+DuckDNS.
 
-1. Fork `is-a.dev/is-a.dev`, add a file under `domains/` for the name you want
-   (for example `goatmedia.json`) with your GitHub username, email, and a `CNAME`
-   record pointing at `toastedbread02.github.io`. Follow the schema and naming
-   rules in that repo's README — it changes, so copy theirs rather than this page.
-2. Open the pull request and wait for review. It usually takes a few days.
-3. Once it is merged and the name resolves, set the repository variable:
+Whichever name you end up with, the switch is one command:
 
-   ```bash
-   gh variable set CUSTOM_DOMAIN --body "goatmedia.is-a.dev"
-   ```
+```bash
+gh variable set CUSTOM_DOMAIN --body "goatmedia.is-a.dev"
+```
 
-4. Add the new origin to `ALLOWED_ORIGINS` in `wrangler.jsonc` and redeploy the
-   Worker, otherwise the browser is refused by CORS:
+Then add the new origin to `ALLOWED_ORIGINS` in `wrangler.jsonc` and redeploy,
+or the browser is refused by CORS:
 
-   ```bash
-   npx wrangler deploy
-   ```
+```bash
+npx wrangler deploy
+```
 
-5. In the repository's **Settings → Pages**, confirm the custom domain is listed
-   and tick **Enforce HTTPS**.
-
-Push to `main` and the workflow rebuilds at the root path. Note that Pages
-ignores a `CNAME` file when publishing from a workflow, so the domain itself has
-to be entered in **Settings → Pages** — that step is what makes the new name
-serve the site. The old `/GoatMedia/` address keeps working, so nothing breaks
-while DNS settles.
+Push to `main` and the workflow rebuilds at the root path, then sets the Pages
+custom domain from the same variable — no manual **Settings → Pages** edit is
+needed, because `actions/configure-pages` applies the `cname` input. Tick
+**Enforce HTTPS** once GitHub has issued the certificate. The old `/GoatMedia/`
+address keeps working until the domain is set, so nothing breaks while DNS
+settles.
 
 ### Option B — instant, but the site moves off GitHub Pages
 

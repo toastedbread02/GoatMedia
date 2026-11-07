@@ -55,14 +55,17 @@ jobs:
           # Pages serves 404.html for unknown paths; reusing the app shell lets
           # deep links like /GoatMedia/v/<id> boot the router instead of 404ing.
           cp dist/index.html dist/404.html
-          # Pages ignores a CNAME file when publishing from a workflow, so the
-          # domain itself is set in Settings -> Pages. This only reports which
-          # address the build was made for.
+          # Pages ignores a CNAME file when publishing from a workflow; the
+          # domain is applied by configure-pages below from the same variable.
           if [ -n "$CUSTOM_DOMAIN" ]; then
-            echo "Building for https://$CUSTOM_DOMAIN (set it in Settings -> Pages)"
+            echo "Building for https://$CUSTOM_DOMAIN"
           fi
 
       - uses: actions/configure-pages@v5
+        with:
+          # Applying the domain here means one variable moves the whole site:
+          # the build switches to the root path in the same run.
+          cname: ${{ vars.CUSTOM_DOMAIN }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -42,10 +42,13 @@ Three honest ways forward:
    reader — as an open-source package with docs. A JS tool qualifies; a goat
    video site does not. `goatmedia.js.org` could then reasonably point at that
    project page.
-3. **Use a service without a subject rule.** `is-a.dev` gives free subdomains to
-   developers and projects with no requirement that the site be about
-   JavaScript; the steps in [DEPLOY.md](../../DEPLOY.md) cover it. Or register a
-   real `.org`, roughly $10–13/year at cost from Cloudflare Registrar.
+3. **Use a service that does not require a JavaScript project.** `is-a.dev` has
+   no JavaScript rule, but it does require sites to be "software development
+   related" and its repository asks that the request be submitted by you rather
+   than an agent, so the record is prepared in
+   [domain/is-a-dev](../is-a-dev/README.md) — along with the free services that
+   have no subject rule at all. Or register a real `.org`, roughly $10–13/year at
+   cost from Cloudflare Registrar.
 
 ---
 
