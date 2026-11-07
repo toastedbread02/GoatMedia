@@ -5859,6 +5859,37 @@ ol {
   font-variant-numeric: tabular-nums;
 }
 
+.storage__reclaim {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--sunken);
+}
+
+.storage__reclaim-copy {
+  max-width: 48ch;
+}
+
+.storage__reclaim-title {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.storage__reclaim .storage__note {
+  margin-top: 4px;
+}
+
+.storage__reclaim-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .storage__loading {
   margin-top: 18px;
 }

@@ -6,6 +6,11 @@
 import { Env, json } from '../lib';
 import { requireAdmin } from '../session';
 import { VIDEO_CHUNK_BYTES, storageBudget } from '../config';
+import { invalidateTrending } from '../recommend';
+
+const DORMANT = "p.status IN ('rejected', 'removed')";
+/** Same condition for statements that cannot take a table alias. */
+const DORMANT_PLAIN = "status IN ('rejected', 'removed')";
 
 interface MediaCounts {
   chunks: number;
@@ -17,6 +22,10 @@ interface MediaCounts {
   avatar_bytes: number;
   avatars: number;
   poster_bytes: number;
+  dormant_posts: number;
+  dormant_videos: number;
+  dormant_chunks: number;
+  dormant_photo_bytes: number;
 }
 
 export async function usage(req: Request, env: Env) {
@@ -32,10 +41,18 @@ export async function usage(req: Request, env: Env) {
        (SELECT COUNT(*) FROM sounds) AS sounds,
        (SELECT COALESCE(SUM(LENGTH(avatar_bytes)), 0) FROM users WHERE avatar_bytes IS NOT NULL) AS avatar_bytes,
        (SELECT COUNT(*) FROM users WHERE avatar_bytes IS NOT NULL) AS avatars,
-       (SELECT COALESCE(SUM(LENGTH(poster_bytes)), 0) FROM uploads WHERE poster_bytes IS NOT NULL) AS poster_bytes`,
+       (SELECT COALESCE(SUM(LENGTH(poster_bytes)), 0) FROM uploads WHERE poster_bytes IS NOT NULL) AS poster_bytes,
+       (SELECT COUNT(*) FROM posts p WHERE ${DORMANT}) AS dormant_posts,
+       (SELECT COUNT(*) FROM posts p WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL) AS dormant_videos,
+       (SELECT COALESCE(SUM(chunk_count), 0) FROM uploads
+         WHERE id IN (SELECT p.video_upload_id FROM posts p
+                       WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS dormant_chunks,
+       (SELECT COALESCE(SUM(size), 0) FROM post_photos ph
+         WHERE ph.bytes IS NOT NULL
+           AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS dormant_photo_bytes`,
   ).first<MediaCounts>();
 
-  const counts = row || {
+  const counts: MediaCounts = row || {
     chunks: 0,
     videos: 0,
     photo_bytes: 0,
@@ -45,6 +62,10 @@ export async function usage(req: Request, env: Env) {
     avatar_bytes: 0,
     avatars: 0,
     poster_bytes: 0,
+    dormant_posts: 0,
+    dormant_videos: 0,
+    dormant_chunks: 0,
+    dormant_photo_bytes: 0,
   };
 
   // A full chunk for every chunk written, which rounds up by at most one chunk
@@ -57,7 +78,7 @@ export async function usage(req: Request, env: Env) {
     { kind: 'avatars', bytes: counts.avatar_bytes, count: counts.avatars },
     { kind: 'posters', bytes: counts.poster_bytes, count: counts.videos },
   ];
-  const usedBytes = breakdown.reduce((total, row) => total + row.bytes, 0);
+  const usedBytes = breakdown.reduce((total, item) => total + item.bytes, 0);
 
   return json({
     limitBytes: storageBudget.databaseLimitBytes,
@@ -66,5 +87,65 @@ export async function usage(req: Request, env: Env) {
     warnAt: storageBudget.warnAt,
     averageVideoBytes: counts.videos ? Math.round(videoBytes / counts.videos) : 0,
     breakdown,
+    reclaimable: {
+      posts: counts.dormant_posts,
+      videos: counts.dormant_videos,
+      bytes: counts.dormant_chunks * VIDEO_CHUNK_BYTES + counts.dormant_photo_bytes,
+    },
+  });
+}
+
+/**
+ * Permanently deletes posts that were rejected or removed, which is the only
+ * thing on the site that frees stored bytes. Uploads are removed explicitly
+ * because the foreign key points the other way: deleting a post leaves its
+ * upload behind for the hourly sweep instead of removing it.
+ */
+export async function purge(req: Request, env: Env) {
+  await requireAdmin(req, env);
+
+  const before = await env.DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM posts p WHERE ${DORMANT}) AS posts,
+       (SELECT COUNT(*) FROM posts p WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL) AS videos,
+       (SELECT COALESCE(SUM(chunk_count), 0) FROM uploads
+         WHERE id IN (SELECT p.video_upload_id FROM posts p
+                       WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS chunks,
+       (SELECT COALESCE(SUM(size), 0) FROM post_photos ph
+         WHERE ph.bytes IS NOT NULL
+           AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS photo_bytes`,
+  ).first<{ posts: number; videos: number; chunks: number; photo_bytes: number }>();
+
+  const counts = before || { posts: 0, videos: 0, chunks: 0, photo_bytes: 0 };
+  const uploads = await env.DB.prepare(
+    `SELECT p.video_upload_id AS id FROM posts p
+      WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL
+      GROUP BY p.video_upload_id`,
+  ).all<{ id: string }>();
+  const ids = (uploads.results || []).map((row) => row.id);
+
+  // Nothing to do is a normal answer, not an error: the moderator may click
+  // twice or the queue may already be clear.
+  if (counts.posts === 0 && ids.length === 0) {
+    return json({ posts: 0, videos: 0, freedBytes: 0 });
+  }
+
+  const postsFirst = env.DB.prepare(`DELETE FROM posts WHERE ${DORMANT_PLAIN}`);
+  const statements = [postsFirst];
+  for (let i = 0; i < ids.length; i += 40) {
+    const slice = ids.slice(i, i + 40);
+    statements.push(
+      env.DB.prepare(`DELETE FROM uploads WHERE id IN (${slice.map(() => '?').join(',')})`).bind(
+        ...slice,
+      ),
+    );
+  }
+  await env.DB.batch(statements);
+  invalidateTrending();
+
+  return json({
+    posts: counts.posts,
+    videos: counts.videos,
+    freedBytes: counts.chunks * VIDEO_CHUNK_BYTES + counts.photo_bytes,
   });
 }

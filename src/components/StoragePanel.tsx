@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { StorageDTO, StorageRow } from '../../shared/types.ts';
+import type { PurgeResult, StorageDTO, StorageRow } from '../../shared/types.ts';
 import { api } from '../lib/api.ts';
 import { plural } from '../lib/format.ts';
+import { useToast } from '../lib/toast.tsx';
 import { Icon } from './Icon.tsx';
 import { Skeleton } from './Skeleton.tsx';
 
@@ -27,6 +28,10 @@ function size(bytes: number): string {
 export function StoragePanel() {
   const [data, setData] = useState<StorageDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const { notify } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +49,27 @@ export function StoragePanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
+
+  const deleteRejected = async () => {
+    setPurging(true);
+    try {
+      const result = await api.post<PurgeResult>('/api/admin/storage/purge');
+      notify(
+        result.posts > 0
+          ? `Deleted ${result.posts} ${plural(result.posts, 'post')} and freed ${size(result.freedBytes)}.`
+          : 'Nothing was waiting to be deleted.',
+      );
+      setConfirming(false);
+      setReloadKey((key) => key + 1);
+    } catch (purgeError) {
+      notify(purgeError instanceof Error ? purgeError.message : 'Those posts could not be deleted.', {
+        tone: 'error',
+      });
+    } finally {
+      setPurging(false);
+    }
+  };
 
   const headroom = data ? Math.max(0, data.limitBytes - data.usedBytes) : 0;
   const clipsLeft =
@@ -114,6 +139,51 @@ export function StoragePanel() {
             Videos are counted at a full chunk each, so this can read a few hundred kilobytes high.
             Captions, comments and indexes add under a megabyte.
           </p>
+
+          {data.reclaimable.posts > 0 ? (
+            <div className="storage__reclaim">
+              <div className="storage__reclaim-copy">
+                <p className="storage__reclaim-title">
+                  {data.reclaimable.posts}{' '}
+                  {plural(data.reclaimable.posts, 'post')} rejected or removed
+                </p>
+                <p className="storage__note">
+                  Deleting them frees {size(data.reclaimable.bytes)}. It is permanent, and they
+                  leave the moderation history too.
+                </p>
+              </div>
+              {confirming ? (
+                <div className="storage__reclaim-actions">
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={deleteRejected}
+                    disabled={purging}
+                  >
+                    {purging ? 'Deleting…' : 'Delete permanently'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--quiet btn--sm"
+                    onClick={() => setConfirming(false)}
+                    disabled={purging}
+                  >
+                    Keep
+                  </button>
+                </div>
+              ) : (
+                <div className="storage__reclaim-actions">
+                  <button
+                    type="button"
+                    className="btn btn--quiet btn--sm"
+                    onClick={() => setConfirming(true)}
+                  >
+                    Delete them
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
         </>
       )}
     </section>

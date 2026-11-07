@@ -317,6 +317,14 @@ export interface StorageDTO {
   warnAt: number;
   averageVideoBytes: number;
   breakdown: StorageRow[];
+  /** Rejected and removed posts whose media could still be deleted. */
+  reclaimable: { posts: number; videos: number; bytes: number };
+}
+
+export interface PurgeResult {
+  posts: number;
+  videos: number;
+  freedBytes: number;
 }
 
 export interface InterestView {
