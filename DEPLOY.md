@@ -66,7 +66,14 @@ the Cloudflare Worker exactly as it is.
 ### Option A — free subdomain, still hosted on GitHub Pages
 
 [is-a.dev](https://www.is-a.dev) and [js.org](https://js.org) hand out free
-subdomains through a pull request to their own repository. Steps for is-a.dev:
+subdomains through a pull request to their own repository.
+
+**js.org only accepts sites about the JavaScript ecosystem** — npm packages and
+tools, not products that happen to be written in JavaScript. GoatMedia is a goat
+video site, so that request is likely to be closed. The exact request is still
+prepared in [domain/js-org-request](domain/js-org-request/README.md), with the
+reasoning, if you want to try anyway. Steps for is-a.dev, which has no subject
+rule:
 
 1. Fork `is-a.dev/is-a.dev`, add a file under `domains/` for the name you want
    (for example `goatmedia.json`) with your GitHub username, email, and a `CNAME`
@@ -89,9 +96,11 @@ subdomains through a pull request to their own repository. Steps for is-a.dev:
 5. In the repository's **Settings → Pages**, confirm the custom domain is listed
    and tick **Enforce HTTPS**.
 
-Push to `main` and the workflow rebuilds at the root path, writes the `CNAME`
-file itself, and Pages starts answering on the new name. The old
-`/GoatMedia/` address keeps working, so nothing breaks while DNS settles.
+Push to `main` and the workflow rebuilds at the root path. Note that Pages
+ignores a `CNAME` file when publishing from a workflow, so the domain itself has
+to be entered in **Settings → Pages** — that step is what makes the new name
+serve the site. The old `/GoatMedia/` address keeps working, so nothing breaks
+while DNS settles.
 
 ### Option B — instant, but the site moves off GitHub Pages
 
