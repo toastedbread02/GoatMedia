@@ -415,7 +415,7 @@ export async function users(req: Request, env: Env, url: URL) {
             (SELECT COUNT(*) FROM follows f WHERE f.following_id = u.id) AS follower_count
        FROM users u
       WHERE (? = '' OR LOWER(u.username) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(u.display_name) LIKE ?)
-      ORDER BY u.created_at DESC LIMIT 50`,
+      ORDER BY (u.role = 'admin') DESC, u.created_at DESC LIMIT 50`,
   )
     .bind(q, like, like, like)
     .all<Record<string, unknown>>();
@@ -529,6 +529,50 @@ export async function restoreUser(req: Request, env: Env, id: string) {
   return json({
     ok: true,
     message: 'Account restored. Removed posts stay down unless you approve them again.',
+  });
+}
+
+/**
+ * Share moderation. Any moderator can hand the role to an active account, or
+ * take it back; the role is checked against D1 on every privileged request, so
+ * a change applies on the very next call. Nobody can edit their own access and
+ * at least one moderator always remains.
+ */
+export async function setModerator(req: Request, env: Env, id: string, on: boolean) {
+  const admin = await requireAdmin(req, env);
+  if (id === admin.id) throw bad('You cannot change your own moderator access.');
+
+  const target = await env.DB.prepare(
+    'SELECT id, username, role, status, deleted_at FROM users WHERE id = ?',
+  )
+    .bind(id)
+    .first<{ id: string; username: string; role: string; status: string; deleted_at: number | null }>();
+  if (!target) throw missing('No such account.');
+
+  if (on) {
+    if (target.role === 'admin') throw bad('That account is already a moderator.');
+    if (target.deleted_at) throw bad('Restore this account before making it a moderator.');
+    if (target.status !== 'active') throw bad('Reinstate this account before making it a moderator.');
+  } else {
+    if (target.role !== 'admin') throw bad('That account is not a moderator.');
+    const others = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND id <> ?",
+    )
+      .bind(target.id)
+      .first<{ n: number }>();
+    if ((others?.n ?? 0) === 0) throw bad('There has to be at least one moderator.');
+  }
+
+  await env.DB.prepare('UPDATE users SET role = ? WHERE id = ?')
+    .bind(on ? 'admin' : 'user', target.id)
+    .run();
+
+  return json({
+    ok: true,
+    role: on ? 'admin' : 'user',
+    message: on
+      ? `@${target.username} can now review posts and open the control center.`
+      : `@${target.username} is back to a member account.`,
   });
 }
 

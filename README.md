@@ -51,7 +51,10 @@ creator details, moderation history and reports. Editing the caption of a live
 post puts it back in the queue. The moderator can remove live posts, suspend
 accounts, and handle video/comment/account reports. A report center also holds
 contact requests from the public, including the sender's device and page, and a
-control center can suspend, remove and restore accounts without a second tool.
+control center can suspend, remove and restore accounts without a second tool. A
+moderator can share the role from the control center, so several trusted people
+can work the review queue, report center and account controls; access changes
+take effect on the next request, and nobody can edit their own role.
 
 **Recommendations** — An explainable scoring model, no machine learning. Signals
 are weighted (complete +5, rewatch +6, like +3, comment +2, follow +4, skip −4,
@@ -111,10 +114,16 @@ npx wrangler d1 execute goatmedia --remote \
   --command "UPDATE users SET role='admin' WHERE username='yourname'"
 ```
 
+**More moderators.** Open `/admin?tab=accounts`, find the account, and choose
+Make moderator. The role is checked against D1 on every privileged request, so
+the new moderator sees the moderation link immediately after their next page
+load. Remove moderator access works the same way; the last moderator and your
+own account are protected.
+
 ## Limits and configuration
 
 - 6 photos per post, 1.8 MB each after browser resizing
-- 25 MB video, 1–60 s, MP4/MOV/WEBM/M4V
+- 25 MB video, 1–180 s (three minutes), MP4/MOV/WEBM/M4V
 - 1.5 MB audio, 60 s name field, 400-character comments, 300-character captions
 - 0.4 MB avatars
 - 8 posts/hour, 12 comments/minute, 12 sign-in attempts per 10 minutes per IP
@@ -124,7 +133,7 @@ npx wrangler d1 execute goatmedia --remote \
 
 ```bash
 npm run typecheck     # app + Worker
-npm run api:check     # 129 checks: auth, age gate, privacy, moderation, feeds, media, streaming, CORS
+npm run api:check     # 183 checks: auth, age gate, privacy, moderation, shared roles, feeds, media, streaming, CORS
 API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev node scripts/live-check.mjs
 ```
 
@@ -136,8 +145,8 @@ and posts. It is a smoke test, not a load test.
 - **No email provider connected.** Password reset links are shown on screen
   instead of being emailed. Wire an email service into
   `worker/routes/auth.ts` before opening the site widely.
-- **Manual moderation is one person, one queue.** A backlog is a feature of the
-  design, not a bug, but it has no SLA.
+- **Manual moderation is a human queue.** Roles can be shared, but a backlog is
+  still a feature of the design, not a bug, and it has no SLA.
 - **D1 blob storage** is a pragmatic answer to a card-free requirement, not the
   cheapest way to serve media at scale. Videos are read chunk-by-chunk on demand,
   but a popular clip still costs D1 reads. R2 with a payment method is the upgrade

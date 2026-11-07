@@ -135,6 +135,7 @@ async function run() {
   ok(config.status === 200 && config.body.limits.maxPhotos === 6, 'config is served');
   ok(config.body.categories.length === 6, 'six categories');
   ok(config.body.limits.maxVideoMb === 25, 'config advertises the video limit');
+  ok(config.body.limits.maxDurationSeconds === 180, 'videos are limited to three minutes');
   ok(config.body.adminClaimable === true, 'a fresh server reports the moderator role as claimable');
 
   console.log('\n[accounts]');
@@ -757,6 +758,14 @@ async function run() {
   });
   ok(badUpload.status === 400, 'unsupported video types are refused', badUpload.body);
 
+  const longUpload = await call('/api/uploads', {
+    method: 'POST',
+    token: tokenA,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mime: 'video/mp4', size: 4096, durationMs: 181000 }),
+  });
+  ok(longUpload.status === 400, 'clips longer than three minutes are refused', longUpload.body);
+
   const started = await call('/api/uploads', {
     method: 'POST',
     token: tokenA,
@@ -990,6 +999,49 @@ async function run() {
     body: JSON.stringify({ identifier: 'boaz', password: 'correct-horse-battery' }),
   });
   ok(restoredLogin.status === 200 && restoredLogin.body.token, 'a restored account can sign in again');
+
+  console.log('\n[shared moderation]');
+  const boId = b.body.user.id;
+  const outsiderPromotion = await call(`/api/admin/users/${boId}/moderator`, {
+    method: 'POST',
+    token: restoredLogin.body.token,
+  });
+  ok(outsiderPromotion.status === 401, 'members cannot promote themselves');
+  const selfDemotion = await call(`/api/admin/users/${a.body.user.id}/moderator`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  ok(selfDemotion.status === 400, 'a moderator cannot remove their own access');
+
+  const promote = await call(`/api/admin/users/${boId}/moderator`, {
+    method: 'POST',
+    token: adminToken,
+  });
+  ok(promote.status === 200, 'the moderator can share the role', promote.body);
+  const boSession = await call('/api/auth/me', { token: restoredLogin.body.token });
+  ok(boSession.body.user?.role === 'admin', 'the promoted account is a moderator right away');
+  const boQueue = await call('/api/admin/queue?status=pending', { token: restoredLogin.body.token });
+  ok(boQueue.status === 200, 'a promoted moderator can open the review queue');
+  const boInbox = await call('/api/admin/tickets?status=open', { token: restoredLogin.body.token });
+  ok(boInbox.status === 200, 'a promoted moderator can open the report center');
+  const boAccounts = await call('/api/admin/users?q=boaz', { token: restoredLogin.body.token });
+  ok(
+    boAccounts.body.items.find((item: any) => item.id === boId)?.role === 'admin',
+    'the control center marks shared moderators',
+  );
+
+  const duplicatePromote = await call(`/api/admin/users/${boId}/moderator`, {
+    method: 'POST',
+    token: adminToken,
+  });
+  ok(duplicatePromote.status === 400, 'promoting an existing moderator is refused');
+  const demote = await call(`/api/admin/users/${boId}/moderator`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  ok(demote.status === 200, 'moderator access can be taken back');
+  const boAfter = await call('/api/admin/counts', { token: restoredLogin.body.token });
+  ok(boAfter.status === 401, 'removed access stops working on the next request');
 
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);

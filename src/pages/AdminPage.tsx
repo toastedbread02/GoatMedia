@@ -554,7 +554,7 @@ export function AdminPage() {
           <div className="admin-list">
             <p className="admin-list__note">
               Suspend signs an account out and hides their posts. Remove hides the account and its content but keeps it
-              recoverable.
+              recoverable. Make moderator lets someone else share the review and account work.
             </p>
             <div className="admin-list__search">
               <div className="searchbox">
@@ -587,7 +587,8 @@ export function AdminPage() {
                       <span className="queue-row__body">
                         <span className="queue-row__title">{account.displayName}</span>
                         <span className="queue-row__meta">
-                          @{account.username} · {account.videoCount} videos
+                          @{account.username}
+                          {account.role === 'admin' ? ' · Moderator' : ''} · {account.videoCount} videos
                         </span>
                       </span>
                       {account.status === 'deleted' ? (
@@ -675,8 +676,24 @@ export function AdminPage() {
                       Open profile
                     </Link>
                   ) : null}
-                  {selectedAccount.role === 'admin' ? (
-                    <span className="section-note">Moderator accounts cannot be suspended or removed here.</span>
+                  {selectedAccount.id === user?.id ? (
+                    <span className="section-note">This is your own account.</span>
+                  ) : selectedAccount.role === 'admin' ? (
+                    <>
+                      <span className="section-note">
+                        Moderator accounts cannot be suspended or removed here.
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn--quiet btn--sm"
+                        disabled={busy}
+                        onClick={() =>
+                          runAction(() => api.delete(`/api/admin/users/${selectedAccount.id}/moderator`))
+                        }
+                      >
+                        Remove moderator access
+                      </button>
+                    </>
                   ) : selectedAccount.status === 'deleted' ? (
                     <button
                       type="button"
@@ -698,16 +715,28 @@ export function AdminPage() {
                           Reinstate account
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          className="btn btn--danger btn--sm"
-                          onClick={() => {
-                            setSuspendOpen((current) => !current);
-                            setRemoveAccountOpen(false);
-                          }}
-                        >
-                          Suspend account
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn--quiet btn--sm"
+                            disabled={busy}
+                            onClick={() =>
+                              runAction(() => api.post(`/api/admin/users/${selectedAccount.id}/moderator`))
+                            }
+                          >
+                            Make moderator
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--danger btn--sm"
+                            onClick={() => {
+                              setSuspendOpen((current) => !current);
+                              setRemoveAccountOpen(false);
+                            }}
+                          >
+                            Suspend account
+                          </button>
+                        </>
                       )}
                       <button
                         type="button"

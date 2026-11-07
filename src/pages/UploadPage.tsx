@@ -69,7 +69,7 @@ export function UploadPage() {
   const limits = config?.limits ?? {
     maxUploadMb: 25,
     maxVideoMb: 25,
-    maxDurationSeconds: 60,
+    maxDurationSeconds: 180,
     minDurationSeconds: 1,
     maxPhotos: 6,
     maxPhotoMb: 1.8,
@@ -78,6 +78,11 @@ export function UploadPage() {
     maxCaptionLength: 300,
     maxCommentsPerMinute: 12,
   };
+
+  const durationLimit =
+    limits.maxDurationSeconds % 60 === 0
+      ? `${limits.maxDurationSeconds / 60} ${limits.maxDurationSeconds === 60 ? 'minute' : 'minutes'}`
+      : formatDuration(limits.maxDurationSeconds);
 
   useEffect(() => {
     return () => {
@@ -141,7 +146,7 @@ export function UploadPage() {
       const height = probe.videoHeight;
       if (duration !== null && duration > limits.maxDurationSeconds + 0.5) {
         setFileError(
-          `That clip is ${formatDuration(duration)}. Clips are limited to ${limits.maxDurationSeconds} seconds.`,
+          `That clip is ${formatDuration(duration)}. Clips are limited to ${durationLimit}.`,
         );
         setVideo(null);
         setPreparing(null);
@@ -480,7 +485,7 @@ export function UploadPage() {
                 <span>
                   <strong>Video</strong>
                   <span className="field__hint">
-                    One clip, up to {limits.maxDurationSeconds} seconds and {limits.maxVideoMb} MB.
+                    One clip, up to {durationLimit} and {limits.maxVideoMb} MB.
                   </span>
                 </span>
               </label>
@@ -550,7 +555,7 @@ export function UploadPage() {
                     Choose a video
                   </button>
                   <span className="dropzone__hint">
-                    MP4, MOV, WEBM or M4V · up to {limits.maxVideoMb} MB · {limits.maxDurationSeconds} seconds max
+                    MP4, MOV, WEBM or M4V · up to {limits.maxVideoMb} MB · {durationLimit} max
                   </span>
                 </div>
               )}

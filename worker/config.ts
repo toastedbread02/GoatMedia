@@ -15,7 +15,7 @@ export const limits = {
   commentsPageSize: 20,
   // Video bytes live in chunked D1 rows, so the ceiling is generous but finite.
   maxVideoMb: 25,
-  maxDurationSeconds: 60,
+  maxDurationSeconds: 180,
   minDurationSeconds: 1,
 };
 

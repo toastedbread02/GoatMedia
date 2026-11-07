@@ -289,6 +289,10 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (second === 'users' && third && fourth === 'restore' && method === 'POST') {
       return admin.restoreUser(req, env, third);
     }
+    if (second === 'users' && third && fourth === 'moderator') {
+      if (method === 'POST') return admin.setModerator(req, env, third, true);
+      if (method === 'DELETE') return admin.setModerator(req, env, third, false);
+    }
     if (second === 'tickets' && !third && method === 'GET') return tickets(req, env, url);
     if (second === 'tickets' && third && fourth === 'resolve' && method === 'POST') {
       return resolveTicket(req, env, third);
