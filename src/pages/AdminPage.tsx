@@ -75,7 +75,7 @@ export function AdminPage() {
 
   const [tab, setTab] = useState<Tab>(() => {
     const requested = searchParams.get('tab');
-    return requested === 'reports' || requested === 'accounts' || requested === 'traffic'
+    return requested === 'reports' || requested === 'accounts' || requested === 'traffic' || requested === 'daily'
       ? requested
       : 'pending';
   });
@@ -126,7 +126,9 @@ export function AdminPage() {
   // Notifications for support requests deep-link to a specific ticket.
   useEffect(() => {
     const requested = searchParams.get('tab');
-    if (requested === 'reports' || requested === 'accounts' || requested === 'traffic') setTab(requested);
+    if (requested === 'reports' || requested === 'accounts' || requested === 'traffic' || requested === 'daily') {
+      setTab(requested);
+    }
     if (requested === 'reports') {
       setReportView(searchParams.get('view') === 'support' ? 'support' : 'content');
     }

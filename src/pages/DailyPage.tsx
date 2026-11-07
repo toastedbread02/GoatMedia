@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { VideoDTO } from '../../shared/types.ts';
 import { api } from '../lib/api.ts';
+import { useAuth } from '../lib/auth.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { formatDate } from '../lib/format.ts';
 import { VideoCard } from '../components/VideoCard.tsx';
@@ -12,6 +13,7 @@ import { GridSkeleton } from '../components/Skeleton.tsx';
  * page is a short history of what the site was pointing at.
  */
 export function DailyPage() {
+  const { user } = useAuth();
   const [items, setItems] = useState<VideoDTO[] | null>(null);
   const [failed, setFailed] = useState(false);
   useDocumentTitle('Goat of the day');
@@ -42,6 +44,11 @@ export function DailyPage() {
           One clip picked by hand each day. Yesterday's choice stays here after it stops being
           pinned to the top of your feed.
         </p>
+        {user?.role === 'admin' ? (
+          <Link className="btn btn--quiet btn--sm" to="/admin?tab=daily">
+            Choose today’s pick
+          </Link>
+        ) : null}
       </header>
 
       {items === null ? (
