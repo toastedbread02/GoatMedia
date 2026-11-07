@@ -25,6 +25,7 @@ toastedbread02.github.io/GoatMedia   goatmedia-api.<account>.workers.dev
 | Site | https://toastedbread02.github.io/GoatMedia/ |
 | API | https://goatmedia-api.dominikkoba22.workers.dev |
 | D1 database | `goatmedia` — `99f990ab-4246-4b49-9353-9269a5ccd115` |
+| Video shards | `goatmedia-media-1` … `-7`, bound as `MEDIA_1` … `MEDIA_7` |
 | Repo variable | `API_ORIGIN` = the Worker URL (used by the Pages build) |
 | Optional variable | `CUSTOM_DOMAIN` = a domain you control, e.g. `goatmedia.is-a.dev` |
 
@@ -44,6 +45,18 @@ API:
 npx wrangler deploy          # after editing worker/
 npx wrangler d1 migrations apply goatmedia --remote   # if migrations/ changed
 ```
+
+A new video shard needs three things: the database itself, a `MEDIA_n` entry in
+`wrangler.jsonc`, and this table inside it:
+
+```bash
+npx wrangler d1 create goatmedia-media-8
+npx wrangler d1 execute goatmedia-media-8 --remote --command \
+  "CREATE TABLE IF NOT EXISTS media_chunks (upload_id TEXT NOT NULL, idx INTEGER NOT NULL, bytes BLOB NOT NULL, PRIMARY KEY (upload_id, idx));"
+```
+
+Shards are picked by least recorded size, so an added one starts filling
+immediately; nothing has to be rebalanced by hand.
 
 Set or rotate secrets with `npx wrangler secret put <NAME>`:
 
@@ -167,9 +180,11 @@ real multipart uploads and media streaming.
 
 - Workers free: 100,000 requests/day, 10 ms CPU per request. Password hashing is
   tuned to fit; avoid expensive per-request work.
-- D1 free: 5 million rows read/day, 100,000 written/day, ~10 GB total. Photos,
-  audio and 768 KB video chunks are blobs in D1 because R2 requires a card. That
-  is fine for a small community; R2 is the upgrade when media volume grows.
+- D1 free: 5 million rows read/day, 100,000 written/day, 5 GB for the whole
+  account and **500 MB per database**. Photos and audio are blobs in the main
+  database; 768 KB video chunks are spread over the seven shard databases to
+  get past that per-database cap. All of it is D1 because R2 requires a card.
+  The daily row limits, not the storage, are what a viral clip hits first.
 - Cloudflare has no email sending here, so password resets surface the link on
   screen. Add an email provider before opening sign-ups to the public.
 - GitHub Pages is free for public repositories.

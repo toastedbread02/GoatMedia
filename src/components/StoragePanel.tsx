@@ -81,7 +81,11 @@ export function StoragePanel() {
       <div className="storage__head">
         <div>
           <h2 id="storage-heading">Storage</h2>
-          <p>The free database holds 500 MB, and media is what fills it.</p>
+          <p>
+            {data
+              ? `Videos are spread across ${data.databases} free databases of 500 MB each.`
+              : 'Videos are spread across the free databases.'}
+          </p>
         </div>
         {data ? (
           <p className="storage__figure">

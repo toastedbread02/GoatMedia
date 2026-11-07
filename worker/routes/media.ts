@@ -5,6 +5,7 @@
 import { Env, missing } from '../lib';
 import { currentUser } from '../session';
 import { VIDEO_CHUNK_BYTES } from '../config';
+import { chunkTable, shardBinding } from '../media-shards';
 
 /**
  * D1 hands BLOBs back as an array of byte values rather than an ArrayBuffer,
@@ -77,11 +78,12 @@ interface VideoRow {
   status: string;
   owner_id: string;
   upload_id: string;
+  shard: number;
 }
 
 async function videoRow(env: Env, postId: string): Promise<VideoRow> {
   const row = await env.DB.prepare(
-    `SELECT up.mime, up.size, p.status, p.owner_id, up.id AS upload_id
+    `SELECT up.mime, up.size, p.status, p.owner_id, up.id AS upload_id, up.shard
        FROM posts p JOIN uploads up ON up.id = p.video_upload_id
       WHERE p.id = ? AND p.kind = 'video'`,
   )
@@ -107,20 +109,30 @@ async function assertMediaVisible(req: Request, env: Env, row: { status: string;
 const CHUNK_BATCH = 4;
 
 /** A missing chunk would silently shorten the file mid-stream, so check first. */
-async function assertChunks(env: Env, uploadId: string, first: number, last: number) {
-  const row = await env.DB.prepare(
-    'SELECT COUNT(*) AS n FROM upload_chunks WHERE upload_id = ? AND idx BETWEEN ? AND ?',
-  )
+async function assertChunks(
+  env: Env,
+  uploadId: string,
+  shard: number,
+  first: number,
+  last: number,
+) {
+  const db = shardBinding(env, shard) ?? env.DB;
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM ${chunkTable(shard)} WHERE upload_id = ? AND idx BETWEEN ? AND ?`,
+    )
     .bind(uploadId, first, last)
     .first<{ n: number }>();
   if ((row?.n ?? 0) < last - first + 1) throw missing('That video is incomplete.');
 }
 
 /** Streams just the chunks a byte range touches, trimming the two edges. */
-async function streamRange(env: Env, uploadId: string, start: number, end: number) {
+async function streamRange(env: Env, uploadId: string, shard: number, start: number, end: number) {
+  const db = shardBinding(env, shard) ?? env.DB;
+  const table = chunkTable(shard);
   const firstChunk = Math.floor(start / VIDEO_CHUNK_BYTES);
   const lastChunk = Math.floor(end / VIDEO_CHUNK_BYTES);
-  await assertChunks(env, uploadId, firstChunk, lastChunk);
+  await assertChunks(env, uploadId, shard, firstChunk, lastChunk);
 
   let next = firstChunk;
   return new ReadableStream<Uint8Array>({
@@ -130,9 +142,10 @@ async function streamRange(env: Env, uploadId: string, start: number, end: numbe
         return;
       }
       const batchEnd = Math.min(lastChunk, next + CHUNK_BATCH - 1);
-      const rows = await env.DB.prepare(
-        'SELECT idx, bytes FROM upload_chunks WHERE upload_id = ? AND idx BETWEEN ? AND ? ORDER BY idx',
-      )
+      const rows = await db
+        .prepare(
+          `SELECT idx, bytes FROM ${table} WHERE upload_id = ? AND idx BETWEEN ? AND ? ORDER BY idx`,
+        )
         .bind(uploadId, next, batchEnd)
         .all<{ idx: number; bytes: unknown }>();
       next = batchEnd + 1;
@@ -186,7 +199,7 @@ export async function video(req: Request, env: Env, postId: string) {
         headers: { ...headers, 'content-range': `bytes */${row.size}` },
       });
     }
-    const body = await streamRange(env, row.upload_id, start, end);
+    const body = await streamRange(env, row.upload_id, row.shard, start, end);
     return new Response(body, {
       status: 206,
       headers: {
@@ -197,7 +210,7 @@ export async function video(req: Request, env: Env, postId: string) {
     });
   }
 
-  const body = await streamRange(env, row.upload_id, 0, row.size - 1);
+  const body = await streamRange(env, row.upload_id, row.shard, 0, row.size - 1);
   return new Response(body, {
     status: 200,
     headers: { ...headers, 'content-length': String(row.size) },

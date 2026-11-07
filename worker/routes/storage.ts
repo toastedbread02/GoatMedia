@@ -7,6 +7,7 @@ import { Env, json } from '../lib';
 import { requireAdmin } from '../session';
 import { VIDEO_CHUNK_BYTES, storageBudget } from '../config';
 import { invalidateTrending } from '../recommend';
+import { availableShards, dropShardChunks } from '../media-shards';
 
 const DORMANT = "p.status IN ('rejected', 'removed')";
 /** Same condition for statements that cannot take a table alias. */
@@ -80,10 +81,22 @@ export async function usage(req: Request, env: Env) {
   ];
   const usedBytes = breakdown.reduce((total, item) => total + item.bytes, 0);
 
+  // Video chunks fill their shards; everything else shares the main database.
+  // The fuller of the two pools decides the percentage, so a video-heavy site
+  // does not look emptier than it is.
+  const perDatabase = storageBudget.databaseLimitBytes;
+  const shards = availableShards(env).length;
+  const limitBytes = perDatabase * (1 + shards);
+  const ratio =
+    shards === 0
+      ? usedBytes / perDatabase
+      : Math.max(videoBytes / (perDatabase * shards), (usedBytes - videoBytes) / perDatabase);
+
   return json({
-    limitBytes: storageBudget.databaseLimitBytes,
+    limitBytes,
     usedBytes,
-    percent: Math.min(100, Math.round((usedBytes / storageBudget.databaseLimitBytes) * 1000) / 10),
+    databases: 1 + shards,
+    percent: Math.min(100, Math.round(ratio * 1000) / 10),
     warnAt: storageBudget.warnAt,
     averageVideoBytes: counts.videos ? Math.round(videoBytes / counts.videos) : 0,
     breakdown,
@@ -118,17 +131,23 @@ export async function purge(req: Request, env: Env) {
 
   const counts = before || { posts: 0, videos: 0, chunks: 0, photo_bytes: 0 };
   const uploads = await env.DB.prepare(
-    `SELECT p.video_upload_id AS id FROM posts p
+    `SELECT p.video_upload_id AS id, up.shard AS shard FROM posts p
+       JOIN uploads up ON up.id = p.video_upload_id
       WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL
       GROUP BY p.video_upload_id`,
-  ).all<{ id: string }>();
-  const ids = (uploads.results || []).map((row) => row.id);
+  ).all<{ id: string; shard: number }>();
+  const rows = uploads.results || [];
+  const ids = rows.map((row) => row.id);
 
   // Nothing to do is a normal answer, not an error: the moderator may click
   // twice or the queue may already be clear.
   if (counts.posts === 0 && ids.length === 0) {
     return json({ posts: 0, videos: 0, freedBytes: 0 });
   }
+
+  // Shard chunks first: they have no foreign key back to this database, so
+  // nothing else would ever clean them up.
+  await dropShardChunks(env, rows);
 
   const postsFirst = env.DB.prepare(`DELETE FROM posts WHERE ${DORMANT_PLAIN}`);
   const statements = [postsFirst];

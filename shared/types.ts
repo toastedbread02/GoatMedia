@@ -310,6 +310,8 @@ export interface StorageRow {
 
 export interface StorageDTO {
   limitBytes: number;
+  /** How many databases the capacity is spread across. */
+  databases: number;
   usedBytes: number;
   /** Share of the limit in use, 0 to 100. */
   percent: number;

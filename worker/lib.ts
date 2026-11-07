@@ -2,6 +2,16 @@
 
 export interface Env {
   DB: D1Database;
+  /** Video chunk shards. Each free database holds 500 MB. */
+  MEDIA_1?: D1Database;
+  MEDIA_2?: D1Database;
+  MEDIA_3?: D1Database;
+  MEDIA_4?: D1Database;
+  MEDIA_5?: D1Database;
+  MEDIA_6?: D1Database;
+  MEDIA_7?: D1Database;
+  MEDIA_8?: D1Database;
+  MEDIA_9?: D1Database;
   ALLOWED_ORIGINS: string;
   PASSWORD_PEPPER?: string;
   PASSWORD_ITERATIONS?: string;

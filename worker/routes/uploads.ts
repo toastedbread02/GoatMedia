@@ -6,6 +6,12 @@
 import { Env, bad, denied, json, missing, now, optionalStr, rateLimit, uid } from '../lib';
 import { requireActive } from '../session';
 import { limits, VIDEO_CHUNK_BYTES } from '../config';
+import {
+  chunkTable,
+  dropShardChunks,
+  pickShard,
+  shardBinding,
+} from '../media-shards';
 
 const VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v']);
 const POSTER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -66,28 +72,37 @@ export async function startUpload(req: Request, env: Env) {
 
   // Opportunistic clean-up of abandoned uploads. An upload a post points at is
   // never abandoned: the foreign key cascades, so removing it would delete the
-  // post and its video along with it.
-  await env.DB.prepare(
-    `DELETE FROM uploads
+  // post and its video along with it. Chunks in a shard have no foreign key
+  // back to this database, so they are removed first.
+  const stale = await env.DB.prepare(
+    `SELECT id, shard FROM uploads
       WHERE created_at < ?
-        AND id NOT IN (SELECT video_upload_id FROM posts WHERE video_upload_id IS NOT NULL)`,
+        AND id NOT IN (SELECT video_upload_id FROM posts WHERE video_upload_id IS NOT NULL)
+      LIMIT 50`,
   )
     .bind(now() - 2 * 60 * 60 * 1000)
-    .run();
+    .all<{ id: string; shard: number }>();
+  if (stale.results?.length) {
+    await dropShardChunks(env, stale.results);
+    await env.DB.batch(
+      stale.results.map((row) => env.DB.prepare('DELETE FROM uploads WHERE id = ?').bind(row.id)),
+    );
+  }
 
   const id = uid('upl');
+  const shard = await pickShard(env);
   await env.DB.prepare(
-    `INSERT INTO uploads (id, user_id, mime, size, duration_ms, chunk_count, created_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?)`,
+    `INSERT INTO uploads (id, user_id, mime, size, duration_ms, chunk_count, created_at, shard)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
   )
-    .bind(id, user.id, mime, Math.round(size), Math.round(durationMs), now())
+    .bind(id, user.id, mime, Math.round(size), Math.round(durationMs), now(), shard)
     .run();
   return json({ uploadId: id, chunkSize: VIDEO_CHUNK_BYTES }, 201);
 }
 
 async function ownedUpload(env: Env, id: string, userId: string) {
   const row = await env.DB.prepare(
-    'SELECT id, user_id, mime, size, duration_ms, chunk_count FROM uploads WHERE id = ?',
+    'SELECT id, user_id, mime, size, duration_ms, chunk_count, shard FROM uploads WHERE id = ?',
   )
     .bind(id)
     .first<{
@@ -97,6 +112,7 @@ async function ownedUpload(env: Env, id: string, userId: string) {
       size: number;
       duration_ms: number;
       chunk_count: number;
+      shard: number;
     }>();
   if (!row) throw missing('That upload has expired. Start again.');
   if (row.user_id !== userId) throw denied('That upload is not yours.');
@@ -124,20 +140,26 @@ export async function putChunk(req: Request, env: Env, url: URL, uploadId: strin
     throw bad('That file does not look like a real video. MP4, MOV and WebM work here.');
   }
 
-  await env.DB.batch([
-    env.DB.prepare(
-      'INSERT INTO upload_chunks (upload_id, idx, bytes) VALUES (?, ?, ?)\n       ON CONFLICT(upload_id, idx) DO UPDATE SET bytes = excluded.bytes',
-    ).bind(uploadId, index, bytes),
-    env.DB.prepare(
-      'UPDATE uploads SET chunk_count = MAX(chunk_count, ?) WHERE id = ?',
-    ).bind(index + 1, uploadId),
-  ]).catch(async () => {
-    await env.DB.prepare(
-      'INSERT OR REPLACE INTO upload_chunks (upload_id, idx, bytes) VALUES (?, ?, ?)',
+  // The bytes go to the upload's shard and the counter stays in the main
+  // database, so this cannot be one batch across both.
+  const shardDb = shardBinding(env, upload.shard) ?? env.DB;
+  const table = chunkTable(upload.shard);
+  await shardDb
+    .prepare(
+      `INSERT INTO ${table} (upload_id, idx, bytes) VALUES (?, ?, ?)
+       ON CONFLICT(upload_id, idx) DO UPDATE SET bytes = excluded.bytes`,
     )
-      .bind(uploadId, index, bytes)
-      .run();
-  });
+    .bind(uploadId, index, bytes)
+    .run()
+    .catch(async () => {
+      await shardDb
+        .prepare(`INSERT OR REPLACE INTO ${table} (upload_id, idx, bytes) VALUES (?, ?, ?)`)
+        .bind(uploadId, index, bytes)
+        .run();
+    });
+  await env.DB.prepare('UPDATE uploads SET chunk_count = MAX(chunk_count, ?) WHERE id = ?')
+    .bind(index + 1, uploadId)
+    .run();
 
   return json({ ok: true, received: index + 1, total: expectedChunks });
 }
@@ -165,7 +187,9 @@ export async function putPoster(req: Request, env: Env, uploadId: string) {
 export async function completeUpload(env: Env, userId: string, uploadId: string) {
   const upload = await ownedUpload(env, uploadId, userId);
   const expected = Math.ceil(upload.size / VIDEO_CHUNK_BYTES);
-  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM upload_chunks WHERE upload_id = ?')
+  const shardDb = shardBinding(env, upload.shard) ?? env.DB;
+  const row = await shardDb
+    .prepare(`SELECT COUNT(*) AS n FROM ${chunkTable(upload.shard)} WHERE upload_id = ?`)
     .bind(uploadId)
     .first<{ n: number }>();
   if ((row?.n ?? 0) !== expected) {

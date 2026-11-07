@@ -9,12 +9,22 @@
     // the domain starts serving. The old Pages origin stays until links fade.
     "ALLOWED_ORIGINS": "https://goatmedia.is-a.dev,https://toastedbread02.github.io,http://localhost:5173,http://127.0.0.1:5173"
   },
+  // The free plan caps one database at 500 MB, so video chunks live in their
+  // own databases and only the first one holds the schema. Reads and writes
+  // pick a shard from uploads.shard; see worker/media-shards.ts.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "goatmedia",
       "database_id": "99f990ab-4246-4b49-9353-9269a5ccd115",
       "migrations_dir": "migrations"
-    }
+    },
+    { "binding": "MEDIA_1", "database_name": "goatmedia-media-1", "database_id": "33258a4c-4553-47a1-8450-c9b3b0fcb7dd" },
+    { "binding": "MEDIA_2", "database_name": "goatmedia-media-2", "database_id": "5f86b395-ed9c-4050-8003-482070e771cf" },
+    { "binding": "MEDIA_3", "database_name": "goatmedia-media-3", "database_id": "4c6f0ea1-c33a-4f1c-86a7-fd451f9d9696" },
+    { "binding": "MEDIA_4", "database_name": "goatmedia-media-4", "database_id": "752414fe-13b9-4117-abea-bc6e28693b18" },
+    { "binding": "MEDIA_5", "database_name": "goatmedia-media-5", "database_id": "e23ebe42-9713-406c-a91a-98bfc00f5da4" },
+    { "binding": "MEDIA_6", "database_name": "goatmedia-media-6", "database_id": "1c80f1c5-ddb2-4ae4-bbac-60c32a47938f" },
+    { "binding": "MEDIA_7", "database_name": "goatmedia-media-7", "database_id": "5a8d5429-cec6-4989-9b6e-070bc9741eac" }
   ]
 }
