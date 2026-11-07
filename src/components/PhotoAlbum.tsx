@@ -28,6 +28,15 @@ function Slide({
   const { src, error } = useAuthorizedMedia(photo.url, gated, attempt);
   const broken = failed || Boolean(error);
 
+  // Switching loading to eager is only a hint; fetch the neighbouring photo
+  // explicitly so the next turn never waits on the network.
+  useEffect(() => {
+    if (!eager || !src) return;
+    const preload = new Image();
+    preload.decoding = 'async';
+    preload.src = src;
+  }, [eager, src]);
+
   if (broken) {
     return (
       <div className="album__failed">
@@ -192,7 +201,14 @@ export function PhotoAlbum({
       >
         {photos.map((photo, position) => (
           <figure className="album__slide" key={photo.id}>
-            <Slide photo={photo} caption={caption} eager={eager && position === 0} gated={gated} />
+            {/* The photo on either side of this one loads ahead so a turn is
+                instant; anything further away waits until it is needed. */}
+            <Slide
+              photo={photo}
+              caption={caption}
+              eager={eager && Math.abs(position - index) <= 1}
+              gated={gated}
+            />
           </figure>
         ))}
       </div>
