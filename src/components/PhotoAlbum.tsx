@@ -81,6 +81,9 @@ export function PhotoAlbum({
 }: PhotoAlbumProps) {
   const track = useRef<HTMLDivElement | null>(null);
   const [index, setIndex] = useState(0);
+  const wheelDelta = useRef(0);
+  const wheelResetTimer = useRef(0);
+  const stepLockUntil = useRef(0);
   const multiple = photos.length > 1;
 
   const goTo = useCallback(
@@ -112,6 +115,55 @@ export function PhotoAlbum({
       node.removeEventListener('scroll', onScroll);
     };
   }, []);
+
+  // A trackpad flick can cross several photos before snap catches it. A
+  // horizontal gesture moves exactly one photo, and the momentum after it is
+  // spent rather than repeated.
+  useEffect(() => {
+    const node = track.current;
+    if (!node || !multiple) return;
+
+    const step = (direction: 1 | -1) => {
+      const width = node.clientWidth;
+      if (!width) return;
+      const current = Math.max(0, Math.min(photos.length - 1, Math.round(node.scrollLeft / width)));
+      const next = Math.max(0, Math.min(photos.length - 1, current + direction));
+      if (next === current) return;
+      stepLockUntil.current = performance.now() + 320;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      node.scrollTo({ left: next * width, behavior: reduced ? 'auto' : 'smooth' });
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+      // Vertical input belongs to the feed; shift-wheel is how a mouse scrolls
+      // sideways, so both count as turning the page.
+      if (!horizontal && !event.shiftKey) return;
+      if (node.scrollWidth <= node.clientWidth + 1) return;
+      event.preventDefault();
+      if (performance.now() < stepLockUntil.current) return;
+
+      const width = node.clientWidth || 1;
+      const raw = horizontal ? event.deltaX : event.deltaY;
+      const delta =
+        event.deltaMode === 1 ? raw * 16 : event.deltaMode === 2 ? raw * width : raw;
+      wheelDelta.current += delta;
+      window.clearTimeout(wheelResetTimer.current);
+      wheelResetTimer.current = window.setTimeout(() => {
+        wheelDelta.current = 0;
+      }, 150);
+      if (Math.abs(wheelDelta.current) < 24) return;
+      const direction = wheelDelta.current > 0 ? 1 : -1;
+      wheelDelta.current = 0;
+      step(direction);
+    };
+
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      node.removeEventListener('wheel', onWheel);
+      window.clearTimeout(wheelResetTimer.current);
+    };
+  }, [multiple, photos.length]);
 
   return (
     <div

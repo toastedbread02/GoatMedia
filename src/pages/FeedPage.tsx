@@ -181,7 +181,7 @@ export function FeedPage({ tab }: FeedPageProps) {
     };
 
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
       if (insideScrollable(event.target, event.deltaY)) return;
       const target = event.target instanceof Element ? event.target : null;
       // Menus, the comment sheet and dialogs own their own scroll: hold the
