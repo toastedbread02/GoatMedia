@@ -349,9 +349,9 @@ export async function deletePost(req: Request, env: Env, id: string) {
 
 export async function toggleLike(req: Request, env: Env, id: string) {
   const user = await requireActive(req, env);
-  const post = await env.DB.prepare('SELECT id, status FROM posts WHERE id = ?')
+  const post = await env.DB.prepare('SELECT id, owner_id, status FROM posts WHERE id = ?')
     .bind(id)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; owner_id: string; status: string }>();
   if (!post || post.status !== 'approved') throw missing('That post is not here.');
 
   const existing = await env.DB.prepare('SELECT 1 AS n FROM likes WHERE user_id = ? AND post_id = ?')
@@ -374,6 +374,24 @@ export async function toggleLike(req: Request, env: Env, id: string) {
       env.DB.prepare('UPDATE posts SET like_count = like_count + 1 WHERE id = ?').bind(id),
     ]);
     await applySignal(env, user.id, id, 'like');
+
+    // One "liked your post" per person per post keeps the bell readable when
+    // somebody taps the heart on and off.
+    if (post.owner_id !== user.id) {
+      const already = await env.DB.prepare(
+        "SELECT 1 AS n FROM notifications WHERE user_id = ? AND actor_id = ? AND post_id = ? AND type = 'like'",
+      )
+        .bind(post.owner_id, user.id, id)
+        .first<{ n: number }>();
+      if (!already) {
+        await env.DB.prepare(
+          `INSERT INTO notifications (id, user_id, type, post_id, actor_id, created_at)
+           VALUES (?, ?, 'like', ?, ?, ?)`,
+        )
+          .bind(uid('ntf'), post.owner_id, id, user.id, now())
+          .run();
+      }
+    }
   }
 
   invalidateTrending();
@@ -381,6 +399,61 @@ export async function toggleLike(req: Request, env: Env, id: string) {
     .bind(id)
     .first<{ like_count: number }>();
   return json({ liked: !existing, likeCount: count?.like_count ?? 0 });
+}
+
+export async function toggleSave(req: Request, env: Env, id: string) {
+  const user = await requireActive(req, env);
+  const post = await env.DB.prepare('SELECT id, status FROM posts WHERE id = ?')
+    .bind(id)
+    .first<{ id: string; status: string }>();
+  if (!post || post.status !== 'approved') throw missing('That post is not here.');
+
+  const existing = await env.DB.prepare('SELECT 1 AS n FROM saves WHERE user_id = ? AND post_id = ?')
+    .bind(user.id, id)
+    .first<{ n: number }>();
+
+  if (existing) {
+    await env.DB.prepare('DELETE FROM saves WHERE user_id = ? AND post_id = ?').bind(user.id, id).run();
+  } else {
+    await env.DB.prepare(
+      'INSERT OR IGNORE INTO saves (user_id, post_id, created_at) VALUES (?, ?, ?)',
+    )
+      .bind(user.id, id, now())
+      .run();
+  }
+
+  const total = await env.DB.prepare('SELECT COUNT(*) AS n FROM saves WHERE post_id = ?')
+    .bind(id)
+    .first<{ n: number }>();
+  return json({ saved: !existing, saveCount: total?.n ?? 0 });
+}
+
+/**
+ * The reader's own saved list. Only approved posts are listed, so a video that
+ * is later removed falls out of saves instead of dangling as a dead card.
+ */
+export async function savedPosts(req: Request, env: Env, origin: string, url: URL) {
+  const user = await requireActive(req, env);
+  const { page, offset } = pageOf(url.searchParams.get('page'), 12);
+  const rows = await env.DB.prepare(
+    `${POST_SELECT}
+       JOIN saves s ON s.post_id = p.id AND s.user_id = ?
+      WHERE p.status = 'approved'
+        AND NOT EXISTS (
+          SELECT 1 FROM blocks b
+           WHERE (b.blocker_id = ? AND b.blocked_id = p.owner_id)
+              OR (b.blocked_id = ? AND b.blocker_id = p.owner_id)
+        )
+      ORDER BY s.created_at DESC
+      LIMIT ? OFFSET ?`,
+  )
+    .bind(user.id, user.id, user.id, 13, offset)
+    .all<PostRow>();
+
+  const list = rows.results || [];
+  const items = await hydratePosts(env, origin, user.id, list.slice(0, 12));
+  const hasMore = list.length > 12;
+  return json({ items, videos: items, page, hasMore, nextPage: hasMore ? page + 1 : null });
 }
 
 interface CommentRow {

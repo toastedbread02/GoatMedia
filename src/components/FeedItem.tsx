@@ -32,6 +32,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   const [followPending, setFollowPending] = useState(false);
   const [liked, setLiked] = useState(video.liked);
   const [likeCount, setLikeCount] = useState(video.likeCount);
+  const [saved, setSaved] = useState(video.saved);
   const [pulse, setPulse] = useState(false);
   const [commentCount, setCommentCount] = useState(video.commentCount);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -111,6 +112,30 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
       notify('Link copied.');
     } catch {
       notify('Could not copy the link.', { tone: 'error' });
+    }
+  };
+
+  const openShareTarget = (target: 'x' | 'whatsapp' | 'reddit') => {
+    const text = video.caption || 'A goat video on GoatMedia';
+    const urls = {
+      x: `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(`${text} ${shareUrl}`)}`,
+      reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(text)}`,
+    };
+    window.open(urls[target], '_blank', 'noopener,noreferrer');
+  };
+
+  const toggleSave = async () => {
+    if (!requireAuth()) return;
+    const next = !saved;
+    setSaved(next);
+    try {
+      const data = await api.post<{ saved: boolean }>(`/api/videos/${video.id}/save`);
+      setSaved(data.saved);
+      notify(data.saved ? 'Saved to your profile.' : 'Removed from saved.');
+    } catch {
+      setSaved(!next);
+      notify('That did not save. Try again.', { tone: 'error' });
     }
   };
 
@@ -219,6 +244,36 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
                   className="menu-item"
                   onClick={() => {
                     close();
+                    openShareTarget('x');
+                  }}
+                >
+                  <Icon name="share" size={17} /> Share to X
+                </button>
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={() => {
+                    close();
+                    openShareTarget('whatsapp');
+                  }}
+                >
+                  <Icon name="share" size={17} /> Share to WhatsApp
+                </button>
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={() => {
+                    close();
+                    openShareTarget('reddit');
+                  }}
+                >
+                  <Icon name="share" size={17} /> Share to Reddit
+                </button>
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={() => {
+                    close();
                     if (requireAuth()) setReportOpen(true);
                   }}
                 >
@@ -302,14 +357,13 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
           </button>
           <button
             type="button"
-            className="action"
-            onClick={() => {
-              if (requireAuth()) onNotInterested(video);
-            }}
-            aria-label="Not interested"
+            className={`action${saved ? ' is-active' : ''}`}
+            onClick={toggleSave}
+            aria-pressed={saved}
+            aria-label={saved ? 'Remove from saved' : 'Save post'}
           >
-            <Icon name="eye-off" size={19} />
-            <span className="action__label">Not interested</span>
+            <Icon name="bookmark" size={19} filled={saved} />
+            <span className="action__label">{saved ? 'Saved' : 'Save'}</span>
           </button>
         </div>
 

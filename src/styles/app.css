@@ -1421,6 +1421,69 @@ ol {
   font-size: 24px;
 }
 
+.suggest {
+  width: min(420px, 100%);
+  margin-top: 10px;
+  text-align: left;
+}
+
+.suggest__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 2px;
+}
+
+.suggest__list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.suggest__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.suggest__person {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+}
+
+.suggest__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.suggest__name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggest__handle {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggest__follow {
+  flex: 0 0 auto;
+}
+
 .feed-empty p {
   max-width: 42ch;
   color: var(--ink-2);

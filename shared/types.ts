@@ -54,6 +54,7 @@ export interface VideoDTO {
   likeCount: number;
   commentCount: number;
   liked: boolean;
+  saved: boolean;
   status: VideoStatus;
   rejectReason: string | null;
   removedReason: string | null;
@@ -149,7 +150,14 @@ export interface AppConfigDTO {
   adminClaimable: boolean;
 }
 
-export type NotificationType = 'approved' | 'rejected' | 'follow' | 'comment' | 'removed' | 'support';
+export type NotificationType =
+  | 'approved'
+  | 'rejected'
+  | 'follow'
+  | 'comment'
+  | 'like'
+  | 'removed'
+  | 'support';
 
 export interface NotificationDTO {
   id: string;

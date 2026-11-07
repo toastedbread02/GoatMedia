@@ -42,7 +42,9 @@ import {
   postEvent,
   reportComment,
   reportPost,
+  savedPosts,
   toggleCommentLike,
+  toggleSave,
   setNotInterested,
   soundLibrary,
   toggleLike,
@@ -60,6 +62,7 @@ import {
   reportUser,
   resetInterests,
   search,
+  suggestedCreators,
 } from './routes/social';
 import * as admin from './routes/admin';
 import { createTicket, resolveTicket, tickets } from './routes/support';
@@ -201,6 +204,9 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (second === 'hidden' && !third && method === 'GET') return hiddenPosts(req, env, origin);
     if (second === 'hidden' && third && method === 'DELETE') return setNotInterested(req, env, third, false);
     if (second === 'blocked' && method === 'GET') return blockedUsers(req, env, origin);
+    if (second === 'saved' && !third && method === 'GET') return savedPosts(req, env, origin, url);
+    if (second === 'suggestions' && method === 'GET') return suggestedCreators(req, env, origin, url);
+    if (second === 'creators' && method === 'GET') return suggestedCreators(req, env, origin, url);
     if (second === 'notifications' && !third && method === 'GET') return notifications(req, env, url);
     if (second === 'notifications' && third === 'read' && method === 'POST') {
       return markNotificationsRead(req, env);
@@ -220,6 +226,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   if (root === 'category' && second && method === 'GET') return categoryPosts(req, env, origin, url, second);
   if (root === 'search' && method === 'GET') return search(req, env, origin, url);
   if (root === 'sounds' && method === 'GET') return soundLibrary(req, env, url);
+  if (root === 'creators' && method === 'GET') return suggestedCreators(req, env, origin, url);
 
   // ---- contact ------------------------------------------------------------
   if (root === 'contact' && method === 'POST') return createTicket(req, env);
@@ -234,6 +241,8 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     }
     if (second && third) {
       if (third === 'like' && method === 'POST') return toggleLike(req, env, second);
+      if (third === 'save' && method === 'POST') return toggleSave(req, env, second);
+      if (third === 'save' && method === 'DELETE') return toggleSave(req, env, second);
       if (third === 'comments' && method === 'GET') return listComments(req, env, url, second);
       if (third === 'comments' && method === 'POST') return addComment(req, env, second);
       if (third === 'events' && method === 'POST') return postEvent(req, env, second);

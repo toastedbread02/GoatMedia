@@ -37,10 +37,12 @@ export type IconName =
   | 'alert'
   | 'logout'
   | 'chart'
+  | 'bookmark'
   | 'spark';
 
 const paths: Record<IconName, ReactNode> = {
   home: <path d="M4 10.4 12 4l8 6.4V20a1 1 0 0 1-1 1h-4.6v-6H9.6v6H5a1 1 0 0 1-1-1z" />,
+  bookmark: <path d="M7 4h10a1 1 0 0 1 1 1v15.2a.6.6 0 0 1-.94.5L12 16.8l-5.06 3.9a.6.6 0 0 1-.94-.5V5a1 1 0 0 1 1-1z" />,
   chart: (
     <>
       <path d="M4 20h16" />

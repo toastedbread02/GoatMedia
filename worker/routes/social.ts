@@ -188,6 +188,63 @@ export async function search(req: Request, env: Env, origin: string, url: URL) {
   });
 }
 
+/**
+ * Creators worth following: real accounts with approved posts that the viewer
+ * does not follow yet, ranked by followers and this week's likes. Everyone
+ * starts somewhere, so recent activity counts more than lifetime totals.
+ */
+export async function suggestedCreators(req: Request, env: Env, origin: string, url: URL) {
+  const viewer = await currentUser(req, env);
+  const viewerId = viewer?.id ?? null;
+  const limit = Math.min(12, Math.max(1, Number(url.searchParams.get('limit') || 6) || 6));
+  const weekAgo = now() - 7 * 86_400_000;
+
+  const rows = await env.DB.prepare(
+    `SELECT u.id, u.username, u.display_name, u.bio, u.role, u.status, u.created_at,
+            u.hide_follows, u.avatar_version,
+            (u.avatar_bytes IS NOT NULL) AS has_avatar,
+            (SELECT COUNT(*) FROM follows f WHERE f.following_id = u.id) AS follower_count,
+            (SELECT COUNT(*) FROM follows f WHERE f.follower_id = u.id) AS following_count,
+            (SELECT COUNT(*) FROM posts p WHERE p.owner_id = u.id AND p.status = 'approved') AS post_count,
+            EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = ${
+              viewerId ? '?' : 'NULL'
+            } AND f.following_id = u.id) AS is_following,
+            EXISTS(SELECT 1 FROM blocks b WHERE b.blocker_id = ${
+              viewerId ? '?' : 'NULL'
+            } AND b.blocked_id = u.id) AS is_blocked
+       FROM users u
+      WHERE u.status = 'active'
+        ${viewerId ? 'AND u.id <> ?' : ''}
+        AND EXISTS (SELECT 1 FROM posts p WHERE p.owner_id = u.id AND p.status = 'approved')
+        ${
+          viewerId
+            ? 'AND NOT EXISTS (SELECT 1 FROM follows f2 WHERE f2.follower_id = ? AND f2.following_id = u.id)'
+            : ''
+        }
+        ${
+          viewerId
+            ? 'AND NOT EXISTS (SELECT 1 FROM blocks b2 WHERE (b2.blocker_id = ? AND b2.blocked_id = u.id) OR (b2.blocked_id = ? AND b2.blocker_id = u.id))'
+            : ''
+        }
+      ORDER BY (
+        (SELECT COUNT(*) FROM follows f3 WHERE f3.following_id = u.id) * 3 +
+        (SELECT COUNT(*) FROM likes l JOIN posts p3 ON p3.id = l.post_id
+          WHERE p3.owner_id = u.id AND l.created_at > ?)
+      ) DESC, u.created_at DESC
+      LIMIT ?`,
+  )
+    .bind(
+      ...(viewerId ? [viewerId, viewerId] : []),
+      ...(viewerId ? [viewerId, viewerId, viewerId, viewerId] : []),
+      weekAgo,
+      limit,
+    )
+    .all<UserRow>();
+
+  const users = (rows.results || []).map((row) => publicUser(origin, row, viewerId));
+  return json({ users, items: users });
+}
+
 export async function notifications(req: Request, env: Env, url: URL) {
   const user = await requireActive(req, env);
   const rows = await env.DB.prepare(

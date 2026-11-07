@@ -12,11 +12,12 @@ import { Popover } from '../components/Popover.tsx';
 import { VideoCard } from '../components/VideoCard.tsx';
 import { GridSkeleton, ProfileSkeleton } from '../components/Skeleton.tsx';
 
-type Tab = 'published' | 'pending' | 'rejected' | 'removed';
+type Tab = 'published' | 'saved' | 'pending' | 'rejected' | 'removed';
 type PeopleList = 'followers' | 'following';
 
 const TAB_LABEL: Record<Tab, string> = {
   published: 'Published',
+  saved: 'Saved',
   pending: 'In review',
   rejected: 'Not approved',
   removed: 'Removed',
@@ -24,6 +25,7 @@ const TAB_LABEL: Record<Tab, string> = {
 
 const EMPTY_COPY: Record<Tab, string> = {
   published: 'Nothing published yet. The first approved post will show up here.',
+  saved: 'Nothing saved yet. Tap Save on a post to keep it here.',
   pending: 'Nothing waiting for review right now.',
   rejected: 'No videos have been turned down.',
   removed: 'No videos have been removed.',
@@ -83,10 +85,10 @@ export function ProfilePage() {
     if (!profile) return;
     let cancelled = false;
     setVideos(null);
+    const path =
+      tab === 'saved' ? '/api/me/saved' : `/api/users/${username}/videos?tab=${tab}`;
     api
-      .get<{ items: VideoDTO[]; counts: Record<VideoStatus, number> | null }>(
-        `/api/users/${username}/videos?tab=${tab}`,
-      )
+      .get<{ items: VideoDTO[]; counts: Record<VideoStatus, number> | null }>(path)
       .then((data) => {
         if (cancelled) return;
         setVideos(data.items);
@@ -245,7 +247,13 @@ export function ProfilePage() {
     }
   };
 
-  const tabs: Tab[] = ['published', 'pending', 'rejected', ...(counts?.removed ? (['removed'] as Tab[]) : [])];
+  const tabs: Tab[] = [
+    'published',
+    'saved',
+    'pending',
+    'rejected',
+    ...(counts?.removed ? (['removed'] as Tab[]) : []),
+  ];
 
   return (
     <div className="page">
@@ -504,7 +512,11 @@ export function ProfilePage() {
             onClick={() => setTab(item)}
           >
             {TAB_LABEL[item]}
-            {isSelf && counts ? <span className="profile-tab__count">{counts[item === 'published' ? 'approved' : item] ?? 0}</span> : null}
+            {isSelf && counts && item !== 'saved' ? (
+              <span className="profile-tab__count">
+                {counts[item === 'published' ? 'approved' : item] ?? 0}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -525,7 +537,9 @@ export function ProfilePage() {
               ? 'Post a video or a set of photos of your goats. It will appear here after the moderator approves it.'
               : tab === 'published'
                 ? 'This creator has not had a post approved yet.'
-                : 'That is a good sign.'}
+                : tab === 'saved'
+                  ? 'Posts you save stay here, even after you close the tab.'
+                  : 'That is a good sign.'}
           </p>
           {isSelf && tab === 'published' ? (
             <div className="empty-state__actions">

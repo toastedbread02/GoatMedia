@@ -9,6 +9,7 @@ import { useDocumentTitle } from '../lib/hooks.ts';
 import { FeedItem } from '../components/FeedItem.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { FeedSkeleton } from '../components/Skeleton.tsx';
+import { CreatorSuggestions } from '../components/CreatorSuggestions.tsx';
 
 type Tab = 'foryou' | 'trending' | 'following';
 
@@ -342,6 +343,7 @@ export function FeedPage({ tab }: FeedPageProps) {
             Upload something
           </Link>
         </div>
+        <CreatorSuggestions limit={4} />
       </div>
     );
   }

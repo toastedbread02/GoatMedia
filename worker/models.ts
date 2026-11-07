@@ -138,7 +138,7 @@ export async function hydratePosts(
   const ids = rows.map((r) => r.id);
   const placeholders = ids.map(() => '?').join(',');
 
-  const [photoRes, soundRes, likeRes, hiddenRes, followRes, blockRes] = await Promise.all([
+  const [photoRes, soundRes, likeRes, hiddenRes, followRes, blockRes, saveRes] = await Promise.all([
     env.DB.prepare(
       `SELECT id, post_id, position, width, height FROM post_photos
         WHERE post_id IN (${placeholders}) ORDER BY post_id, position`,
@@ -184,6 +184,11 @@ export async function hydratePosts(
           .bind(viewerId, ...rows.map((r) => r.owner_id))
           .all<{ blocked_id: string }>()
       : Promise.resolve({ results: [] as { blocked_id: string }[] }),
+    viewerId
+      ? env.DB.prepare(`SELECT post_id FROM saves WHERE user_id = ? AND post_id IN (${placeholders})`)
+          .bind(viewerId, ...ids)
+          .all<{ post_id: string }>()
+      : Promise.resolve({ results: [] as { post_id: string }[] }),
   ]);
 
   const photosByPost = new Map<string, PostDTO['photos']>();
@@ -203,6 +208,7 @@ export async function hydratePosts(
   const hidden = new Set((hiddenRes.results || []).map((r) => r.post_id));
   const following = new Set((followRes.results || []).map((r) => r.following_id));
   const blocked = new Set((blockRes.results || []).map((r) => r.blocked_id));
+  const savedSet = new Set((saveRes.results || []).map((r) => r.post_id));
 
   return rows.map((row) => {
     const category = categoryById.get(row.category);
@@ -230,6 +236,7 @@ export async function hydratePosts(
       likeCount: row.like_count,
       commentCount: row.comment_count,
       liked: liked.has(row.id),
+      saved: savedSet.has(row.id),
       notInterested: hidden.has(row.id),
       status: row.status,
       rejectReason: row.reject_reason,
