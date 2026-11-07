@@ -5,7 +5,9 @@
   "compatibility_date": "2026-01-01",
   "observability": { "enabled": true },
   "vars": {
-    "ALLOWED_ORIGINS": "https://toastedbread02.github.io,http://localhost:5173,http://127.0.0.1:5173"
+    // goatmedia.js.org is allowed ahead of time so the site works the moment
+    // the domain starts serving. The old Pages origin stays until links fade.
+    "ALLOWED_ORIGINS": "https://goatmedia.js.org,https://toastedbread02.github.io,http://localhost:5173,http://127.0.0.1:5173"
   },
   "d1_databases": [
     {
