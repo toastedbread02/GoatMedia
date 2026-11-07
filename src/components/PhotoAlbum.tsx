@@ -92,7 +92,8 @@ export function PhotoAlbum({
   const [index, setIndex] = useState(0);
   const wheelDelta = useRef(0);
   const wheelResetTimer = useRef(0);
-  const stepLockUntil = useRef(0);
+  // One gesture turns one page; the latch only releases after the wheel idles.
+  const gestureUsed = useRef(false);
   const multiple = photos.length > 1;
 
   const goTo = useCallback(
@@ -138,7 +139,6 @@ export function PhotoAlbum({
       const current = Math.max(0, Math.min(photos.length - 1, Math.round(node.scrollLeft / width)));
       const next = Math.max(0, Math.min(photos.length - 1, current + direction));
       if (next === current) return;
-      stepLockUntil.current = performance.now() + 320;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       node.scrollTo({ left: next * width, behavior: reduced ? 'auto' : 'smooth' });
     };
@@ -150,19 +150,22 @@ export function PhotoAlbum({
       if (!horizontal && !event.shiftKey) return;
       if (node.scrollWidth <= node.clientWidth + 1) return;
       event.preventDefault();
-      if (performance.now() < stepLockUntil.current) return;
+
+      window.clearTimeout(wheelResetTimer.current);
+      wheelResetTimer.current = window.setTimeout(() => {
+        gestureUsed.current = false;
+        wheelDelta.current = 0;
+      }, 300);
+      if (gestureUsed.current) return;
 
       const width = node.clientWidth || 1;
       const raw = horizontal ? event.deltaX : event.deltaY;
       const delta =
         event.deltaMode === 1 ? raw * 16 : event.deltaMode === 2 ? raw * width : raw;
       wheelDelta.current += delta;
-      window.clearTimeout(wheelResetTimer.current);
-      wheelResetTimer.current = window.setTimeout(() => {
-        wheelDelta.current = 0;
-      }, 150);
       if (Math.abs(wheelDelta.current) < 24) return;
       const direction = wheelDelta.current > 0 ? 1 : -1;
+      gestureUsed.current = true;
       wheelDelta.current = 0;
       step(direction);
     };
@@ -171,6 +174,7 @@ export function PhotoAlbum({
     return () => {
       node.removeEventListener('wheel', onWheel);
       window.clearTimeout(wheelResetTimer.current);
+      gestureUsed.current = false;
     };
   }, [multiple, photos.length]);
 
@@ -178,7 +182,7 @@ export function PhotoAlbum({
     <div
       className={`album ${multiple ? 'album--multi' : ''} ${className}`}
       onKeyDown={(event) => {
-        if (!multiple) return;
+        if (!multiple || event.repeat) return;
         if (event.key === 'ArrowRight') {
           event.preventDefault();
           goTo(index + 1);

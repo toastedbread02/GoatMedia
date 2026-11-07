@@ -29,6 +29,8 @@
   --accent-soft: #f3e2d6;
   --accent-ink: #fff9f2;
   --stage: #151310;
+  /* Text and marks that sit on the always-dark video/photo stage. */
+  --stage-ink: #f6f0e4;
   --ok: #3d6a45;
   --ok-soft: #e6efe1;
   --warn: #866015;
@@ -805,10 +807,12 @@ ol {
   width: fit-content;
   max-width: 100%;
   padding: 10px 12px 10px 14px;
-  background: var(--ink);
-  color: #f8f3e9;
+  /* Snackbars stay dark in both themes: the text and action colours below are
+     tuned for a dark surface, so they must not invert with the palette. */
+  background: var(--stage);
+  color: var(--stage-ink);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(28, 25, 21, 0.22);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
   font-size: 13.5px;
   pointer-events: auto;
   animation: toast-in 220ms var(--ease-out);
@@ -4373,6 +4377,11 @@ ol {
   padding: 24px;
 }
 
+.album__failed .btn--quiet {
+  background: rgba(255, 253, 248, 0.16);
+  color: var(--stage-ink);
+}
+
 .album__arrow {
   position: absolute;
   top: 50%;
@@ -4384,7 +4393,8 @@ ol {
   border: 0;
   border-radius: 50%;
   background: rgba(255, 253, 248, 0.92);
-  color: var(--ink);
+  /* The pill stays light in both themes, so the chevron must stay dark. */
+  color: var(--stage);
   cursor: pointer;
   opacity: 0;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
@@ -4439,7 +4449,7 @@ ol {
 .album__dot.is-active {
   width: 16px;
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--stage-ink);
 }
 
 .album__counter {
@@ -4449,7 +4459,7 @@ ol {
   padding: 3px 9px;
   border-radius: 999px;
   background: rgba(21, 19, 16, 0.55);
-  color: var(--surface);
+  color: var(--stage-ink);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -4488,7 +4498,7 @@ ol {
   padding: 2px 7px;
   border-radius: 999px;
   background: rgba(21, 19, 16, 0.62);
-  color: var(--surface);
+  color: var(--stage-ink);
   font-size: 11.5px;
 }
 
@@ -4539,7 +4549,7 @@ ol {
   place-items: center;
   border-radius: 50%;
   background: rgba(21, 19, 16, 0.66);
-  color: var(--surface);
+  color: var(--stage-ink);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -4567,7 +4577,7 @@ ol {
   border: 0;
   border-radius: 50%;
   background: rgba(255, 253, 248, 0.92);
-  color: var(--ink);
+  color: var(--stage);
   cursor: pointer;
 }
 
@@ -4687,7 +4697,11 @@ ol {
 }
 
 [data-theme='dark'] .btn--danger:hover:not(:disabled) {
-  background: #a2483a;
+  background: #ec9f92;
+}
+
+[data-theme='dark'] .toast {
+  border: 1px solid rgba(255, 253, 248, 0.14);
 }
 
 [data-theme='dark'] .btn--danger,

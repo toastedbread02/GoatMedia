@@ -46,7 +46,9 @@ export function FeedPage({ tab }: FeedPageProps) {
   const frame = useRef(0);
   const wheelDelta = useRef(0);
   const wheelResetTimer = useRef(0);
-  const stepLockUntil = useRef(0);
+  // A gesture stays "used" until the wheel goes quiet, so a long flick or a
+  // held trackpad scroll can never consume more than one post.
+  const gestureUsed = useRef(false);
 
   useDocumentTitle(TITLES[tab]);
 
@@ -176,7 +178,6 @@ export function FeedPage({ tab }: FeedPageProps) {
       const current = Math.round(element.scrollTop / height);
       const next = Math.max(0, Math.min(slides - 1, current + direction));
       if (next === current) return;
-      stepLockUntil.current = performance.now() + 420;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       element.scrollTo({ top: next * height, behavior: reduced ? 'auto' : 'smooth' });
     };
@@ -192,18 +193,24 @@ export function FeedPage({ tab }: FeedPageProps) {
         return;
       }
       event.preventDefault();
-      if (performance.now() < stepLockUntil.current) return;
+
+      // The idle gap is what marks the end of a gesture. Every event within a
+      // flick keeps postponing it, which is what keeps momentum from becoming
+      // a second step.
+      window.clearTimeout(wheelResetTimer.current);
+      wheelResetTimer.current = window.setTimeout(() => {
+        gestureUsed.current = false;
+        wheelDelta.current = 0;
+      }, 300);
+      if (gestureUsed.current) return;
 
       const height = element.clientHeight || 1;
       const delta =
         event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * height : event.deltaY;
       wheelDelta.current += delta;
-      window.clearTimeout(wheelResetTimer.current);
-      wheelResetTimer.current = window.setTimeout(() => {
-        wheelDelta.current = 0;
-      }, 160);
       if (Math.abs(wheelDelta.current) < 30) return;
       const direction = wheelDelta.current > 0 ? 1 : -1;
+      gestureUsed.current = true;
       wheelDelta.current = 0;
       step(direction);
     };
@@ -212,6 +219,7 @@ export function FeedPage({ tab }: FeedPageProps) {
     return () => {
       element.removeEventListener('wheel', onWheel);
       window.clearTimeout(wheelResetTimer.current);
+      gestureUsed.current = false;
     };
     // The scroller only exists once posts have arrived, so re-attach when the
     // feed switches between empty and populated.
@@ -323,6 +331,7 @@ export function FeedPage({ tab }: FeedPageProps) {
         tabIndex={0}
         aria-label={`${TITLES[tab]} feed`}
         onKeyDown={(event) => {
+          if (event.repeat) return;
           const element = scroller.current;
           if (!element) return;
           const height = element.clientHeight;
