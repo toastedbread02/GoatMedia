@@ -26,6 +26,7 @@ toastedbread02.github.io/GoatMedia   goatmedia-api.<account>.workers.dev
 | API | https://goatmedia-api.dominikkoba22.workers.dev |
 | D1 database | `goatmedia` — `99f990ab-4246-4b49-9353-9269a5ccd115` |
 | Repo variable | `API_ORIGIN` = the Worker URL (used by the Pages build) |
+| Optional variable | `CUSTOM_DOMAIN` = a domain you control, e.g. `goatmedia.is-a.dev` |
 
 The site uses normal paths (`/GoatMedia/v/<id>`); the build copies `index.html`
 to `404.html`, so deep links and refreshes work on Pages without a server
@@ -52,6 +53,62 @@ Set or rotate secrets with `npx wrangler secret put <NAME>`:
 
 `ALLOWED_ORIGINS` lives in `wrangler.jsonc`; add any custom domain there before
 using one, otherwise the browser will be refused by CORS.
+
+## A better address, for free
+
+`toastedbread02.github.io/GoatMedia` reads as a dev demo. Two zero-cost options,
+and the build supports either without code changes.
+
+**No registrar gives away a real domain.** What is free is a subdomain: a domain
+someone else owns, with one name pointed at your site. Both options below keep
+the Cloudflare Worker exactly as it is.
+
+### Option A — free subdomain, still hosted on GitHub Pages
+
+[is-a.dev](https://www.is-a.dev) and [js.org](https://js.org) hand out free
+subdomains through a pull request to their own repository. Steps for is-a.dev:
+
+1. Fork `is-a.dev/is-a.dev`, add a file under `domains/` for the name you want
+   (for example `goatmedia.json`) with your GitHub username, email, and a `CNAME`
+   record pointing at `toastedbread02.github.io`. Follow the schema and naming
+   rules in that repo's README — it changes, so copy theirs rather than this page.
+2. Open the pull request and wait for review. It usually takes a few days.
+3. Once it is merged and the name resolves, set the repository variable:
+
+   ```bash
+   gh variable set CUSTOM_DOMAIN --body "goatmedia.is-a.dev"
+   ```
+
+4. Add the new origin to `ALLOWED_ORIGINS` in `wrangler.jsonc` and redeploy the
+   Worker, otherwise the browser is refused by CORS:
+
+   ```bash
+   npx wrangler deploy
+   ```
+
+5. In the repository's **Settings → Pages**, confirm the custom domain is listed
+   and tick **Enforce HTTPS**.
+
+Push to `main` and the workflow rebuilds at the root path, writes the `CNAME`
+file itself, and Pages starts answering on the new name. The old
+`/GoatMedia/` address keeps working, so nothing breaks while DNS settles.
+
+### Option B — instant, but the site moves off GitHub Pages
+
+Cloudflare Pages gives a free `*.pages.dev` address immediately: create a Pages
+project from this repository, build command `npm run build`, output directory
+`dist`, environment variable `VITE_API_ORIGIN` set to the Worker URL. The site
+is then served from `/`, so set `VITE_BASE_PATH` to `/` and remember to add
+`https://<project>.pages.dev` to `ALLOWED_ORIGINS`. This is faster than Option A
+but it moves hosting away from GitHub, which is not what this project was set up
+to do.
+
+### If you want a real top-level domain
+
+Cloudflare Registrar sells at cost, and short names like `.xyz` or `.top` often
+come in under a few dollars for the first year. Point the domain's DNS at GitHub
+Pages, set `CUSTOM_DOMAIN`, add the origin to `ALLOWED_ORIGINS`, and the same
+build works unchanged.
 
 ## First moderator
 

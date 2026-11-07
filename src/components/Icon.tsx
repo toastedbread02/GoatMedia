@@ -36,10 +36,19 @@ export type IconName =
   | 'more'
   | 'alert'
   | 'logout'
+  | 'chart'
   | 'spark';
 
 const paths: Record<IconName, ReactNode> = {
   home: <path d="M4 10.4 12 4l8 6.4V20a1 1 0 0 1-1 1h-4.6v-6H9.6v6H5a1 1 0 0 1-1-1z" />,
+  chart: (
+    <>
+      <path d="M4 20h16" />
+      <path d="M7 20v-6" />
+      <path d="M12 20V7" />
+      <path d="M17 20v-9" />
+    </>
+  ),
   trending: (
     <>
       <path d="M4 17.5 9.2 12l3.8 3.6L20 8" />

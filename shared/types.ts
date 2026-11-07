@@ -301,3 +301,18 @@ export interface SoundLibraryItem {
   createdAt: number;
   owner: { id: string; username: string; displayName: string };
 }
+
+export interface TrafficDayDTO {
+  /** UTC day, `YYYY-MM-DD`. */
+  date: string;
+  visits: number;
+  views: number;
+  signups: number;
+}
+
+export interface TrafficDTO {
+  days: number;
+  series: TrafficDayDTO[];
+  sources: { source: string; visits: number }[];
+  totals: { visits: number; views: number; signups: number; visitors: number };
+}

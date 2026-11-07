@@ -5342,3 +5342,334 @@ ol {
   flex-wrap: wrap;
   gap: 10px;
 }
+
+/* ------------------------------- traffic --------------------------------- */
+
+.traffic {
+  max-width: 940px;
+}
+
+.traffic__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.traffic__head h2 {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.traffic__head p {
+  margin-top: 3px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.traffic__window {
+  display: flex;
+  gap: 4px;
+}
+
+.traffic__window .btn.is-active {
+  background: var(--sunken-strong);
+  color: var(--ink);
+}
+
+.traffic__totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+}
+
+.traffic__totals dt {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.traffic__totals dd {
+  margin-top: 2px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic__note {
+  margin: 12px 0 18px;
+  max-width: 68ch;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.traffic__chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.traffic__grid {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 132px;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic__days {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.traffic__day {
+  display: grid;
+  grid-template-rows: 132px auto;
+  gap: 6px;
+}
+
+.traffic__bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+}
+
+.traffic__bar {
+  width: 6px;
+  border-radius: 2px 2px 0 0;
+}
+
+.traffic__bar--views {
+  background: var(--accent);
+}
+
+.traffic__bar--visits {
+  background: var(--ink-3);
+}
+
+.traffic__bar--signups {
+  width: 3px;
+  background: var(--ok);
+}
+
+.traffic__day-label {
+  padding-bottom: 6px;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0 0 26px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.traffic__swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 6px;
+}
+
+.traffic__swatch--views {
+  background: var(--accent);
+}
+
+.traffic__swatch--visits {
+  background: var(--ink-3);
+}
+
+.traffic__swatch--signups {
+  background: var(--ok);
+}
+
+.traffic__sources h3 {
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.traffic__sources ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.traffic__sources li {
+  display: grid;
+  grid-template-columns: minmax(110px, 200px) minmax(0, 1fr) 84px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.traffic__source-name {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.traffic__source-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+
+.traffic__source-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.traffic__source-count {
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic__source-share {
+  color: var(--ink-3);
+}
+
+.traffic__empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border-radius: var(--radius);
+  background: var(--sunken);
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  max-width: 58ch;
+}
+
+.traffic__loading {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.traffic__skeleton {
+  height: 132px;
+  border-radius: var(--radius);
+}
+
+.traffic__skeleton--short {
+  height: 60px;
+}
+
+@media (max-width: 720px) {
+  .traffic__totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .traffic__totals dd {
+    font-size: 22px;
+  }
+
+  .traffic__bar {
+    width: 4px;
+  }
+
+  .traffic__sources li {
+    grid-template-columns: minmax(84px, 1fr) minmax(0, 1fr) 62px;
+    gap: 9px;
+    font-size: 12.5px;
+  }
+}
+
+/* A single line for signed-out readers after a few clips. It sits over the
+   stage, never over the controls, and can be closed for good. */
+.feed-nudge {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(460px, calc(100% - 24px));
+  padding: 8px 8px 8px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  animation: feed-nudge-in var(--dur-2) var(--ease-out);
+}
+
+.feed-nudge p {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.feed-nudge strong {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.feed-nudge__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.feed-nudge__close {
+  padding: 5px 7px;
+  color: var(--ink-3);
+}
+
+@keyframes feed-nudge-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (max-width: 620px) {
+  .feed-nudge {
+    top: 10px;
+    gap: 8px;
+    padding: 8px 6px 8px 12px;
+  }
+
+  .feed-nudge p {
+    font-size: 12.5px;
+  }
+}

@@ -12,9 +12,17 @@ import { AdminPage } from './pages/AdminPage.tsx';
 import { ContactPage } from './pages/ContactPage.tsx';
 import { AboutPage, GuidelinesPage, PrivacyPage, TermsPage } from './pages/DocsPages.tsx';
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
+import { recordVisit } from './lib/api.ts';
 
 function AppFrame() {
   const location = useLocation();
+
+  // Counted once per load, not per route: that keeps the traffic chart about
+  // arrivals instead of about how much someone scrolled.
+  useEffect(() => {
+    recordVisit(location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const main = document.getElementById('main');

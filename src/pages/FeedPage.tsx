@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { FeedResponse, VideoDTO } from '../../shared/types.ts';
 import { api, ApiError } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
@@ -35,6 +35,15 @@ export function FeedPage({ tab }: FeedPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
+  const [nudgeDismissed, setNudgeDismissed] = useState(() => {
+    try {
+      return localStorage.getItem('gm-follow-nudge') === 'dismissed';
+    } catch {
+      return true;
+    }
+  });
+  const watchedAsGuest = useRef<Set<string>>(new Set());
+  const location = useLocation();
 
   const scroller = useRef<HTMLDivElement>(null);
   const itemsRef = useRef(items);
@@ -43,6 +52,7 @@ export function FeedPage({ tab }: FeedPageProps) {
   const loadingMoreRef = useRef(false);
   const loadedKey = useRef<string | null>(null);
   const activeIndexRef = useRef(activeIndex);
+  const [nudgeFor, setNudgeFor] = useState<{ username: string; displayName: string } | null>(null);
   const frame = useRef(0);
   const wheelDelta = useRef(0);
   const wheelResetTimer = useRef(0);
@@ -51,6 +61,20 @@ export function FeedPage({ tab }: FeedPageProps) {
   const gestureUsed = useRef(false);
 
   useDocumentTitle(TITLES[tab]);
+
+  // After a few clips a signed-out reader has shown real interest, so it is
+  // worth one quiet line about following the creator. It never blocks the feed
+  // and stays dismissed once closed.
+  useEffect(() => {
+    if (user || nudgeDismissed || tab === 'following') return;
+    const item = items[activeIndex];
+    if (!item?.creator) return;
+    watchedAsGuest.current.add(item.id);
+    if (watchedAsGuest.current.size < 3) return;
+    setNudgeFor((current) =>
+      current ?? { username: item.creator.username, displayName: item.creator.displayName },
+    );
+  }, [activeIndex, items, user, nudgeDismissed, tab]);
 
   itemsRef.current = items;
   pageRef.current = page;
@@ -394,6 +418,38 @@ export function FeedPage({ tab }: FeedPageProps) {
           </div>
         ) : null}
       </div>
+      {nudgeFor && !user && !nudgeDismissed ? (
+        <div className="feed-nudge" role="status">
+          <p>
+            Follow <strong>@{nudgeFor.username}</strong> to keep their goats in your feed.
+          </p>
+          <div className="feed-nudge__actions">
+            <Link
+              className="btn btn--primary btn--sm"
+              to={`/login?next=${encodeURIComponent(location.pathname)}`}
+            >
+              Sign in
+            </Link>
+            <button
+              type="button"
+              className="btn btn--quiet btn--sm feed-nudge__close"
+              aria-label="Dismiss"
+              onClick={() => {
+                setNudgeDismissed(true);
+                setNudgeFor(null);
+                try {
+                  localStorage.setItem('gm-follow-nudge', 'dismissed');
+                } catch {
+                  /* private browsing */
+                }
+              }}
+            >
+              <Icon name="close" size={15} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {loadingMore ? (
         <div className="feed-more" role="status">
           <div className="spinner" />

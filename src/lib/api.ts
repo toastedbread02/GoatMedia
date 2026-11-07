@@ -56,6 +56,31 @@ function absorbAuth(path: string, payload: unknown) {
   if (path === '/api/auth/logout') tokenStore.set(null);
 }
 
+/**
+ * Tells the server where this visit came from, once per page load. Only the
+ * referring host, the route and an explicit `utm_source` are sent: never the
+ * full URL, so nothing personal rides along in a query string.
+ */
+export function recordVisit(path: string) {
+  const params = new URLSearchParams(window.location.search);
+  const body = JSON.stringify({
+    ref: document.referrer || '',
+    path,
+    utm: params.get('utm_source') || params.get('ref') || '',
+  });
+  try {
+    // keepalive lets a visitor who bounces after a second still be counted.
+    void fetch(withBase('/api/visits'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* counting a visit must never break the page */
+  }
+}
+
 async function handle<T>(response: Response, path: string): Promise<T> {
   const text = await response.text();
   let payload: unknown = null;

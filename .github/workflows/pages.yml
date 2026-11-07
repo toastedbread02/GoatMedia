@@ -37,7 +37,10 @@ jobs:
       - name: Build the site against the API
         env:
           VITE_API_ORIGIN: ${{ vars.API_ORIGIN }}
-          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+          # A repo project site lives under /<repo>/; a custom domain serves from
+          # the root. Set the CUSTOM_DOMAIN variable once you own the name.
+          VITE_BASE_PATH: ${{ vars.CUSTOM_DOMAIN != '' && '/' || format('/{0}/', github.event.repository.name) }}
         run: |
           if [ -z "$VITE_API_ORIGIN" ]; then
             echo "::error::Set the repository variable API_ORIGIN (Settings -> Secrets and variables -> Actions -> Variables) to the public URL of the GoatMedia server, for example https://goatmedia.example.com"
@@ -47,6 +50,13 @@ jobs:
           # Pages serves 404.html for unknown paths; reusing the app shell lets
           # deep links like /GoatMedia/v/<id> boot the router instead of 404ing.
           cp dist/index.html dist/404.html
+          # The CNAME file is what tells Pages which domain to answer on. It is
+          # only written when the variable is set, so the current address keeps
+          # working until the new one resolves.
+          if [ -n "$CUSTOM_DOMAIN" ]; then
+            printf '%s\n' "$CUSTOM_DOMAIN" > dist/CNAME
+            echo "Building for https://$CUSTOM_DOMAIN"
+          fi
 
       - uses: actions/configure-pages@v5
 

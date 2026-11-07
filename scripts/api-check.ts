@@ -1043,6 +1043,52 @@ async function run() {
   const boAfter = await call('/api/admin/counts', { token: restoredLogin.body.token });
   ok(boAfter.status === 401, 'removed access stops working on the next request');
 
+  console.log('\n[traffic]');
+  const visit = await call('/api/visits', {
+    method: 'POST',
+    headers: { 'user-agent': 'traffic-check-referrer' },
+    body: JSON.stringify({ ref: 'https://www.reddit.com/r/goats/comments/x', path: '/v/abc' }),
+  });
+  ok(visit.status === 200, 'a signed-out visit is accepted', visit.body);
+
+  const tagged = await call('/api/visits', {
+    method: 'POST',
+    headers: { 'user-agent': 'traffic-check-campaign' },
+    body: JSON.stringify({ ref: '', path: '/', utm: 'reddit-launch' }),
+  });
+  ok(tagged.status === 200, 'a campaign-tagged visit is accepted', tagged.body);
+
+  const repeat = await call('/api/visits', {
+    method: 'POST',
+    headers: { 'user-agent': 'traffic-check-referrer' },
+    body: JSON.stringify({ ref: 'https://www.reddit.com/r/goats/comments/x', path: '/v/abc' }),
+  });
+  ok(repeat.status === 200, 'a repeat visit does not error');
+
+  const anonymousTraffic = await call('/api/admin/traffic');
+  ok(anonymousTraffic.status === 401, 'traffic needs a signed-in moderator');
+
+  // The account above had its moderator access taken away, so it is a plain
+  // member again and must stay out of the traffic numbers.
+  const memberTraffic = await call('/api/admin/traffic', { token: restoredLogin.body.token });
+  ok(memberTraffic.status === 401, 'an ordinary member cannot read traffic');
+
+  const stats = await call('/api/admin/traffic?days=7', { token: adminToken });
+  ok(stats.status === 200, 'the moderator can read traffic', stats.body);
+  const sources: string[] = (stats.body.sources || []).map((row: { source: string }) => row.source);
+  ok(sources.includes('reddit.com'), 'the referring host is kept without the path', sources);
+  ok(sources.includes('reddit-launch'), 'an explicit campaign tag wins over the referrer', sources);
+  ok(
+    (stats.body.totals?.visits ?? 0) === 2,
+    'the refresh did not inflate the visit count',
+    stats.body.totals,
+  );
+  ok(Array.isArray(stats.body.series) && stats.body.series.length === 7, 'the series covers the window');
+  ok(
+    stats.body.series.every((day: { date: string }) => /^\d{4}-\d{2}-\d{2}$/.test(day.date)),
+    'each day is labelled with a date',
+  );
+
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);
 }

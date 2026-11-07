@@ -65,6 +65,7 @@ import * as admin from './routes/admin';
 import { createTicket, resolveTicket, tickets } from './routes/support';
 import { avatar, photo, poster, sound, video } from './routes/media';
 import { putChunk, putPoster, startUpload } from './routes/uploads';
+import { recordVisit, traffic } from './routes/traffic';
 import { changePassword, usernameAvailable } from './routes/auth';
 
 const CONFIG_CACHE = 'public, max-age=300';
@@ -159,6 +160,11 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
       return putChunk(req, env, url, parts[2]);
     }
     if (parts[2] && parts[3] === 'poster' && method === 'POST') return putPoster(req, env, parts[2]);
+  }
+
+  // ---- traffic ------------------------------------------------------------
+  if (parts[0] === 'api' && parts[1] === 'visits' && parts.length === 2 && method === 'POST') {
+    return recordVisit(req, env);
   }
 
   if (parts[0] !== 'api') return text('GoatMedia API. The app lives on GitHub Pages.', 404);
@@ -270,6 +276,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   if (root === 'admin') {
     if (second === 'claim' && method === 'POST') return admin.claimAdmin(req, env);
     if (second === 'counts' && method === 'GET') return admin.counts(req, env);
+    if (second === 'traffic' && method === 'GET') return traffic(req, env, url);
     if (second === 'queue' && method === 'GET') return admin.queue(req, env, origin, url);
     if (second === 'reports' && !third && method === 'GET') return admin.reports(req, env, url);
     if (second === 'reports' && third && fourth === 'resolve' && method === 'POST') {

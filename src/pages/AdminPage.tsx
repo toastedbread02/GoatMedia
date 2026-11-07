@@ -23,8 +23,9 @@ import { SoundStrip } from '../components/SoundStrip.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
 import { AdminSkeleton, RowSkeleton } from '../components/Skeleton.tsx';
 import { SupportQueue } from '../components/SupportQueue.tsx';
+import { TrafficPanel } from '../components/TrafficPanel.tsx';
 
-type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts';
+type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts' | 'traffic';
 type ReportView = 'content' | 'support';
 
 const VIDEO_TAB_STATUS: Record<string, string> = {
@@ -72,7 +73,9 @@ export function AdminPage() {
 
   const [tab, setTab] = useState<Tab>(() => {
     const requested = searchParams.get('tab');
-    return requested === 'reports' || requested === 'accounts' ? requested : 'pending';
+    return requested === 'reports' || requested === 'accounts' || requested === 'traffic'
+      ? requested
+      : 'pending';
   });
   const [reportView, setReportView] = useState<ReportView>(() =>
     searchParams.get('view') === 'support' ? 'support' : 'content',
@@ -121,7 +124,7 @@ export function AdminPage() {
   // Notifications for support requests deep-link to a specific ticket.
   useEffect(() => {
     const requested = searchParams.get('tab');
-    if (requested === 'reports' || requested === 'accounts') setTab(requested);
+    if (requested === 'reports' || requested === 'accounts' || requested === 'traffic') setTab(requested);
     if (requested === 'reports') {
       setReportView(searchParams.get('view') === 'support' ? 'support' : 'content');
     }
@@ -138,6 +141,10 @@ export function AdminPage() {
         const nextCounts = await api.get<ModerationCounts>('/api/admin/counts');
         if (cancelled) return;
         setCounts(nextCounts);
+        if (tab === 'traffic') {
+          // The traffic panel loads its own numbers.
+          return;
+        }
         if (tab === 'reports') {
           const data = await api.get<{ items: ReportDTO[] }>('/api/admin/reports?status=open');
           if (cancelled) return;
@@ -380,6 +387,15 @@ export function AdminPage() {
         >
           Control center
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'traffic'}
+          className={`admin-tab${tab === 'traffic' ? ' is-active' : ''}`}
+          onClick={() => setTab('traffic')}
+        >
+          Traffic
+        </button>
       </div>
 
       {listError ? (
@@ -392,7 +408,9 @@ export function AdminPage() {
         </div>
       ) : null}
 
-      {tab === 'reports' ? (
+      {tab === 'traffic' ? (
+        <TrafficPanel />
+      ) : tab === 'reports' ? (
         <>
           <div className="admin-subtabs" role="group" aria-label="Report type">
             <button
