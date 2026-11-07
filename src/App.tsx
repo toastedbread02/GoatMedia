@@ -11,7 +11,14 @@ import { SearchPage } from './pages/SearchPage.tsx';
 import { AdminPage } from './pages/AdminPage.tsx';
 import { ContactPage } from './pages/ContactPage.tsx';
 import { DailyPage } from './pages/DailyPage.tsx';
-import { AboutPage, GuidelinesPage, PrivacyPage, TermsPage } from './pages/DocsPages.tsx';
+import {
+  AboutPage,
+  CookiesPage,
+  CopyrightPage,
+  GuidelinesPage,
+  PrivacyPage,
+  TermsPage,
+} from './pages/DocsPages.tsx';
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
 import { recordVisit } from './lib/api.ts';
 
@@ -59,6 +66,8 @@ export default function App() {
       <Route path="/guidelines" element={<GuidelinesPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
+      <Route path="/cookies" element={<CookiesPage />} />
+      <Route path="/copyright" element={<CopyrightPage />} />
       <Route path="/about" element={<AboutPage />} />
 
       <Route element={<AppFrame />}>

@@ -4309,7 +4309,27 @@ ol {
 }
 
 .doc-main .page-title {
-  margin-bottom: 18px;
+  margin-bottom: 6px;
+}
+
+/* Legal pages carry a lot of prose, so the date and the opening paragraph do
+   the work of a summary rather than another heading. */
+.doc-meta {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.doc-lede {
+  max-width: 680px;
+  margin: 0 0 26px;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.doc-main .prose h2:first-child {
+  margin-top: 26px;
 }
 
 .doc-foot {

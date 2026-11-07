@@ -772,8 +772,10 @@ export function SettingsPage() {
           </div>
 
           <p className="section-note">
-            Read the <Link className="textlink" to="/guidelines">community guidelines</Link> or the{' '}
-            <Link className="textlink" to="/privacy">privacy notes</Link>.
+            Read the <Link className="textlink" to="/guidelines">community guidelines</Link>, the{' '}
+            <Link className="textlink" to="/privacy">privacy page</Link> or the{' '}
+            <Link className="textlink" to="/terms">terms</Link>. What this site keeps in your browser is listed
+            under <Link className="textlink" to="/cookies">cookies and storage</Link>.
           </p>
         </div>
       </section>
