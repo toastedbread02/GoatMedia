@@ -469,6 +469,7 @@ ol {
 
 .logo__mark {
   flex: none;
+  color: var(--ink);
 }
 
 .logo__word {
