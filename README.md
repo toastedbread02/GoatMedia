@@ -15,7 +15,7 @@ appears anywhere public.
 | `src/` | The browser app (React, TypeScript, Vite, BrowserRouter) |
 | `worker/` | The API: routing, auth, posts, feeds, moderation, media |
 | `migrations/` | D1 schema (users, posts, videos, photos, sounds, moderation, reports…) |
-| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (101 checks) |
+| `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (129 checks) |
 | `scripts/live-check.mjs` | End-to-end checks against the deployed Worker (31 checks) |
 | `wrangler.jsonc` | Worker config, D1 binding, allowed site origins |
 
@@ -57,6 +57,12 @@ not interested −15), decayed over 30 days, and clamped. Pages are assembled fr
 configurable quotas (80% personalized / 15% discovery / 5% trending) with a
 two-posts-per-creator cap, freshness decay and an exposure penalty. Users can see
 and reset what the model has learned under Settings → Feed.
+
+**Accounts** — Sign-up records a date of birth to enforce a 13+ minimum, server
+side. Settings covers profile, appearance (light, dark or follow the system),
+reduced motion, privacy (private follower lists, opt out of people search), date
+of birth and account security. Pages render layout-matched skeletons while data
+loads.
 
 Manual moderation is the default at every size. Passing 1,000 accounts does not
 change it; that remains an explicit decision.
@@ -116,7 +122,7 @@ npx wrangler d1 execute goatmedia --remote \
 
 ```bash
 npm run typecheck     # app + Worker
-npm run api:check     # 101 checks: auth, privacy, moderation, feeds, media, video streaming, CORS
+npm run api:check     # 129 checks: auth, age gate, privacy, moderation, feeds, media, streaming, CORS
 API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev node scripts/live-check.mjs
 ```
 
