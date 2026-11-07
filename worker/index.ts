@@ -69,6 +69,7 @@ import { createTicket, resolveTicket, tickets } from './routes/support';
 import { avatar, photo, poster, sound, video } from './routes/media';
 import { putChunk, putPoster, startUpload } from './routes/uploads';
 import { recordVisit, traffic } from './routes/traffic';
+import { usage as storageUsage } from './routes/storage';
 import { changePassword, usernameAvailable } from './routes/auth';
 import { creatorStats } from './routes/stats';
 
@@ -288,6 +289,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (second === 'claim' && method === 'POST') return admin.claimAdmin(req, env);
     if (second === 'counts' && method === 'GET') return admin.counts(req, env);
     if (second === 'traffic' && method === 'GET') return traffic(req, env, url);
+    if (second === 'storage' && method === 'GET') return storageUsage(req, env);
     if (second === 'queue' && method === 'GET') return admin.queue(req, env, origin, url);
     if (second === 'reports' && !third && method === 'GET') return admin.reports(req, env, url);
     if (second === 'reports' && third && fourth === 'resolve' && method === 'POST') {

@@ -302,6 +302,23 @@ export interface SearchResults {
   query: string;
 }
 
+export interface StorageRow {
+  kind: 'videos' | 'photos' | 'sounds' | 'avatars' | 'posters';
+  bytes: number;
+  count: number;
+}
+
+export interface StorageDTO {
+  limitBytes: number;
+  usedBytes: number;
+  /** Share of the limit in use, 0 to 100. */
+  percent: number;
+  /** Share at which the panel starts warning, 0 to 1. */
+  warnAt: number;
+  averageVideoBytes: number;
+  breakdown: StorageRow[];
+}
+
 export interface InterestView {
   kind: 'category' | 'hashtag';
   value: string;

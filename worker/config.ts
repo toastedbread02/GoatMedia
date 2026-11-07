@@ -22,6 +22,17 @@ export const limits = {
 /** Size of one stored video chunk. Kept well under D1's 2 MB row limit. */
 export const VIDEO_CHUNK_BYTES = 768 * 1024;
 
+/**
+ * The storage budget the admin meter measures against. Workers Free caps a
+ * single D1 database at 500 MB, which is the wall a growing video library hits
+ * long before the 5 GB account allowance matters.
+ */
+export const storageBudget = {
+  databaseLimitBytes: 500 * 1024 * 1024,
+  /** Show the warning once this share of the database is in use. */
+  warnAt: 0.8,
+};
+
 export const categories = [
   { id: 'baby-goats', label: 'Baby goats', blurb: 'Kids finding their legs' },
   { id: 'parkour', label: 'Goat parkour', blurb: 'Climbing, leaping, standing on things' },

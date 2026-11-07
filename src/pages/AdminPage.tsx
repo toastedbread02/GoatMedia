@@ -24,6 +24,7 @@ import { StatusTag } from '../components/StatusTag.tsx';
 import { AdminSkeleton, RowSkeleton } from '../components/Skeleton.tsx';
 import { SupportQueue } from '../components/SupportQueue.tsx';
 import { TrafficPanel } from '../components/TrafficPanel.tsx';
+import { StoragePanel } from '../components/StoragePanel.tsx';
 
 type Tab = 'pending' | 'approved' | 'rejected' | 'removed' | 'reports' | 'accounts' | 'traffic';
 type ReportView = 'content' | 'support';
@@ -409,7 +410,10 @@ export function AdminPage() {
       ) : null}
 
       {tab === 'traffic' ? (
-        <TrafficPanel />
+        <>
+          <TrafficPanel />
+          <StoragePanel />
+        </>
       ) : tab === 'reports' ? (
         <>
           <div className="admin-subtabs" role="group" aria-label="Report type">
