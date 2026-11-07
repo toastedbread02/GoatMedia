@@ -70,6 +70,7 @@ import { avatar, photo, poster, sound, video } from './routes/media';
 import { putChunk, putPoster, startUpload } from './routes/uploads';
 import { recordVisit, traffic } from './routes/traffic';
 import { changePassword, usernameAvailable } from './routes/auth';
+import { creatorStats } from './routes/stats';
 
 const CONFIG_CACHE = 'public, max-age=300';
 
@@ -205,6 +206,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (second === 'hidden' && third && method === 'DELETE') return setNotInterested(req, env, third, false);
     if (second === 'blocked' && method === 'GET') return blockedUsers(req, env, origin);
     if (second === 'saved' && !third && method === 'GET') return savedPosts(req, env, origin, url);
+    if (second === 'stats' && !third && method === 'GET') return creatorStats(req, env);
     if (second === 'suggestions' && method === 'GET') return suggestedCreators(req, env, origin, url);
     if (second === 'creators' && method === 'GET') return suggestedCreators(req, env, origin, url);
     if (second === 'notifications' && !third && method === 'GET') return notifications(req, env, url);

@@ -11,6 +11,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Popover } from '../components/Popover.tsx';
 import { VideoCard } from '../components/VideoCard.tsx';
 import { GridSkeleton, ProfileSkeleton } from '../components/Skeleton.tsx';
+import { CreatorStats } from '../components/CreatorStats.tsx';
 
 type Tab = 'published' | 'saved' | 'pending' | 'rejected' | 'removed';
 type PeopleList = 'followers' | 'following';
@@ -407,6 +408,8 @@ export function ProfilePage() {
           )}
         </div>
       </header>
+
+      {isSelf ? <CreatorStats /> : null}
 
       {people && !(profile.followsPrivate && !isSelf) ? (
         <section id="profile-people" className="profile-people" aria-label={`${people === 'followers' ? 'Followers' : 'Following'} of @${profile.username}`}>

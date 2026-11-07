@@ -285,6 +285,15 @@ export interface AdminVideoDetail {
   rejectionReasons: string[];
 }
 
+export interface CreatorStatsDTO {
+  week: { views: number; likes: number; comments: number; followers: number };
+  previous: { views: number; likes: number; comments: number; followers: number };
+  /** Views per day, oldest first, ending today. */
+  daily: number[];
+  topPost: { id: string; caption: string; views: number } | null;
+  totals: { posts: number; views: number; likes: number };
+}
+
 export interface SearchResults {
   videos: VideoDTO[];
   creators: PublicUser[];
