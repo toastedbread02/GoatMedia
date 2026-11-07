@@ -15,9 +15,18 @@ import {
   Quality,
   canEncodeVideo,
 } from 'mediabunny';
+import { ENCODE_SHORT_EDGE } from './videoTarget.ts';
 
 const AUDIO_BUDGET_BPS = 160_000;
-const MAX_VIDEO_BPS = 6_000_000;
+/**
+ * Ceiling for the video track. At 720p this is a clear picture for handheld
+ * footage, and it keeps a one-minute clip near 12 MB — the free storage
+ * allowance, not the network, is what limits how many clips fit.
+ */
+const PREFERRED_VIDEO_BPS = 1_600_000;
+/** Below this, 720p looks no better than 540p at the same number of bytes. */
+const MIN_720_BPS = 900_000;
+const FALLBACK_SHORT_EDGE = 540;
 const MIN_VIDEO_BPS = 300_000;
 /** Leave headroom for MP4 overhead and the encoder's bitrate estimate. */
 const SIZE_SAFETY = 0.76;
@@ -60,14 +69,13 @@ function even(value: number) {
 }
 
 /**
- * Pick the largest frame the bitrate can actually support. Below roughly
- * 1 Mbps a 1080p frame turns to mush, so long clips step down instead of
- * pretending to be high definition.
+ * Size the frame from the short edge, so portrait clips (the common case here)
+ * keep their full 720×1280 shape instead of being squashed to a 720-tall box.
+ * Long clips step down to 540 only when the byte budget cannot pay for 720p.
  */
 function frameFor(width: number, height: number, bitrate: number) {
-  const limit = bitrate >= 2_200_000 ? 1080 : bitrate >= 1_000_000 ? 720 : 540;
-  const maxWidth = Math.round((limit * 16) / 9);
-  const scale = Math.min(1, maxWidth / width, limit / height);
+  const shortEdge = bitrate >= MIN_720_BPS ? ENCODE_SHORT_EDGE : FALLBACK_SHORT_EDGE;
+  const scale = Math.min(1, shortEdge / Math.min(width, height));
   return { width: even(width * scale), height: even(height * scale) };
 }
 
@@ -119,7 +127,7 @@ async function makeEncoding(
 }
 
 /**
- * Re-encode a local file to H.264 MP4 at up to 1080p, sized to fit maxBytes.
+ * Re-encode a local file to H.264 MP4 at up to 720p, sized to fit maxBytes.
  * Throws CompressionUnsupportedError when the browser has no usable decoder or
  * encoder, so the caller can explain the fallback rather than send a file the
  * server will reject.
@@ -173,9 +181,15 @@ export async function compressVideo(
   aborted(signal);
 
   const budget = Math.max(128 * 1024, Math.floor(maxBytes * SIZE_SAFETY));
-  const totalBps = (budget * 8) / duration;
-  let bitrate = Math.round(
-    Math.min(MAX_VIDEO_BPS, Math.max(MIN_VIDEO_BPS, totalBps - (audioTrack ? AUDIO_BUDGET_BPS : 0))),
+  const audioBps = audioTrack ? AUDIO_BUDGET_BPS : 0;
+  const affordable = (budget * 8) / duration - audioBps;
+  // A source that is already leaner than the 720p ceiling is matched rather
+  // than beaten, so re-encoding can only ever shrink the upload.
+  const sourceRate = (file.size * 8) / duration - audioBps;
+  // Short clips stop at the 720p ceiling rather than spending bytes nobody
+  // can see; long clips are pushed by the size budget instead.
+  const bitrate = Math.round(
+    Math.max(MIN_VIDEO_BPS, Math.min(PREFERRED_VIDEO_BPS, affordable, sourceRate)),
   );
   const size = frameFor(sourceWidth, sourceHeight, bitrate);
 
@@ -249,9 +263,9 @@ export async function compressVideo(
   // make one leaner pass rather than letting the upload fail at the last step.
   if (buffer.byteLength > maxBytes) {
     aborted(signal);
-    bitrate = Math.max(MIN_VIDEO_BPS, Math.round(bitrate * 0.62));
+    const leaner = Math.max(MIN_VIDEO_BPS, Math.round(bitrate * 0.62));
     onProgress?.(0, 'Making the file a little smaller…');
-    buffer = await run(bitrate);
+    buffer = await run(leaner);
   }
   if (buffer.byteLength > maxBytes) {
     throw new Error(

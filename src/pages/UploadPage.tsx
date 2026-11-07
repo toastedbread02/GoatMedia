@@ -7,6 +7,7 @@ import { useConfig } from '../lib/config.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { formatBytes, formatDuration } from '../lib/format.ts';
 import { capturePoster, resizePhoto } from '../lib/image.ts';
+import { shouldReencode } from '../lib/videoTarget.ts';
 import { Icon } from '../components/Icon.tsx';
 import { StatusTag } from '../components/StatusTag.tsx';
 
@@ -178,10 +179,9 @@ export function UploadPage() {
       }
       const maxBytes = limits.maxVideoMb * 1024 * 1024;
 
-      // Files that already fit are left untouched: re-encoding costs time and a
-      // little quality, so it is only worth doing when the server would refuse
-      // the original.
-      if (file.size <= maxBytes) {
+      // Clips already at 720p or smaller, and inside the byte limit, are kept
+      // exactly as recorded: re-encoding them would cost time and quality.
+      if (!shouldReencode(width, height, file.size, maxBytes)) {
         setPreparing('Grabbing a preview frame…');
         const shot = duration !== null ? await capturePoster(file, duration) : { poster: null, width, height };
         if (probeId.current !== checked) return;
@@ -242,14 +242,38 @@ export function UploadPage() {
         if (probeId.current !== checked) return;
         setCompressing(null);
         compressionAbort.current = null;
-        URL.revokeObjectURL(previewUrl);
-        setVideo(null);
         setPreparing(null);
 
         if (compressError instanceof Error && compressError.name === 'CompressionCanceledError') {
           setCompressionNote(null);
           return;
         }
+
+        // Failing to shrink a file that already fits the upload limit should
+        // not cost the post, so the original goes through untouched.
+        if (file.size <= maxBytes) {
+          setPreparing('Grabbing a preview frame…');
+          const shot =
+            duration !== null ? await capturePoster(file, duration) : { poster: null, width, height };
+          if (probeId.current !== checked) return;
+          setVideo({
+            file,
+            previewUrl,
+            duration,
+            width: shot.width || width,
+            height: shot.height || height,
+            poster: shot.poster,
+          });
+          setCompressionNote(
+            'This device could not shrink that clip, so the original was kept. It still plays fine.',
+          );
+          setPreparing(null);
+          return;
+        }
+
+        URL.revokeObjectURL(previewUrl);
+        setVideo(null);
+
         const reason =
           compressError instanceof Error ? compressError.message : 'That clip could not be compressed.';
         setFileError(
@@ -573,8 +597,8 @@ export function UploadPage() {
                 <span>
                   <strong>Video</strong>
                   <span className="field__hint">
-                    One clip, up to {durationLimit}. Large files are compressed on this device to fit{' '}
-                    {limits.maxVideoMb} MB before upload.
+                    One clip, up to {durationLimit}. Clips bigger than 720p are shrunk on this
+                    device, and kept to {limits.maxVideoMb} MB before upload.
                   </span>
                 </span>
               </label>

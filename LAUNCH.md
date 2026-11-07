@@ -88,7 +88,7 @@ Nobody clicks a paragraph in a group chat. One line, one link.
 - **Ask for one specific thing.** "Tell me if the upload flow breaks on your phone" gets
   replies; "feedback welcome" does not.
 - **Share the build story somewhere technical.** The moderation queue, the
-  recommendation weights and the in-browser 1080p compression are genuinely interesting
+  recommendation weights and the in-browser 720p compression are genuinely interesting
   to developers, and that audience is more likely to make an account.
 
 ## What not to do
