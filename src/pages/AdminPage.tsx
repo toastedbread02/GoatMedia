@@ -70,6 +70,8 @@ export function AdminPage() {
   useDocumentTitle('Moderation');
   const { user, loading, refresh: refreshSession } = useAuth();
   const config = useConfig();
+  // The limit is a server setting; 3 is only what the app assumes before it loads.
+  const warningLimit = config?.limits.warningLimit ?? 3;
   const { notify } = useToast();
   const isAdmin = user?.role === 'admin';
   const [searchParams] = useSearchParams();
@@ -710,7 +712,9 @@ export function AdminPage() {
                   </div>
                   <div>
                     <dt>Warnings</dt>
-                    <dd>{selectedAccount.warningCount} of 3</dd>
+                    <dd>
+                      {selectedAccount.warningCount} of {warningLimit}
+                    </dd>
                   </div>
                   <div>
                     <dt>Status</dt>
@@ -878,8 +882,8 @@ export function AdminPage() {
                         placeholder="What they did, in one sentence. This is emailed to them."
                       />
                       <p className="field__hint">
-                        The warning is emailed with an appeal link. The third active warning suspends the account
-                        automatically.
+                        The warning is emailed with an appeal link. The warning that reaches {warningLimit} of{' '}
+                        {warningLimit} suspends the account automatically.
                       </p>
                     </div>
                     <div className="form-actions">

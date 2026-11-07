@@ -168,6 +168,7 @@ async function run() {
   ok(config.body.categories.length === 6, 'six categories');
   ok(config.body.limits.maxVideoMb === 25, 'config advertises the video limit');
   ok(config.body.limits.maxDurationSeconds === 180, 'videos are limited to three minutes');
+  ok(config.body.limits.warningLimit === 3, 'the warning limit is served to the app');
   ok(config.body.adminClaimable === true, 'a fresh server reports the moderator role as claimable');
 
   console.log('\n[accounts]');

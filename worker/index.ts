@@ -16,6 +16,7 @@ import {
   moderation,
   postReportReasons,
   rejectionReasons,
+  safety,
 } from './config';
 import {
   deleteAvatar,
@@ -139,6 +140,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
           maxBioLength: limits.maxBioLength,
           maxCommentsPerMinute: limits.maxCommentsPerMinute,
           minAge: limits.minAge,
+          warningLimit: safety.warningLimit,
         },
         categories,
         moderation,

@@ -143,6 +143,8 @@ export interface AppConfigDTO {
     maxCaptionLength: number;
     maxCommentsPerMinute: number;
     minAge: number;
+    /** Warnings before an account is suspended automatically. */
+    warningLimit: number;
   };
   categories: Category[];
   moderation: 'manual';

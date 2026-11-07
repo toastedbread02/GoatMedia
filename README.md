@@ -174,7 +174,7 @@ own account are protected.
 
 ```bash
 npm run typecheck     # app + Worker
-npm run api:check     # 235 checks: auth, age gate, privacy, moderation, shared roles, feeds, media, streaming, CORS, gore filter, warnings, appeals
+npm run api:check     # 236 checks: auth, age gate, privacy, moderation, shared roles, feeds, media, streaming, CORS, gore filter, warnings, appeals
 API_ORIGIN=https://goatmedia-api.dominikkoba22.workers.dev node scripts/live-check.mjs
 ```
 
