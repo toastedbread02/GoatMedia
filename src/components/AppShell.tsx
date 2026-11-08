@@ -396,34 +396,57 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
 
+        {/* Icons only, with the upload raised in the middle: the labels live on
+            as accessible names so a screen reader still hears where each one
+            goes. */}
         <nav className="tabbar" aria-label="Mobile navigation">
-          {navItems.map((item) => (
+          {navItems.slice(0, 2).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
+              aria-label={item.label}
               className={({ isActive }) => `tablink${isActive ? ' is-active' : ''}`}
             >
               <span className="tablink__icon">
-                <Icon name={item.icon} size={21} />
+                <Icon name={item.icon} size={22} />
               </span>
-              {item.label}
+              <span className="tablink__label">{item.label}</span>
             </NavLink>
           ))}
-          <NavLink to={user ? '/upload' : '/login?next=/upload'} className={({ isActive }) => `tablink${isActive ? ' is-active' : ''}`}>
+          <NavLink
+            to={user ? '/upload' : '/login?next=/upload'}
+            aria-label="Upload"
+            className={({ isActive }) => `tablink tablink--upload${isActive ? ' is-active' : ''}`}
+          >
             <span className="tablink__icon">
-              <Icon name="upload" size={21} />
+              <Icon name="upload" size={22} />
             </span>
-            Upload
+            <span className="tablink__label">Upload</span>
           </NavLink>
+          {navItems.slice(2).map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              aria-label={item.label}
+              className={({ isActive }) => `tablink${isActive ? ' is-active' : ''}`}
+            >
+              <span className="tablink__icon">
+                <Icon name={item.icon} size={22} />
+              </span>
+              <span className="tablink__label">{item.label}</span>
+            </NavLink>
+          ))}
           <NavLink
             to={user ? `/u/${user.username}` : '/login'}
+            aria-label="Profile"
             className={({ isActive }) => `tablink${isActive ? ' is-active' : ''}`}
           >
             <span className="tablink__icon">
-              <Icon name="user" size={21} />
+              <Icon name="user" size={22} />
             </span>
-            Profile
+            <span className="tablink__label">Profile</span>
           </NavLink>
         </nav>
       </div>

@@ -2391,7 +2391,9 @@ ol {
 @media (max-width: 1023px) {
   :root {
     --chrome-top: 56px;
-    --chrome-bottom: 58px;
+    /* Taller than the icons need, to hold the upload button that sits proud of
+       the rest without poking up over the clip. */
+    --chrome-bottom: 66px;
   }
   body {
     font-size: 14.5px;
@@ -2410,8 +2412,8 @@ ol {
     display: block;
   }
   .main {
-    height: calc(100dvh - 56px);
-    padding-bottom: calc(58px + env(safe-area-inset-bottom));
+    height: calc(100dvh - var(--chrome-top));
+    padding-bottom: calc(var(--chrome-bottom) + env(safe-area-inset-bottom));
     overflow-y: auto;
   }
   .topbar {
@@ -2439,7 +2441,7 @@ ol {
     right: 0;
     bottom: 0;
     z-index: 45;
-    height: calc(58px + env(safe-area-inset-bottom));
+    height: calc(var(--chrome-bottom) + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
     background: var(--surface);
     border-top: 1px solid var(--line);
@@ -2463,6 +2465,41 @@ ol {
   .tablink__icon {
     position: relative;
   }
+  /* Icons carry the bar; the names stay in the DOM for screen readers. */
+  .tablink__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .tablink--upload {
+    flex: 0 0 64px;
+  }
+  .tablink--upload .tablink__icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 13px;
+    background: var(--accent);
+    color: #fffdf8;
+    /* The ring is the bar's own colour, so the button reads as raised rather
+       than pasted on. */
+    box-shadow: 0 0 0 4px var(--surface);
+    transform: translateY(-7px);
+    transition: transform 120ms var(--ease-out), background-color var(--dur-1) var(--ease-out);
+  }
+  .tablink--upload:active .tablink__icon {
+    transform: translateY(-7px) scale(0.97);
+  }
+  .tablink--upload.is-active .tablink__icon {
+    background: var(--accent-strong, var(--accent));
+  }
   .tablink__badge {
     position: absolute;
     top: -3px;
@@ -2473,7 +2510,7 @@ ol {
     background: var(--accent);
   }
   .feed-page {
-    height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom));
+    height: calc(100dvh - var(--chrome-top) - var(--chrome-bottom) - env(safe-area-inset-bottom));
   }
   .feed-overlay {
     padding: 14px 10px 52px;
