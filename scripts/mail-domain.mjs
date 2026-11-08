@@ -1,13 +1,15 @@
-// Writes the is-a.dev record files that authenticate goatmedia.is-a.dev as a
-// Mailjet sending domain, and checks whether they are live.
+// Writes the is-a.dev record files that authenticate a domain as a Mailjet
+// sending domain, prints the same records for any other DNS host, and checks
+// whether they are live.
 //
-//   node scripts/mail-domain.mjs --dkim "k=rsa; p=MIIBIjAN..."
-//   node scripts/mail-domain.mjs --token "abc123..." --token-name mailjet._abc123
-//   node scripts/mail-domain.mjs --verify
+//   node scripts/mail-domain.mjs --domain example.com --print \
+//     --dkim "k=rsa; p=MIIBIjAN..." --token "abc123" --token-name "mailjet._abc123"
 //
-// The values come from Mailjet: Senders & Domains -> goatmedia.is-a.dev -> the
-// gear icon -> Setup SPF/DKIM Authentication. The DKIM key is a public key, so
-// it is not a secret; the private half never leaves Mailjet.
+//   node scripts/mail-domain.mjs --domain example.com --verify
+//
+// The values come from Mailjet: Senders & Domains -> the domain -> the gear
+// icon -> Setup SPF/DKIM Authentication. The DKIM key is a public key, so it is
+// not a secret; the private half never leaves Mailjet.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -22,55 +24,85 @@ function has(name) {
 
 const domain = flag('domain') || 'goatmedia.is-a.dev';
 const outDir = flag('out') || join('domain', 'is-a-dev', 'mail');
+const dkim = typeof flag('dkim') === 'string' ? flag('dkim') : null;
+const token = typeof flag('token') === 'string' ? flag('token') : null;
+const tokenNameRaw = typeof flag('token-name') === 'string' ? flag('token-name') : null;
 
-// goatmedia.is-a.dev -> goatmedia. The is-a.dev schema names the file after the
-// part before .is-a.dev, and nested names use dots, so every record below
-// becomes its own file.
-const label = domain.replace(/\.is-a\.dev$/, '');
-if (label === domain) {
-  console.error(`Expected a *.is-a.dev domain, got ${domain}`);
-  process.exit(1);
+// is-a.dev takes one JSON file per record name, and the name is the label on its
+// own. Every other host wants name + type + value pasted into a panel, so the
+// file mode only applies to is-a.dev and --print covers the rest.
+const isADev = domain.endsWith('.is-a.dev');
+const label = isADev ? domain.slice(0, -'.is-a.dev'.length) : null;
+
+const dkimDns = `mailjet._domainkey.${domain}`;
+
+/** Mailjet shows the ownership name fully qualified, sometimes with a dot. */
+function trimDomain(name) {
+  return String(name)
+    .replace(/\.$/, '')
+    .replace(new RegExp(`\\.?${domain.replace(/\./g, '\\.')}$`), '');
 }
 
-// is-a.dev names the file after the label only, but DNS needs the whole name,
-// so keep both: `file` for the JSON path, `dns` for the lookup.
-const dkimName = { file: `mailjet._domainkey.${label}`, dns: `mailjet._domainkey.${domain}` };
-const dkim = flag('dkim');
-const token = flag('token');
-const tokenName = flag('token-name');
+const tokenName = tokenNameRaw ? trimDomain(tokenNameRaw) : null;
+const tokenDns = tokenName ? `${tokenName}.${domain}` : null;
 
 function usage() {
   console.log(`Mailjet domain authentication for ${domain}
 
 Add the domain in Mailjet first (Senders & Domains -> Add domain). It shows two
-TXT records, and both belong in is-a.dev as their own file:
+TXT records:
 
-  1. ownership:  ${tokenName || 'mailjet._<token>'}   value: the ownership token
-  2. DKIM:       ${dkimName.dns}   value: k=rsa; p=...
+  1. ownership:  ${tokenName || 'mailjet._<token>'}
+  2. DKIM:       ${dkimDns}
+                 value: k=rsa; p=...
 
-Then:
+Then either write is-a.dev files:
 
   node scripts/mail-domain.mjs --dkim "<DKIM value>"
   node scripts/mail-domain.mjs --token "<token>" --token-name "<name Mailjet showed>"
-  node scripts/mail-domain.mjs --verify
 
-There is no SPF file. The apex of ${domain} is a CNAME to GitHub Pages, and DNS
-forbids a TXT record beside a CNAME, so SPF can only be skipped here. DKIM is
-what carries DMARC alignment for Mailjet anyway.
+or print the records for any other DNS host:
+
+  node scripts/mail-domain.mjs --domain ${domain} --print \\
+    --dkim "<DKIM value>" --token "<token>" --token-name "<name Mailjet showed>"
+
+and check propagation afterwards:
+
+  node scripts/mail-domain.mjs --domain ${domain} --verify
 `);
 }
 
+function joinTxt(data) {
+  // Values arrive quoted, and long keys are split into several strings that must
+  // be glued back together with no separator.
+  return (data.match(/"([^"]*)"/g) || []).map((s) => s.slice(1, -1)).join('');
+}
+
+/**
+ * Two resolvers, not one. A record added a minute ago can still be answered as
+ * "no such name" from a negative cache, and believing that single answer sends
+ * you hunting for a mistake that was never made.
+ */
 async function readTxt(name) {
-  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=TXT`;
-  const res = await fetch(url, { headers: { accept: 'application/dns-json' } });
-  if (!res.ok) throw new Error(`DNS lookup failed with HTTP ${res.status}`);
-  const body = await res.json();
-  const answers = (body.Answer || []).filter((a) => a.type === 16);
-  // Values arrive quoted, and long keys are split into several strings that
-  // must be glued back together with no separator.
-  return answers.map((a) =>
-    (a.data.match(/"([^"]*)"/g) || []).map((s) => s.slice(1, -1)).join(''),
-  );
+  const urls = [
+    `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=TXT`,
+    `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=TXT`,
+  ];
+  const seen = new Map();
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers: { accept: 'application/dns-json' } });
+      if (!res.ok) continue;
+      const body = await res.json();
+      for (const answer of (body.Answer || []).filter((a) => a.type === 16)) {
+        const value = joinTxt(answer.data);
+        seen.set(value, (seen.get(value) ?? 0) + 1);
+      }
+    } catch {
+      /* one resolver being unreachable is not a verdict */
+    }
+  }
+  return [...seen.keys()];
 }
 
 function recordFile(records) {
@@ -82,43 +114,55 @@ function recordFile(records) {
 }
 
 async function writeRecord(name, value) {
+  if (!isADev) {
+    console.error(`${domain} is not an is-a.dev domain, so there is no file to write. Use --print.`);
+    process.exit(1);
+  }
   await mkdir(outDir, { recursive: true });
-  const path = join(outDir, `${name.file}.json`);
+  const path = join(outDir, `${name}.json`);
   await writeFile(path, recordFile([value]), 'utf8');
   console.log(`wrote ${path}`);
 }
 
+if (has('print')) {
+  const rows = [];
+  if (token) rows.push({ purpose: 'Mailjet ownership check', name: tokenDns ?? 'mailjet._<token>.domain', type: 'TXT', value: token });
+  if (dkim) rows.push({ purpose: 'DKIM signing key', name: dkimDns, type: 'TXT', value: dkim });
+  // Only meaningful when the apex is not already a CNAME; the verify pass says
+  // which case this is. DKIM alone satisfies DMARC either way.
+  rows.push({
+    purpose: 'SPF (optional, and impossible if the apex is a CNAME)',
+    name: domain,
+    type: 'TXT',
+    value: 'v=spf1 include:spf.mailjet.com ~all',
+  });
+  for (const row of rows) {
+    console.log(`\n${row.purpose}\n  name:  ${row.name}\n  type:  ${row.type}\n  value: ${row.value}`);
+  }
+  console.log('');
+}
+
 if (dkim) {
-  if (typeof dkim !== 'string' || !dkim.includes('p=')) {
+  if (!dkim.includes('p=')) {
     console.error('The DKIM value should look like "k=rsa; p=MIIBIjAN...". Copy it whole.');
     process.exit(1);
   }
-  await writeRecord(dkimName, dkim);
+  if (!has('print')) await writeRecord(`mailjet._domainkey.${label}`, dkim);
 }
 
-// Mailjet shows the ownership name fully qualified, sometimes with a trailing
-// dot; is-a.dev wants the label on its own.
-function trimDomain(name) {
-  return String(name)
-    .replace(/\.$/, '')
-    .replace(new RegExp(`\\.?${domain.replace(/\./g, '\\.')}$`), '');
-}
-
-if (token) {
-  if (!tokenName || tokenName === true) {
+if (token && !has('print')) {
+  if (!tokenName) {
     console.error('Pass --token-name exactly as Mailjet shows it, e.g. mailjet._a1b2c3d4');
     process.exit(1);
   }
-  const short = trimDomain(tokenName);
-  await writeRecord({ file: short, dns: `${short}.${domain}` }, token);
+  // The ownership name belongs under our subdomain, not at the is-a.dev root, so
+  // the file name has to carry both labels: mailjet._<token>.goatmedia.json.
+  await writeRecord(`${tokenName}.${label}`, token);
 }
 
 if (has('verify')) {
-  const checks = [{ name: dkimName.dns, want: dkim }];
-  if (tokenName && tokenName !== true) {
-    const short = trimDomain(tokenName);
-    checks.push({ name: `${short}.${domain}`, want: token });
-  }
+  const checks = [{ name: dkimDns, want: dkim }];
+  if (tokenDns) checks.push({ name: tokenDns, want: token });
   let missing = 0;
   for (const check of checks) {
     const values = await readTxt(check.name);
@@ -127,10 +171,15 @@ if (has('verify')) {
       missing += 1;
       continue;
     }
-    const hit = check.want && typeof check.want === 'string' ? values.includes(check.want) : true;
-    console.log(`${check.name}\n  ${hit ? 'published' : 'published, but not the value given'}: ${values[0].slice(0, 48)}${values[0].length > 48 ? '...' : ''}`);
+    const hit = check.want ? values.includes(check.want) : true;
+    console.log(
+      `${check.name}\n  ${hit ? 'published' : 'published, but not the value given'}: ${values[0].slice(0, 48)}${values[0].length > 48 ? '...' : ''}`,
+    );
     if (!hit) missing += 1;
   }
+  const apexTxt = await readTxt(domain).catch(() => []);
+  const spf = apexTxt.find((value) => value.startsWith('v=spf1'));
+  console.log(`${domain}\n  ${spf ? `SPF: ${spf}` : 'no apex SPF record (optional)'}`);
   const apex = await fetch(
     `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=CNAME`,
     { headers: { accept: 'application/dns-json' } },
@@ -143,4 +192,4 @@ if (has('verify')) {
   process.exit(missing === 0 ? 0 : 1);
 }
 
-if (!dkim && !token) usage();
+if (!dkim && !token && !has('print')) usage();

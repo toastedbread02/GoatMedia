@@ -89,9 +89,11 @@ is-a.dev now asks for websites that are "software development related" and
 non-commercial, and [its repository forbids agent-written pull
 requests](https://github.com/is-a-dev/register/blob/main/AGENTS.md), so the
 correct record for `goatmedia.is-a.dev` is prepared in
-[domain/is-a-dev](domain/is-a-dev/README.md) for you to submit yourself. That
-folder also lists the free services with no subject rule, such as FreeDNS and
-DuckDNS.
+[domain/is-a-dev](domain/is-a-dev/README.md) for you to submit yourself, along
+with the PR description and the DKIM files that let the Worker send its own mail
+from that name. Services that only let you point a name at an IP or a host —
+FreeDNS, DuckDNS and the like — cannot hold a DKIM key, because it lives at a
+nested name beginning with `_`.
 
 Whichever name you end up with, the switch is one command:
 

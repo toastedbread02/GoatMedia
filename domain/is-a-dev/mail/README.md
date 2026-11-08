@@ -7,7 +7,7 @@ treats unauthenticated mail as a spam candidate.
 
 The fix is DKIM under a domain we control. That domain does not exist yet.
 
-## The blocker, stated plainly
+## The current state
 
 ```bash
 curl -sI https://goatmedia.is-a.dev/ | grep -i location
@@ -132,12 +132,19 @@ a TXT record at `mailjet._domainkey.<domain>` — a *nested* name, not the apex.
 That rules out most free dynamic-DNS services, DuckDNS included, which only let
 you set TXT on the name itself.
 
-The options that can do it: is-a.dev (approval, content rule), FreeDNS at
-[afraid.org](https://freedns.afraid.org) (immediate, shared parent domains such as
-`us.to`), or the free `eu.org` registration (full DNS control, no content rule,
-but approval takes weeks). A real domain for roughly $10–13 a year avoids the
-question entirely, and is the only version of this that also fixes the bounce on
-replies.
+Services that host DNS for you can do it: is-a.dev does (it already holds files
+like `domains/zmail._domainkey.fred-blaise.json`), and so does the free `eu.org`
+registration, which gives full zone control but takes weeks to approve.
+
+Services that only let you set a TXT on the name itself cannot, however generous
+they look. FreeDNS at [afraid.org](https://freedns.afraid.org) answers
+`Creation of records beginning with '_' are presently restricted to the domain
+owner only` on its shared domains, which rules out both the DKIM name and the
+Mailjet ownership name. Any provider that asks you to pick from existing records
+rather than create a name of your choosing will fail for the same reason.
+
+A domain you own — even a cheap one — avoids the question entirely, and is the
+only version of this that also fixes the bounce on replies.
 
 ## Known limitation
 
