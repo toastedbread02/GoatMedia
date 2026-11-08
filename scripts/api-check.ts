@@ -72,7 +72,7 @@ let aiProbability = 0;
 const aiCalls: number[] = [];
 
 /** Every message the Worker tried to email, captured instead of sent. */
-const outbox: { to: string; subject: string; text: string }[] = [];
+const outbox: { to: string; subject: string; text: string; html: string }[] = [];
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -88,6 +88,11 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
         payload.content?.find((part: { type: string }) => part.type === 'text/plain')?.value ??
         payload.textContent ??
         message?.TextPart ??
+        '',
+      html:
+        payload.content?.find((part: { type: string }) => part.type === 'text/html')?.value ??
+        payload.htmlContent ??
+        message?.HTMLPart ??
         '',
     });
     return new Response(url.includes('mailjet') ? JSON.stringify({ Messages: [{ Status: 'success' }] }) : '', { status: 202 });
@@ -1333,6 +1338,14 @@ async function run() {
   ok(manual.body.banned === false, 'one manual warning does not suspend the account', manual.body);
   const manualMail = [...outbox].reverse().find((mail) => mail.subject.includes('warning'));
   ok(Boolean(manualMail && manualMail.text.includes('six times')), 'the manual warning is emailed with its reason');
+  ok(
+    Boolean(manualMail?.html.includes('/mail-icon.png')) && Boolean(manualMail?.html.includes('role="presentation"')),
+    'the notice is branded HTML with the product mark, not a bare paragraph',
+  );
+  ok(
+    Boolean(manualMail?.html.includes('Appeal this warning')) && Boolean(manualMail?.text.includes('Community guidelines')),
+    'both parts of the message carry the action and the policy links',
+  );
 
   const warnedProfile = await call('/api/users/boaz');
   ok(warnedProfile.status === 200, 'a warned account stays public');

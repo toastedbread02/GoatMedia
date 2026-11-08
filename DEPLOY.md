@@ -169,7 +169,10 @@ suspension always requires a written reason, because that sentence is what the
 person reads and appeals against.
 
 Mail is the one thing a Worker cannot do by itself. Any of these works, and all
-three let you verify a single sender address without owning a domain:
+three let you verify a single sender address without owning a domain — enough to
+send, though such mail is unauthenticated, because a freemail domain's DMARC
+record does not vouch for the provider. That is the difference between arriving
+and arriving in the inbox; see *Authenticating the sending domain* below.
 
 | Provider | Free allowance | Variables |
 | --- | --- | --- |
@@ -192,6 +195,15 @@ npx wrangler secret put MAIL_FROM_NAME     # optional, defaults to GoatMedia
 
 Secrets apply to the deployed Worker immediately; no redeploy is needed.
 
+The notices are built as email HTML — tables, inline styles, a details panel for
+the reason, and one button — plus a matching plain-text part for clients that
+show no HTML. The product mark is `public/mail-icon.png`, served from the site,
+so the Pages build has to be deployed for the image to appear. A dark-mode
+stylesheet keeps the card readable in clients that honour it; Gmail mostly does
+not, and the light version is designed to stand alone. `MAIL_REPLY_TO` is
+optional and sets the Reply-To header when the sender address is not a mailbox
+anyone reads.
+
 Until a key is set, notices are composed and logged as `skipped`, and the in-app
 side of the event still happens, so moderation never silently depends on mail.
 Check delivery after a test suspension:
@@ -199,6 +211,37 @@ Check delivery after a test suspension:
 ```bash
 npx wrangler d1 execute goatmedia --remote \
   --command "SELECT kind, status, error FROM emails ORDER BY created_at DESC LIMIT 5"
+```
+
+### Authenticating the sending domain
+
+A verified single sender gets the mail delivered. Authenticating a domain gets it
+read. Mailjet signs with a key published under `mailjet._domainkey.<domain>`, and
+when that domain is the From domain the DKIM signature aligns, which is what
+DMARC is actually looking for.
+
+The catch is that it needs DNS records, so it needs a domain you control — a
+`gmail.com` From address can never be authenticated, by design. `goatmedia.is-a.dev`
+is the intended one, but it is not registered yet, and until that is-a.dev pull
+request is merged there are no records to point at. The whole procedure, the two
+TXT records, and the generator for them are in
+[domain/is-a-dev/mail/README.md](domain/is-a-dev/mail/README.md).
+
+Two things are easy to get wrong:
+
+- **No SPF record on this domain.** The apex is a CNAME to GitHub Pages, and a
+  CNAME cannot coexist with TXT. DKIM alone carries alignment, because Mailjet
+  sends with its own envelope domain.
+- **Do not change `MAIL_FROM` before DKIM is live.** `is-a.dev` publishes
+  `p=reject` with no `sp` tag, so subdomains inherit reject. Mail claiming to be
+  `@goatmedia.is-a.dev` without an aligned signature is rejected outright, while
+  the `emails` table still reads `sent` because Mailjet accepted it. The proof is
+  the recipient's `Authentication-Results` header: `dkim=pass
+  header.d=goatmedia.is-a.dev`.
+
+```bash
+node scripts/mail-domain.mjs --dkim "k=rsa; p=MIIBIjAN..."   # writes the is-a.dev file
+node scripts/mail-domain.mjs --verify                        # checks public DNS
 ```
 
 `SITE_ORIGIN` in `wrangler.jsonc` is where appeal links point. It is currently

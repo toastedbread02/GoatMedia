@@ -12,7 +12,7 @@
 
 import { Env, now, randomToken, sha256, uid } from './lib';
 import { safety } from './config';
-import { appealUrl, banEmail, decisionEmail, sendMail, warningEmail } from './email';
+import { appealUrl, banEmail, decisionEmail, mailSite, sendMail, warningEmail } from './email';
 
 export interface ScreenImage {
   bytes: ArrayBuffer | Uint8Array;
@@ -201,7 +201,7 @@ export async function banAccount(
   const email = await accountEmail(env, options.userId);
   let mailStatus: 'sent' | 'failed' | 'skipped' = 'skipped';
   if (email) {
-    const content = banEmail({ reason: options.reason, appealUrl: appealUrl(env, appeal.token) });
+    const content = banEmail({ reason: options.reason, appealUrl: appealUrl(env, appeal.token), site: mailSite(env) });
     mailStatus = await sendMail(env, {
       to: email,
       subject: content.subject,
@@ -270,6 +270,7 @@ export async function addWarning(
       count,
       limit,
       appealUrl: appealUrl(env, appeal.token),
+      site: mailSite(env),
     });
     mailStatus = await sendMail(env, {
       to: email,
@@ -336,7 +337,12 @@ export async function resolveAppeal(
 
   const email = await accountEmail(env, options.appeal.user_id);
   if (email) {
-    const content = decisionEmail({ kind: options.appeal.kind, accepted: options.accepted, note: options.note });
+    const content = decisionEmail({
+      kind: options.appeal.kind,
+      accepted: options.accepted,
+      note: options.note,
+      site: mailSite(env),
+    });
     await sendMail(env, {
       to: email,
       subject: content.subject,

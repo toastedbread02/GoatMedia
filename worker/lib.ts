@@ -30,6 +30,8 @@ export interface Env {
   MAILJET_SECRET_KEY?: string;
   MAIL_FROM?: string;
   MAIL_FROM_NAME?: string;
+  /** Where replies should go when the sender address is not a mailbox. */
+  MAIL_REPLY_TO?: string;
 }
 
 export class HttpError extends Error {
