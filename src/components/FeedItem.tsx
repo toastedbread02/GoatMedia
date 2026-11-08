@@ -176,7 +176,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
           </div>
         )}
 
-        <div className="feed-more">
+        <div className="feed-options">
           <Popover
             label="Post options"
             trigger={
