@@ -16,6 +16,12 @@ interface PlayerProps {
   mutedByDefault?: boolean;
   /** Buffer this clip while it waits its turn, so it starts without a stall. */
   warm?: boolean;
+  /**
+   * Called on a double tap. When given, a single tap waits out the double-tap
+   * window before it plays or pauses, so the first tap of a double never stops
+   * the clip.
+   */
+  onDoubleTap?: () => void;
 }
 
 const MUTE_KEY = 'goatmedia:muted';
@@ -32,7 +38,15 @@ function applyMuted(muted: boolean) {
   localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
 }
 
-export function Player({ src, poster, active, className = '', onWatch, warm = false }: PlayerProps) {
+export function Player({
+  src,
+  poster,
+  active,
+  className = '',
+  onWatch,
+  warm = false,
+  onDoubleTap,
+}: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(false);
@@ -241,6 +255,44 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
     applyMuted(next);
   };
 
+  // Double tap to like. The single tap is held back for one window so the first
+  // half of a double does not pause the clip on its way to the second.
+  const tapTimer = useRef<number | null>(null);
+  const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (tapTimer.current !== null) window.clearTimeout(tapTimer.current);
+    };
+  }, []);
+
+  const handleTap = (event: React.MouseEvent<HTMLVideoElement>) => {
+    if (!onDoubleTap) {
+      togglePlay();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    if (tapTimer.current !== null) {
+      window.clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+      onDoubleTap();
+      const id = Date.now() + Math.random();
+      setBursts((current) => [...current, { id, x, y }]);
+      window.setTimeout(() => {
+        setBursts((current) => current.filter((burst) => burst.id !== id));
+      }, 820);
+      return;
+    }
+
+    tapTimer.current = window.setTimeout(() => {
+      tapTimer.current = null;
+      togglePlay();
+    }, 260);
+  };
+
   const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
   return (
@@ -252,10 +304,21 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
         poster={poster ?? undefined}
         playsInline
         preload={preloadMode}
-        onClick={togglePlay}
+        onClick={handleTap}
         muted={muted}
         aria-label="Goat video"
       />
+
+      {bursts.map((burst) => (
+        <span
+          key={burst.id}
+          className="stage-burst"
+          style={{ left: burst.x, top: burst.y }}
+          aria-hidden="true"
+        >
+          <Icon name="heart" size={92} filled />
+        </span>
+      ))}
 
       {waiting && !error ? (
         <div className="stage-loading">

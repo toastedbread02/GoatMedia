@@ -939,6 +939,40 @@ ol {
   height: 100%;
   object-fit: contain;
   background: var(--stage);
+  /* A double tap is a like, so the browser must not zoom the page on it. */
+  touch-action: manipulation;
+}
+
+/* Double-tap like: one heart where the finger landed, gone in under a second. */
+.stage-burst {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #fffdf8;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 12px rgba(10, 9, 7, 0.45));
+  animation: heart-burst 780ms var(--ease-out) forwards;
+}
+
+@keyframes heart-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.14);
+  }
+  34% {
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+  68% {
+    opacity: 1;
+    transform: translate(-50%, -60%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -86%) scale(0.92);
+  }
 }
 
 .feed-poster {

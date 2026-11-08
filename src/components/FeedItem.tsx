@@ -153,6 +153,10 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             poster={video.posterUrl}
             active={active}
             warm={index === activeIndex + 1}
+            onDoubleTap={() => {
+              // Already liked? Then the tap is just feedback, not another write.
+              if (!liked) void toggleLike();
+            }}
             onWatch={(stats: WatchStats) => {
               api
                 .post(`/api/videos/${video.id}/events`, {
