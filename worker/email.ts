@@ -1,9 +1,10 @@
 // Outgoing mail: ban notices, warning notices and appeal decisions.
 //
 // A Worker cannot deliver mail on its own, so this talks to whichever provider
-// has a key configured. SendGrid and Brevo both allow a free account with a
-// single verified sender address, which is the only option before the site has
-// a domain of its own. With no key the message is recorded as skipped and the
+// has a key configured. SendGrid, Brevo and Mailjet all allow a free account
+// with a single verified sender address, which is the only option before the
+// site has a domain of its own; Mailjet is the one that asks for the least
+// information at signup. With no key the message is recorded as skipped and the
 // in-app side of the same event still happens, so the moderation record stays
 // truthful about what was actually delivered.
 
@@ -108,19 +109,63 @@ async function sendViaBrevo(env: Env, mail: Mail) {
   }
 }
 
+async function sendViaMailjet(env: Env, mail: Mail) {
+  // Mailjet uses HTTP Basic auth with the public key as the username and the
+  // private key as the password, not a bearer token.
+  const credentials = btoa(`${env.MAILJET_API_KEY}:${env.MAILJET_SECRET_KEY}`);
+  const response = await fetch('https://api.mailjet.com/v3.1/send', {
+    method: 'POST',
+    headers: {
+      authorization: `Basic ${credentials}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      Messages: [
+        {
+          From: { Email: env.MAIL_FROM, Name: env.MAIL_FROM_NAME || 'GoatMedia' },
+          To: [{ Email: mail.to }],
+          Subject: mail.subject,
+          TextPart: mail.text,
+          HTMLPart: mail.html,
+        },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Mailjet ${response.status}: ${(await response.text()).slice(0, 180)}`);
+  }
+  // Mailjet answers 200 even when the message itself is refused (unverified
+  // sender, for instance), so the per-message verdict has to be read.
+  const body = (await response.json().catch(() => null)) as
+    | { Messages?: { Status?: string; Errors?: { ErrorMessage?: string }[] }[] }
+    | null;
+  const message = body?.Messages?.[0];
+  if (message?.Status === 'error') {
+    const detail = message.Errors?.map((entry) => entry.ErrorMessage).filter(Boolean).join('; ');
+    throw new Error(`Mailjet: ${(detail || 'message rejected').slice(0, 180)}`);
+  }
+}
+
 /**
  * Sends one message and records the outcome. Never throws: a failed email must
  * not undo a moderation decision that has already been written to the database.
  */
 export async function sendMail(env: Env, mail: Mail): Promise<'sent' | 'failed' | 'skipped'> {
-  const provider = env.SENDGRID_API_KEY ? 'sendgrid' : env.BREVO_API_KEY ? 'brevo' : null;
+  const provider = env.SENDGRID_API_KEY
+    ? 'sendgrid'
+    : env.BREVO_API_KEY
+      ? 'brevo'
+      : env.MAILJET_API_KEY && env.MAILJET_SECRET_KEY
+        ? 'mailjet'
+        : null;
   let status: 'sent' | 'failed' | 'skipped' = 'skipped';
   let error: string | null = null;
 
   if (provider && env.MAIL_FROM) {
     try {
       if (provider === 'sendgrid') await sendViaSendgrid(env, mail);
-      else await sendViaBrevo(env, mail);
+      else if (provider === 'brevo') await sendViaBrevo(env, mail);
+      else await sendViaMailjet(env, mail);
       status = 'sent';
     } catch (caught) {
       status = 'failed';

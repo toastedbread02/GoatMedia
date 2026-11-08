@@ -168,19 +168,29 @@ automatically. Moderators can warn by hand from the control center, and a
 suspension always requires a written reason, because that sentence is what the
 person reads and appeals against.
 
-Mail is the one thing a Worker cannot do by itself. Either provider works, both
-let you verify a single sender address without owning a domain:
+Mail is the one thing a Worker cannot do by itself. Any of these works, and all
+three let you verify a single sender address without owning a domain:
 
 | Provider | Free allowance | Variables |
 | --- | --- | --- |
+| Mailjet | 200 messages/day | `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAIL_FROM` |
 | Brevo | 300 messages/day | `BREVO_API_KEY`, `MAIL_FROM` |
 | SendGrid | 100 messages/day | `SENDGRID_API_KEY`, `MAIL_FROM` |
 
+Mailjet is the one that asks for the least at signup: a name, an email and a
+password, no company or phone. Brevo wants a company name, which for an
+individual project is simply your own name or the project's. Only one provider
+needs configuring; if several keys exist the order above is reversed (SendGrid
+first, then Brevo, then Mailjet), so remove the others rather than guess.
+
 ```bash
-npx wrangler secret put BREVO_API_KEY     # paste the key when prompted
-npx wrangler secret put MAIL_FROM         # the verified sender address
-npx wrangler secret put MAIL_FROM_NAME    # optional, defaults to GoatMedia
+npx wrangler secret put MAILJET_API_KEY     # Mailjet API key (username half)
+npx wrangler secret put MAILJET_SECRET_KEY  # Mailjet secret key (password half)
+npx wrangler secret put MAIL_FROM          # the verified sender address
+npx wrangler secret put MAIL_FROM_NAME     # optional, defaults to GoatMedia
 ```
+
+Secrets apply to the deployed Worker immediately; no redeploy is needed.
 
 Until a key is set, notices are composed and logged as `skipped`, and the in-app
 side of the event still happens, so moderation never silently depends on mail.
@@ -240,7 +250,7 @@ real multipart uploads and media streaming.
   checks on `clef-flash`; past that the filter stops answering and uploads queue
   for a person instead.
 - Cloudflare cannot send mail from a Worker, so ban and warning notices need a
-  free Brevo or SendGrid key (see above). Password resets still surface the link
+  free Mailjet, Brevo or SendGrid key (see above). Password resets still surface the link
   on screen, whatever provider is configured.
 - GitHub Pages is free for public repositories.
 

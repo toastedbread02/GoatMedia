@@ -185,7 +185,8 @@ and posts. It is a smoke test, not a load test.
 
 - **No email provider connected out of the box.** Ban notices, warning notices
   and appeal decisions are composed and logged either way, but nothing leaves the
-  building until `SENDGRID_API_KEY` or `BREVO_API_KEY` and `MAIL_FROM` are set.
+  building until `SENDGRID_API_KEY`, `BREVO_API_KEY` or a Mailjet key pair and
+  `MAIL_FROM` are set.
   Password reset links are still shown on screen instead of being emailed.
 - **Manual moderation is a human queue.** Roles can be shared, but a backlog is
   still a feature of the design, not a bug, and it has no SLA.

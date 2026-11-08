@@ -209,7 +209,7 @@ export function PrivacyPage() {
           a request to GitHub's servers.
         </li>
         <li>
-          <strong>An email provider</strong> (SendGrid or Brevo, depending on which is configured) delivers moderation
+          <strong>An email provider</strong> (Mailjet, Brevo or SendGrid, depending on which is configured) delivers moderation
           notices: warnings, suspensions, appeal decisions. It receives your email address and the contents of that
           message. Nothing else is sent through it. There is no newsletter and no marketing email.
         </li>

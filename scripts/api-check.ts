@@ -5,6 +5,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import worker from '../worker/index.ts';
+import { sendMail } from '../worker/email.ts';
 import type { Env } from '../worker/lib.ts';
 import { quotasForPage } from '../worker/recommend.ts';
 
@@ -77,14 +78,19 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url =
     typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
-  if (url.includes('sendgrid') || url.includes('brevo')) {
+  if (url.includes('sendgrid') || url.includes('brevo') || url.includes('mailjet')) {
     const payload = JSON.parse(String(init?.body ?? '{}'));
+    const message = payload.Messages?.[0];
     outbox.push({
-      to: payload.personalizations?.[0]?.to?.[0]?.email ?? payload.to?.[0]?.email ?? '',
-      subject: payload.subject ?? '',
-      text: payload.content?.find((part: { type: string }) => part.type === 'text/plain')?.value ?? payload.textContent ?? '',
+      to: payload.personalizations?.[0]?.to?.[0]?.email ?? payload.to?.[0]?.email ?? message?.To?.[0]?.Email ?? '',
+      subject: payload.subject ?? message?.Subject ?? '',
+      text:
+        payload.content?.find((part: { type: string }) => part.type === 'text/plain')?.value ??
+        payload.textContent ??
+        message?.TextPart ??
+        '',
     });
-    return new Response('', { status: 202 });
+    return new Response(url.includes('mailjet') ? JSON.stringify({ Messages: [{ Status: 'success' }] }) : '', { status: 202 });
   }
   return realFetch(input as never, init as never);
 }) as typeof fetch;
@@ -1337,6 +1343,26 @@ async function run() {
     body: JSON.stringify({ reason: 'Not the moderator' }),
   });
   ok(notWarned.status === 401, 'ordinary accounts cannot warn people');
+
+  // Mailjet is picked when it is the only provider configured, and a refusal
+  // that Mailjet reports inside a 200 response is still logged as failed.
+  const mailjetEnv = {
+    ...(env as unknown as Record<string, unknown>),
+    SENDGRID_API_KEY: undefined,
+    BREVO_API_KEY: undefined,
+    MAILJET_API_KEY: 'mailjet-public',
+    MAILJET_SECRET_KEY: 'mailjet-private',
+  } as unknown as Env;
+  const before = outbox.length;
+  const mailjetStatus = await sendMail(mailjetEnv, {
+    to: 'boaz@example.com',
+    subject: 'Mailjet routing probe',
+    text: 'probe',
+    html: '<p>probe</p>',
+    kind: 'warning',
+  });
+  ok(mailjetStatus === 'sent', 'Mailjet is used when it is the only provider configured', mailjetStatus);
+  ok(outbox.length === before + 1 && outbox[outbox.length - 1].subject === 'Mailjet routing probe', 'the Mailjet payload carries the message');
 
   console.log(`\n${checks - failures}/${checks} checks passed`);
   if (failures) process.exit(1);

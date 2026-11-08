@@ -25,6 +25,9 @@ export interface Env {
   /** Mail provider: whichever key is set is used. */
   SENDGRID_API_KEY?: string;
   BREVO_API_KEY?: string;
+  /** Mailjet needs both halves of its API key pair. */
+  MAILJET_API_KEY?: string;
+  MAILJET_SECRET_KEY?: string;
   MAIL_FROM?: string;
   MAIL_FROM_NAME?: string;
 }
