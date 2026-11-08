@@ -1077,14 +1077,6 @@ ol {
   transform: scale(0.97);
 }
 
-.stage-time {
-  font-size: 12px;
-  color: rgba(243, 237, 225, 0.78);
-  font-variant-numeric: tabular-nums;
-  flex: none;
-  padding: 0 2px;
-}
-
 .seekwrap {
   position: relative;
   height: 22px;
@@ -1139,65 +1131,6 @@ ol {
 
 .seekwrap__input:focus-visible + .seekwrap__knob {
   transform: translate(-50%, -50%) scale(1.2);
-}
-
-.volwrap {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex: none;
-}
-
-.volume-slider {
-  display: flex;
-  align-items: center;
-  width: 74px;
-  height: 28px;
-  padding: 0 5px;
-  cursor: pointer;
-  touch-action: none;
-}
-
-.volume-slider__rail {
-  position: relative;
-  height: 3px;
-  width: 100%;
-  border-radius: 2px;
-  background: rgba(255, 253, 248, 0.24);
-}
-
-.volume-slider__fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  border-radius: 2px;
-  background: #f5e9dc;
-}
-
-.volume-slider__knob {
-  position: absolute;
-  top: 50%;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #f5e9dc;
-  transform: translate(-50%, -50%);
-  transition: transform 120ms var(--ease-out);
-  will-change: left, transform;
-}
-
-.volume-slider.is-dragging .volume-slider__knob {
-  transform: translate(-50%, -50%) scaleX(1.12) scaleY(1.12);
-  transition: none;
-}
-
-.volume-slider__anchor {
-  position: absolute;
-  bottom: 50%;
-  left: 50%;
-  width: 1px;
-  height: 1px;
 }
 
 /* ------------------------------- feed details ----------------------------- */
@@ -1520,10 +1453,6 @@ ol {
 .feed-item .stage-controls {
   padding: 6px 10px 7px;
   background: rgba(12, 11, 9, 0.56);
-}
-
-.feed-item .stage-time {
-  display: none;
 }
 
 .feed-item .stage-controls__btn:hover {
@@ -2457,7 +2386,9 @@ ol {
   }
 }
 
-@media (max-width: 767px) {
+/* Tablets and phones in landscape get the same chrome as a phone: a bar along
+   the bottom and no rail. Anything wider keeps the rail on the left. */
+@media (max-width: 1023px) {
   :root {
     --chrome-top: 56px;
     --chrome-bottom: 58px;
@@ -2579,9 +2510,6 @@ ol {
     opacity: 1;
     transform: none;
     pointer-events: auto;
-  }
-  .volume-slider {
-    display: none;
   }
   .comments-panel {
     top: auto;

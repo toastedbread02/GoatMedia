@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon.tsx';
-import { formatDuration } from '../lib/format.ts';
 
 export interface WatchStats {
   watchSeconds: number;
@@ -20,106 +19,21 @@ interface PlayerProps {
 }
 
 const MUTE_KEY = 'goatmedia:muted';
-const VOLUME_KEY = 'goatmedia:volume';
+/** Fixed listening level now that there is no volume slider to set one. */
+const PLAYBACK_VOLUME = 0.85;
 
 function readMuted() {
-  const stored = localStorage.getItem(MUTE_KEY);
-  return stored === null ? true : stored === '1';
-}
-
-function readVolume() {
-  const stored = Number(localStorage.getItem(VOLUME_KEY));
-  return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 0.8;
+  // Sound is on for a first visit. Only a deliberate mute is remembered, and a
+  // browser that blocks unmuted autoplay falls back to muted silently.
+  return localStorage.getItem(MUTE_KEY) === '1';
 }
 
 function applyMuted(muted: boolean) {
   localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
 }
 
-function VolumeSlider({ value, onChange, label }: { value: number; onChange: (next: number) => void; label: string }) {
-  const rail = useRef<HTMLDivElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [visual, setVisual] = useState(value);
-
-  useEffect(() => {
-    if (!dragging) setVisual(value);
-  }, [value, dragging]);
-
-  const positionFromEvent = (clientX: number) => {
-    const element = rail.current;
-    if (!element) return { clamped: value, damped: value };
-    const rect = element.getBoundingClientRect();
-    const raw = rect.width ? (clientX - rect.left) / rect.width : 0;
-    const clamped = Math.min(1, Math.max(0, raw));
-    // Rubber band: past either end, movement is damped rather than ignored.
-    const damped = raw < 0 ? raw * 0.22 : raw > 1 ? 1 + (raw - 1) * 0.22 : raw;
-    return { clamped, damped };
-  };
-
-  const update = (clientX: number) => {
-    const { clamped, damped } = positionFromEvent(clientX);
-    setVisual(damped);
-    onChange(clamped);
-  };
-
-  return (
-    <div
-      className={`volume-slider${dragging ? ' is-dragging' : ''}`}
-      ref={rail}
-      role="slider"
-      tabIndex={0}
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(value * 100)}
-      aria-valuetext={`${Math.round(value * 100)} percent`}
-      onPointerDown={(event) => {
-        event.currentTarget.setPointerCapture(event.pointerId);
-        setDragging(true);
-        update(event.clientX);
-      }}
-      onPointerMove={(event) => {
-        if (dragging) update(event.clientX);
-      }}
-      onPointerUp={(event) => {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        setDragging(false);
-        const { clamped } = positionFromEvent(event.clientX);
-        onChange(clamped);
-        setVisual(clamped);
-      }}
-      onPointerCancel={() => {
-        setDragging(false);
-        setVisual(value);
-      }}
-      onKeyDown={(event) => {
-        const step = event.shiftKey ? 0.1 : 0.05;
-        if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
-          event.preventDefault();
-          onChange(Math.min(1, value + step));
-        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
-          event.preventDefault();
-          onChange(Math.max(0, value - step));
-        } else if (event.key === 'Home') {
-          event.preventDefault();
-          onChange(0);
-        } else if (event.key === 'End') {
-          event.preventDefault();
-          onChange(1);
-        }
-      }}
-    >
-      <div className="volume-slider__rail">
-        <div className="volume-slider__fill" style={{ width: `${Math.min(100, Math.max(0, visual * 100))}%` }} />
-        <span className="volume-slider__knob" style={{ left: `${Math.min(110, Math.max(-10, visual * 100))}%` }} />
-      </div>
-    </div>
-  );
-}
-
 export function Player({ src, poster, active, className = '', onWatch, warm = false }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [started, setStarted] = useState(false);
@@ -127,7 +41,6 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
   const [currentTime, setCurrentTime] = useState(0);
   const [error, setError] = useState(false);
   const [muted, setMuted] = useState(readMuted);
-  const [volume, setVolume] = useState(readVolume);
   const [soundHintDismissed, setSoundHintDismissed] = useState(false);
   const [preloadMode, setPreloadMode] = useState<'auto' | 'metadata'>(active ? 'auto' : 'metadata');
 
@@ -138,6 +51,7 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
   const endedOnce = useRef(false);
   const wasActive = useRef(false);
   const autoRetried = useRef(false);
+  const autoMuted = useRef(false);
   const onWatchRef = useRef(onWatch);
   onWatchRef.current = onWatch;
 
@@ -156,9 +70,9 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    video.volume = volume;
+    video.volume = PLAYBACK_VOLUME;
     video.muted = muted;
-  }, [volume, muted]);
+  }, [muted]);
 
   // Warm the next clip only once the current one has started, so the clip on
   // screen gets the bandwidth first. Saving data and slow links skip it.
@@ -197,12 +111,36 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
     const attempt = video.play();
     if (attempt) {
       attempt.catch(() => {
+        // The browser refused to start a clip with sound before the visitor has
+        // touched the page. Mute just this playback so it still starts, but do
+        // not remember the mute: the next tap turns the sound back on.
+        autoMuted.current = true;
         video.muted = true;
         setMuted(true);
-        applyMuted(true);
         video.play().catch(() => {});
       });
     }
+  }, [active]);
+
+  // Sound is the default, so the first deliberate tap or key press lifts the
+  // temporary mute the browser forced on us and carries on with audio.
+  useEffect(() => {
+    if (!active) return;
+    const unlock = () => {
+      if (!autoMuted.current) return;
+      autoMuted.current = false;
+      const video = videoRef.current;
+      if (!video) return;
+      video.muted = false;
+      setMuted(false);
+      video.play().catch(() => {});
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
   }, [active]);
 
   useEffect(() => {
@@ -297,37 +235,16 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
     }
   };
 
-  const changeVolume = (next: number) => {
-    setVolume(next);
-    localStorage.setItem(VOLUME_KEY, String(next));
-    if (next > 0 && muted) {
-      setMuted(false);
-      applyMuted(false);
-    }
-  };
-
   const toggleMute = () => {
     const next = !muted;
     setMuted(next);
     applyMuted(next);
-    if (!next && volume === 0) changeVolume(0.6);
-  };
-
-  const toggleFullscreen = () => {
-    const element = stageRef.current;
-    if (!element) return;
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    else element.requestFullscreen().catch(() => {});
   };
 
   const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
   return (
-    <div
-      className={`feed-stage ${className}`}
-      ref={stageRef}
-      data-state={playing ? 'playing' : 'paused'}
-    >
+    <div className={`feed-stage ${className}`} data-state={playing ? 'playing' : 'paused'}>
       {poster && !started ? <img className="feed-poster" src={poster} alt="" /> : null}
       <video
         ref={videoRef}
@@ -385,13 +302,18 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
         </button>
       ) : null}
 
+      {/* One line under the clip: where you are in it, and a way to silence it.
+          Tapping the picture already plays and pauses, so a second play button
+          and a volume slider were only clutter. */}
       <div className="stage-controls">
-        <button type="button" className="stage-controls__btn" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
-          <Icon name={playing ? 'pause' : 'play'} size={18} filled strokeWidth={0} />
+        <button
+          type="button"
+          className="stage-controls__btn"
+          onClick={toggleMute}
+          aria-label={muted ? 'Unmute' : 'Mute'}
+        >
+          <Icon name={muted ? 'mute' : 'volume'} size={17} />
         </button>
-        <span className="stage-time tabular">
-          {formatDuration(currentTime)} / {formatDuration(duration)}
-        </span>
         <div className="seekwrap">
           <div className="seekwrap__rail">
             <div className="seekwrap__fill" style={{ width: `${progress}%` }} />
@@ -412,25 +334,6 @@ export function Player({ src, poster, active, className = '', onWatch, warm = fa
           />
           <span className="seekwrap__knob" style={{ left: `${progress}%` }} />
         </div>
-        <div className="volwrap">
-          <button
-            type="button"
-            className="stage-controls__btn"
-            onClick={toggleMute}
-            aria-label={muted ? 'Unmute' : 'Mute'}
-          >
-            <Icon name={muted ? 'mute' : 'volume'} size={18} />
-          </button>
-          <VolumeSlider value={muted ? 0 : volume} onChange={changeVolume} label="Volume" />
-        </div>
-        <button
-          type="button"
-          className="stage-controls__btn stage-controls__fullscreen"
-          onClick={toggleFullscreen}
-          aria-label="Full screen"
-        >
-          <Icon name="fullscreen" size={18} />
-        </button>
       </div>
     </div>
   );
