@@ -43,6 +43,21 @@ sending it with the purpose stated plainly is the least anyone can do.
    they click the link.
 4. Watch the PR. Requests for changes are common and a silent PR gets closed.
 
+## Mail records go in the same request
+
+Moderation mail (suspensions, warnings, appeal links) is currently sent From a
+verified Gmail address, which no DMARC record can vouch for, so it is a spam
+candidate. DKIM under this subdomain fixes that — and because Mailjet reveals the
+two TXT values as soon as the domain is added in its dashboard, before any DNS
+exists, both files can ride in the same pull request as [goatmedia.json](goatmedia.json).
+
+Full procedure, whether SPF is needed (it is not, on a CNAME apex) and the
+generator for the record files: [mail/README.md](mail/README.md).
+
+Read the warning there before repointing mail at this domain: is-a.dev publishes
+`p=reject`, subdomains inherit it, and unauthenticated mail is then rejected
+rather than spam-folded.
+
 ## After it is merged
 
 Nothing in this repository needs editing. The switch is one command:
