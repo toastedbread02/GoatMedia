@@ -29,6 +29,8 @@ interface VideoChoice {
   width: number;
   height: number;
   poster: Blob | null;
+  /** Stills from later in the clip, checked by the safety screen. */
+  frames: Blob[];
 }
 
 interface PhotoChoice {
@@ -151,7 +153,7 @@ export function UploadPage() {
 
     const previewUrl = URL.createObjectURL(file);
     setPreparing('Reading the clip…');
-    setVideo({ file, previewUrl, duration: null, width: 0, height: 0, poster: null });
+    setVideo({ file, previewUrl, duration: null, width: 0, height: 0, poster: null, frames: [] });
 
     const probe = document.createElement('video');
     probe.preload = 'metadata';
@@ -183,7 +185,7 @@ export function UploadPage() {
       // exactly as recorded: re-encoding them would cost time and quality.
       if (!shouldReencode(width, height, file.size, maxBytes)) {
         setPreparing('Grabbing a preview frame…');
-        const shot = duration !== null ? await capturePoster(file, duration) : { poster: null, width, height };
+        const shot = duration !== null ? await capturePoster(file, duration) : { poster: null, frames: [], width, height };
         if (probeId.current !== checked) return;
         setVideo({
           file,
@@ -192,6 +194,7 @@ export function UploadPage() {
           width: shot.width || width,
           height: shot.height || height,
           poster: shot.poster,
+          frames: shot.frames,
         });
         setPreparing(null);
         return;
@@ -232,6 +235,7 @@ export function UploadPage() {
           width: result.width || shot.width || width,
           height: result.height || shot.height || height,
           poster: shot.poster,
+          frames: shot.frames,
         });
         setCompressionNote(
           `Compressed from ${formatBytes(file.size)} to ${formatBytes(result.file.size)} at ${result.width}×${result.height}. The original stayed on your device.`,
@@ -254,7 +258,7 @@ export function UploadPage() {
         if (file.size <= maxBytes) {
           setPreparing('Grabbing a preview frame…');
           const shot =
-            duration !== null ? await capturePoster(file, duration) : { poster: null, width, height };
+            duration !== null ? await capturePoster(file, duration) : { poster: null, frames: [], width, height };
           if (probeId.current !== checked) return;
           setVideo({
             file,
@@ -263,6 +267,7 @@ export function UploadPage() {
             width: shot.width || width,
             height: shot.height || height,
             poster: shot.poster,
+          frames: shot.frames,
           });
           setCompressionNote(
             'This device could not shrink that clip, so the original was kept. It still plays fine.',
@@ -500,6 +505,7 @@ export function UploadPage() {
         const uploadId = await uploadVideo(
           video.file,
           video.poster,
+          video.frames,
           { duration: video.duration ?? 0, width: video.width, height: video.height },
           setProgress,
         );

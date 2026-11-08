@@ -307,6 +307,17 @@ export async function createPost(req: Request, env: Env, origin: string) {
       .bind(video.uploadId)
       .first<{ poster_bytes: ArrayBuffer | null; poster_mime: string | null }>();
     if (frame?.poster_bytes) frames.push({ bytes: frame.poster_bytes, mime: frame.poster_mime || 'image/jpeg' });
+
+    // The browser also sampled stills from later in the clip, so a scene that
+    // appears ten seconds in is checked too instead of only the first frame.
+    const samples = await env.DB.prepare(
+      'SELECT bytes, mime FROM upload_frames WHERE upload_id = ? ORDER BY position',
+    )
+      .bind(video.uploadId)
+      .all<{ bytes: ArrayBuffer; mime: string }>();
+    for (const sample of samples.results || []) {
+      if (sample.bytes) frames.push({ bytes: sample.bytes, mime: sample.mime || 'image/jpeg' });
+    }
   }
 
   const screen = await screenImages(env, frames);

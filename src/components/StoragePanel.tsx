@@ -12,6 +12,7 @@ const LABELS: Record<StorageRow['kind'], { label: string; unit: string; plural: 
   sounds: { label: 'Sounds', unit: 'sound', plural: 'sounds' },
   avatars: { label: 'Profile pictures', unit: 'picture', plural: 'pictures' },
   posters: { label: 'Preview frames', unit: 'frame', plural: 'frames' },
+  frames: { label: 'Safety stills', unit: 'still', plural: 'stills' },
 };
 
 /** Megabyte figures without a trailing `.0`, which reads better as a limit. */

@@ -66,13 +66,64 @@ export async function resizePhoto(
 }
 
 /**
- * Grabs one frame from a local video for the feed and the moderation queue.
- * Nothing is uploaded for this: the frame is drawn on a canvas in the browser.
+ * Where the safety stills are taken from, as a share of the clip. The poster
+ * already sits near a third, so these two cover the opening and the last
+ * stretch: a scene that only shows up late is no longer invisible to the check.
+ */
+const SCREEN_FRACTIONS = [0.08, 0.82];
+/** Long edge for those stills. Enough to see blood, small enough to be cheap. */
+const SCREEN_MAX_EDGE = 640;
+
+async function seekTo(video: HTMLVideoElement, time: number) {
+  try {
+    video.currentTime = Math.max(0.05, time);
+  } catch {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      video.onseeked = null;
+      resolve();
+    };
+    video.onseeked = finish;
+    window.setTimeout(finish, 900);
+  });
+}
+
+async function sampleStills(video: HTMLVideoElement, duration: number): Promise<Blob[]> {
+  if (!Number.isFinite(duration) || duration <= 0) return [];
+  const stills: Blob[] = [];
+  for (const fraction of SCREEN_FRACTIONS) {
+    await seekTo(video, Math.min(duration - 0.05, duration * fraction));
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    if (!width || !height) continue;
+    const scale = Math.min(1, SCREEN_MAX_EDGE / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) continue;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = (await encode(canvas, 'image/webp', 0.7)) || (await encode(canvas, 'image/jpeg', 0.7));
+    if (blob && blob.size > 0) stills.push(blob);
+  }
+  return stills;
+}
+
+/**
+ * Grabs the feed poster plus two stills for the safety screen from a local
+ * video. Nothing is uploaded for this: every frame is drawn on a canvas in the
+ * browser, and the stills ride along with the poster request rather than adding
+ * a round trip of their own.
  */
 export async function capturePoster(
   file: File,
   duration: number,
-): Promise<{ poster: Blob | null; width: number; height: number }> {
+): Promise<{ poster: Blob | null; frames: Blob[]; width: number; height: number }> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.preload = 'auto';
@@ -89,30 +140,24 @@ export async function capturePoster(
     await ready;
     const width = video.videoWidth;
     const height = video.videoHeight;
-    try {
-      video.currentTime = Math.min(1, Math.max(0.05, duration / 3));
-    } catch {
-      /* some browsers refuse seeking before playback; the first frame is fine */
-    }
-    await new Promise<void>((resolve) => {
-      video.onseeked = () => resolve();
-      window.setTimeout(resolve, 900);
-    });
+    // Some browsers refuse seeking before playback; the first frame is fine.
+    await seekTo(video, Math.min(1, Math.max(0.05, duration / 3)));
 
     const scale = Math.min(1, 1280 / Math.max(width, height, 1));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));
     const context = canvas.getContext('2d');
-    if (!context) return { poster: null, width, height };
+    if (!context) return { poster: null, frames: [], width, height };
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     // Posters are a still behind the player, so WebP costs nothing visually and
     // saves about half the bytes of the JPEG this used to send.
     let poster = await encode(canvas, 'image/webp', 0.74);
     if (!poster || poster.type !== 'image/webp') poster = await encode(canvas, 'image/jpeg', 0.74);
-    return { poster, width, height };
+    const frames = await sampleStills(video, duration);
+    return { poster, frames, width, height };
   } catch {
-    return { poster: null, width: 0, height: 0 };
+    return { poster: null, frames: [], width: 0, height: 0 };
   } finally {
     URL.revokeObjectURL(url);
   }

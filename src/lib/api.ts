@@ -187,6 +187,7 @@ export function uploadWithProgress<T>(
 export async function uploadVideo(
   file: File,
   poster: Blob | null,
+  frames: Blob[],
   meta: { duration: number; width: number; height: number },
   onProgress: (percent: number) => void,
 ): Promise<string> {
@@ -226,9 +227,14 @@ export async function uploadVideo(
     }
   }
 
-  if (poster) {
+  if (poster || frames.length) {
     const form = new FormData();
-    form.append('poster', poster, 'poster.jpg');
+    if (poster) form.append('poster', poster, 'poster.jpg');
+    // Stills for the safety screen travel with the poster, so sampling the clip
+    // costs the uploader one request instead of three.
+    frames.forEach((frame, index) => {
+      form.append(`frame${index}`, frame, `frame-${index}.jpg`);
+    });
     form.append('durationMs', String(Math.round(meta.duration * 1000)));
     form.append('width', String(meta.width));
     form.append('height', String(meta.height));

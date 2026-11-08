@@ -17,6 +17,13 @@ const VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'vide
 const POSTER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_VIDEO_BYTES = limits.maxVideoMb * 1024 * 1024;
 const MAX_POSTER_BYTES = 400 * 1024;
+/**
+ * Stills sampled across a clip for the safety screen. Two is enough to catch a
+ * late scene alongside the preview frame, and the model takes at most four
+ * images per call, so there is no point in more.
+ */
+const MAX_FRAMES = 2;
+const MAX_FRAME_BYTES = 260 * 1024;
 
 function looksLikeVideo(bytes: Uint8Array, mime: string): boolean {
   const ascii = (start: number, end: number) => String.fromCharCode(...bytes.slice(start, end));
@@ -84,9 +91,14 @@ export async function startUpload(req: Request, env: Env) {
     .all<{ id: string; shard: number }>();
   if (stale.results?.length) {
     await dropShardChunks(env, stale.results);
-    await env.DB.batch(
-      stale.results.map((row) => env.DB.prepare('DELETE FROM uploads WHERE id = ?').bind(row.id)),
-    );
+    await env.DB.batch([
+      // Stills have no foreign key back to uploads either, so they are cleared
+      // by id before the row they point at disappears.
+      env.DB.prepare(
+        `DELETE FROM upload_frames WHERE upload_id IN (${stale.results.map(() => '?').join(',')})`,
+      ).bind(...stale.results.map((row) => row.id)),
+      ...stale.results.map((row) => env.DB.prepare('DELETE FROM uploads WHERE id = ?').bind(row.id)),
+    ]);
   }
 
   const id = uid('upl');
@@ -177,10 +189,38 @@ export async function putPoster(req: Request, env: Env, uploadId: string) {
   if (!looksLikeImage(new Uint8Array(bytes.slice(0, 12)), type)) {
     throw bad('The preview frame does not look like an image.');
   }
-  await env.DB.prepare('UPDATE uploads SET poster_mime = ?, poster_bytes = ? WHERE id = ?')
-    .bind(type, bytes, uploadId)
-    .run();
-  return json({ ok: true });
+  // Still samples taken across the clip by the browser: no extra request, no
+  // server-side transcoding, and the safety screen gets to see past frame one.
+  const frames: { position: number; mime: string; bytes: ArrayBuffer; size: number }[] = [];
+  for (let position = 0; position < MAX_FRAMES; position += 1) {
+    const sample = form?.get(`frame${position}`);
+    if (!(sample instanceof File) || sample.size === 0) continue;
+    const sampleType = sample.type || 'image/jpeg';
+    if (!POSTER_TYPES.has(sampleType)) continue;
+    if (sample.size > MAX_FRAME_BYTES) continue;
+    const sampleBytes = await sample.arrayBuffer();
+    if (!looksLikeImage(new Uint8Array(sampleBytes.slice(0, 12)), sampleType)) continue;
+    frames.push({ position, mime: sampleType, bytes: sampleBytes, size: sample.size });
+  }
+
+  const statements = [
+    env.DB.prepare('UPDATE uploads SET poster_mime = ?, poster_bytes = ? WHERE id = ?').bind(
+      type,
+      bytes,
+      uploadId,
+    ),
+  ];
+  for (const frame of frames) {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO upload_frames (upload_id, position, mime, bytes, size) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(upload_id, position) DO UPDATE SET
+           mime = excluded.mime, bytes = excluded.bytes, size = excluded.size`,
+      ).bind(uploadId, frame.position, frame.mime, frame.bytes, frame.size),
+    );
+  }
+  await env.DB.batch(statements);
+  return json({ ok: true, frames: frames.length });
 }
 
 /** Used when a post is created: the upload must hold every chunk it promised. */

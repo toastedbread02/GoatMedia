@@ -128,8 +128,9 @@ export function PrivacyPage() {
       <h3>What the automatic check sees</h3>
       <ul>
         <li>
-          The first few images of an upload — the photos in an album, or the poster frame of a video — are sent to
-          Cloudflare's Workers AI to answer one question: does this show graphic gore? Only the probability that comes
+          A few still images from an upload — the first photos of an album, or the poster frame and two frames sampled
+          from later in a video — are sent to Cloudflare's Workers AI to answer one question: does this show graphic
+          gore? Only the probability that comes
           back is stored, on the post, as a number. The images are not kept by that service for anything else and are
           not used to train a model.
         </li>

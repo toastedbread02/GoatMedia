@@ -154,8 +154,9 @@ npx wrangler d1 execute goatmedia --remote \
 ## Automatic screening, warnings and appeals
 
 Every upload is screened before it reaches the queue. A vision model on Workers
-AI (`@cf/cloudflare/clef-flash`) looks at the poster frame or the first photos
-and scores it for graphic gore; anything over `safety.goreThreshold` in
+AI (`@cf/cloudflare/clef-flash`) looks at the poster frame plus two stills the
+browser samples from later in the clip (or the first photos of an album) and
+scores it for graphic gore; anything over `safety.goreThreshold` in
 `worker/config.ts` is filed as `rejected` with the score kept on the post, and a
 moderator can still approve it after watching. Workers AI is bound in
 `wrangler.jsonc` (`"ai": { "binding": "AI" }`), so the first deploy after this

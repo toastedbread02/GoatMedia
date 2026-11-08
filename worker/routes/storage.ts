@@ -23,10 +23,13 @@ interface MediaCounts {
   avatar_bytes: number;
   avatars: number;
   poster_bytes: number;
+  frame_bytes: number;
+  frames: number;
   dormant_posts: number;
   dormant_videos: number;
   dormant_video_bytes: number;
   dormant_photo_bytes: number;
+  dormant_frame_bytes: number;
 }
 
 export async function usage(req: Request, env: Env) {
@@ -43,6 +46,8 @@ export async function usage(req: Request, env: Env) {
        (SELECT COALESCE(SUM(LENGTH(avatar_bytes)), 0) FROM users WHERE avatar_bytes IS NOT NULL) AS avatar_bytes,
        (SELECT COUNT(*) FROM users WHERE avatar_bytes IS NOT NULL) AS avatars,
        (SELECT COALESCE(SUM(LENGTH(poster_bytes)), 0) FROM uploads WHERE poster_bytes IS NOT NULL) AS poster_bytes,
+       (SELECT COALESCE(SUM(size), 0) FROM upload_frames) AS frame_bytes,
+       (SELECT COUNT(*) FROM upload_frames) AS frames,
        (SELECT COUNT(*) FROM posts p WHERE ${DORMANT}) AS dormant_posts,
        (SELECT COUNT(*) FROM posts p WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL) AS dormant_videos,
        (SELECT COALESCE(SUM(size), 0) FROM uploads
@@ -50,7 +55,10 @@ export async function usage(req: Request, env: Env) {
                        WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS dormant_video_bytes,
        (SELECT COALESCE(SUM(size), 0) FROM post_photos ph
          WHERE ph.bytes IS NOT NULL
-           AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS dormant_photo_bytes`,
+           AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS dormant_photo_bytes,
+       (SELECT COALESCE(SUM(size), 0) FROM upload_frames f
+         WHERE f.upload_id IN (SELECT p.video_upload_id FROM posts p
+                                WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS dormant_frame_bytes`,
   ).first<MediaCounts>();
 
   const counts: MediaCounts = row || {
@@ -63,10 +71,13 @@ export async function usage(req: Request, env: Env) {
     avatar_bytes: 0,
     avatars: 0,
     poster_bytes: 0,
+    frame_bytes: 0,
+    frames: 0,
     dormant_posts: 0,
     dormant_videos: 0,
     dormant_video_bytes: 0,
     dormant_photo_bytes: 0,
+    dormant_frame_bytes: 0,
   };
 
   // The exact size recorded when the upload finished, rather than a chunk count
@@ -78,6 +89,7 @@ export async function usage(req: Request, env: Env) {
     { kind: 'sounds', bytes: counts.sound_bytes, count: counts.sounds },
     { kind: 'avatars', bytes: counts.avatar_bytes, count: counts.avatars },
     { kind: 'posters', bytes: counts.poster_bytes, count: counts.videos },
+    { kind: 'frames', bytes: counts.frame_bytes, count: counts.frames },
   ];
   const usedBytes = breakdown.reduce((total, item) => total + item.bytes, 0);
 
@@ -139,7 +151,7 @@ export async function usage(req: Request, env: Env) {
     reclaimable: {
       posts: counts.dormant_posts,
       videos: counts.dormant_videos,
-      bytes: counts.dormant_video_bytes + counts.dormant_photo_bytes,
+      bytes: counts.dormant_video_bytes + counts.dormant_photo_bytes + counts.dormant_frame_bytes,
     },
   });
 }
@@ -162,10 +174,13 @@ export async function purge(req: Request, env: Env) {
                        WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS video_bytes,
        (SELECT COALESCE(SUM(size), 0) FROM post_photos ph
          WHERE ph.bytes IS NOT NULL
-           AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS photo_bytes`,
-  ).first<{ posts: number; videos: number; video_bytes: number; photo_bytes: number }>();
+           AND ph.post_id IN (SELECT p.id FROM posts p WHERE ${DORMANT})) AS photo_bytes,
+       (SELECT COALESCE(SUM(size), 0) FROM upload_frames f
+         WHERE f.upload_id IN (SELECT p.video_upload_id FROM posts p
+                                WHERE ${DORMANT} AND p.video_upload_id IS NOT NULL)) AS frame_bytes`,
+  ).first<{ posts: number; videos: number; video_bytes: number; photo_bytes: number; frame_bytes: number }>();
 
-  const counts = before || { posts: 0, videos: 0, video_bytes: 0, photo_bytes: 0 };
+  const counts = before || { posts: 0, videos: 0, video_bytes: 0, photo_bytes: 0, frame_bytes: 0 };
   const uploads = await env.DB.prepare(
     `SELECT p.video_upload_id AS id, up.shard AS shard FROM posts p
        JOIN uploads up ON up.id = p.video_upload_id
@@ -190,6 +205,14 @@ export async function purge(req: Request, env: Env) {
   for (let i = 0; i < ids.length; i += 40) {
     const slice = ids.slice(i, i + 40);
     statements.push(
+      env.DB.prepare(`DELETE FROM upload_frames WHERE upload_id IN (${slice.map(() => '?').join(',')})`).bind(
+        ...slice,
+      ),
+    );
+  }
+  for (let i = 0; i < ids.length; i += 40) {
+    const slice = ids.slice(i, i + 40);
+    statements.push(
       env.DB.prepare(`DELETE FROM uploads WHERE id IN (${slice.map(() => '?').join(',')})`).bind(
         ...slice,
       ),
@@ -201,6 +224,6 @@ export async function purge(req: Request, env: Env) {
   return json({
     posts: counts.posts,
     videos: counts.videos,
-    freedBytes: counts.video_bytes + counts.photo_bytes,
+    freedBytes: counts.video_bytes + counts.photo_bytes + counts.frame_bytes,
   });
 }

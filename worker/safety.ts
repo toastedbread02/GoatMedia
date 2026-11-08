@@ -31,6 +31,7 @@ export interface ScreenResult {
 }
 
 const AI_MODEL = '@cf/cloudflare/clef-flash';
+/** The model takes four images per call; three keeps the bill and latency down. */
 const MAX_IMAGES = 3;
 const AI_TIMEOUT_MS = 9000;
 
@@ -88,9 +89,10 @@ async function askModel(env: Env, image: ScreenImage): Promise<number | null> {
 }
 
 /**
- * Screens up to three images (the poster frame of a video, or the first photos)
- * and returns the highest probability. Any failure means "not screened": the
- * post still goes to manual review, so a broken model never publishes anything.
+ * Screens up to three images — the poster frame of a video plus stills sampled
+ * later in the clip, or the first photos of an album — and returns the highest
+ * probability. Any failure means "not screened": the post still goes to manual
+ * review, so a broken model never publishes anything.
  */
 export async function screenImages(env: Env, images: ScreenImage[]): Promise<ScreenResult> {
   const usable = images.filter((image) => image.bytes.byteLength > 0).slice(0, MAX_IMAGES);

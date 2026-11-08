@@ -349,7 +349,7 @@ export interface SearchResults {
 }
 
 export interface StorageRow {
-  kind: 'videos' | 'photos' | 'sounds' | 'avatars' | 'posters';
+  kind: 'videos' | 'photos' | 'sounds' | 'avatars' | 'posters' | 'frames';
   bytes: number;
   count: number;
 }
