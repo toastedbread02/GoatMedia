@@ -869,8 +869,14 @@ ol {
   scroll-snap-type: y mandatory;
   scroll-behavior: smooth;
   overscroll-behavior-y: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+  /* No scrollbar on the feed. It invited dragging straight past clips that the
+     snap then pulled back, and it sat on top of the video for no benefit: the
+     wheel, the keyboard and the arrows all move one post at a time anyway. */
+  scrollbar-width: none;
+}
+
+.feed-scroller::-webkit-scrollbar {
+  display: none;
 }
 
 .feed-item {
