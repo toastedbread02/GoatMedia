@@ -6357,3 +6357,24 @@ ol {
     font-size: 12.5px;
   }
 }
+
+/* ------------------------------- mobile scrollbars ------------------------- */
+
+/* Touch browsers paint the scrollbar as an overlay that fades over the content,
+   so on a phone it covers a caption or a comment row rather than sitting beside
+   it. It is hidden below the layout breakpoint for that reason, and kept above
+   it, where the track is part of the page and is how people drag long lists. */
+@media (max-width: 767px) {
+  * {
+    scrollbar-width: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* No bar means nothing to reserve room for. */
+  .main {
+    scrollbar-gutter: auto;
+  }
+}
