@@ -33,7 +33,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   const [liked, setLiked] = useState(video.liked);
   const [likeCount, setLikeCount] = useState(video.likeCount);
   const [saved, setSaved] = useState(video.saved);
-  const [pulse, setPulse] = useState(false);
   const [commentCount, setCommentCount] = useState(video.commentCount);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -59,10 +58,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
     const next = !liked;
     setLiked(next);
     setLikeCount((count) => Math.max(0, count + (next ? 1 : -1)));
-    if (next) {
-      setPulse(true);
-      setTimeout(() => setPulse(false), 360);
-    }
     try {
       const data = await api.post<{ liked: boolean; likeCount: number }>(`/api/videos/${video.id}/like`);
       setLiked(data.liked);
@@ -140,82 +135,48 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const caption = video.caption || 'Untitled goat post';
+  const profileHref = `/u/${video.creator.username}`;
 
   return (
     <article className="feed-item" aria-label={`Post by ${video.creator.displayName}`}>
-      {video.kind === 'photos' ? (
-        <PhotoAlbum
-          photos={video.photos}
-          caption={caption}
-          eager={active}
-          className="feed-stage album"
-        />
-      ) : shouldMount && video.videoUrl ? (
-        <Player
-          src={video.videoUrl}
-          poster={video.posterUrl}
-          active={active}
-          warm={index === activeIndex + 1}
-          onWatch={(stats: WatchStats) => {
-            api
-              .post(`/api/videos/${video.id}/events`, {
-                watchSeconds: stats.watchSeconds,
-                completed: stats.completed,
-                rewatched: stats.rewatched,
-                skipped: stats.watchSeconds < 2 && !stats.completed,
-              })
-              .catch(() => {});
-          }}
-        />
-      ) : (
-        <div className="feed-stage">
-          {video.posterUrl ? (
-            <img className="feed-poster" src={video.posterUrl} alt="" loading="lazy" decoding="async" />
-          ) : (
-            <div className="stage-loading">
-              <Icon name="play" size={28} />
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="feed-info">
-        <div className="feed-info__top">
-          <div className="creator">
-            <Link to={`/u/${video.creator.username}`} aria-label={`${video.creator.displayName} profile`}>
-              <Avatar
-                displayName={video.creator.displayName}
-                username={video.creator.username}
-                avatarUrl={video.creator.avatarUrl}
-                size={38}
-              />
-            </Link>
-            <div className="creator__text">
-              <Link to={`/u/${video.creator.username}`} className="creator__name">
-                {video.creator.displayName}
-              </Link>
-              <div className="creator__handle">
-                <span className="creator__handle-text">@{video.creator.username}</span>
-                {video.creator.isModerator ? (
-                  <span className="modbadge" title="Moderator" aria-label="Moderator">
-                    <Icon name="shield" size={12} filled />
-                  </span>
-                ) : null}
+      <div className="feed-canvas">
+        {video.kind === 'photos' ? (
+          <PhotoAlbum
+            photos={video.photos}
+            caption={caption}
+            eager={active}
+            className="feed-stage album"
+          />
+        ) : shouldMount && video.videoUrl ? (
+          <Player
+            src={video.videoUrl}
+            poster={video.posterUrl}
+            active={active}
+            warm={index === activeIndex + 1}
+            onWatch={(stats: WatchStats) => {
+              api
+                .post(`/api/videos/${video.id}/events`, {
+                  watchSeconds: stats.watchSeconds,
+                  completed: stats.completed,
+                  rewatched: stats.rewatched,
+                  skipped: stats.watchSeconds < 2 && !stats.completed,
+                })
+                .catch(() => {});
+            }}
+          />
+        ) : (
+          <div className="feed-stage">
+            {video.posterUrl ? (
+              <img className="feed-poster" src={video.posterUrl} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <div className="stage-loading">
+                <Icon name="play" size={28} />
               </div>
-            </div>
-            {!video.creator.isSelf ? (
-              <button
-                type="button"
-                className={`btn btn--sm btn--quiet feed-follow${following ? ' is-following' : ''}`}
-                onClick={toggleFollow}
-                disabled={followPending}
-                aria-pressed={following}
-              >
-                {following ? 'Following' : 'Follow'}
-              </button>
-            ) : null}
+            )}
           </div>
+        )}
 
+        <div className="feed-more">
           <Popover
             label="Post options"
             trigger={
@@ -295,86 +256,138 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
           </Popover>
         </div>
 
-        {video.reason ? (
-          <p className="feed-reason">
-            <Icon name="spark" size={14} /> {video.reason}
-          </p>
-        ) : null}
-
-        {video.goatOfDay ? (
-          <Link className="feed-dotd" to="/daily">
-            Goat of the day
-          </Link>
-        ) : null}
-        <p className="feed-caption">
-          {caption.split(/(#[\w]{2,24})/g).map((part, partIndex) =>
-            part.startsWith('#') ? (
-              <Link key={`${part}-${partIndex}`} className="taglink" to={`/search?q=${encodeURIComponent(part)}`}>
-                {part}
+        <div className="feed-overlay">
+          <div className="feed-bottom">
+            <div className="feed-byline">
+              <Link to={profileHref} className="feed-byline__name">
+                {video.creator.displayName}
               </Link>
-            ) : (
-              <span key={partIndex}>{part}</span>
-            ),
-          )}
-        </p>
+              <Link to={profileHref} className="feed-byline__handle">
+                @{video.creator.username}
+              </Link>
+              {video.creator.isModerator ? (
+                <span className="modbadge" title="Moderator" aria-label="Moderator">
+                  <Icon name="shield" size={12} filled />
+                </span>
+              ) : null}
+            </div>
 
-        {video.kind === 'photos' && video.sound ? (
-          <SoundCredit sound={video.sound} active={active} />
-        ) : null}
+            <p className="feed-caption">
+              {caption.split(/(#[\w]{2,24})/g).map((part, partIndex) =>
+                part.startsWith('#') ? (
+                  <Link key={`${part}-${partIndex}`} className="taglink" to={`/search?q=${encodeURIComponent(part)}`}>
+                    {part}
+                  </Link>
+                ) : (
+                  <span key={partIndex}>{part}</span>
+                ),
+              )}
+            </p>
 
-        <div className="feed-meta-line">
-          <span>{compactNumber(video.viewCount)} views</span>
-          <span className="meta-sep" aria-hidden="true">
-            ·
-          </span>
-          <span>{timeAgo(video.publishedAt ?? video.createdAt)}</span>
-          <span className="meta-sep" aria-hidden="true">
-            ·
-          </span>
-          <Link to={`/search?q=${encodeURIComponent(video.categoryLabel)}`}>{video.categoryLabel}</Link>
+            {video.reason ? (
+              <p className="feed-reason">
+                <Icon name="spark" size={14} /> {video.reason}
+              </p>
+            ) : null}
+
+            {video.goatOfDay ? (
+              <Link className="feed-dotd" to="/daily">
+                Goat of the day
+              </Link>
+            ) : null}
+
+            {video.kind === 'photos' && video.sound ? (
+              <SoundCredit sound={video.sound} active={active} />
+            ) : null}
+
+            <div className="feed-meta-line">
+              <span>{compactNumber(video.viewCount)} views</span>
+              <span className="meta-sep" aria-hidden="true">
+                ·
+              </span>
+              <span>{timeAgo(video.publishedAt ?? video.createdAt)}</span>
+              <span className="meta-sep" aria-hidden="true">
+                ·
+              </span>
+              <Link to={`/search?q=${encodeURIComponent(video.categoryLabel)}`}>{video.categoryLabel}</Link>
+            </div>
+
+            {video.credit ? <p className="feed-credit">Sample clip · {video.credit}</p> : null}
+          </div>
+
+          <div className="feed-rail">
+            <div className="feed-rail__creator">
+              <Link to={profileHref} aria-label={`${video.creator.displayName} profile`}>
+                <Avatar
+                  displayName={video.creator.displayName}
+                  username={video.creator.username}
+                  avatarUrl={video.creator.avatarUrl}
+                  size={44}
+                />
+              </Link>
+              {!video.creator.isSelf ? (
+                <button
+                  type="button"
+                  className={`feed-rail__follow${following ? ' is-following' : ''}`}
+                  onClick={toggleFollow}
+                  disabled={followPending}
+                  aria-pressed={following}
+                  aria-label={
+                    following ? `Unfollow @${video.creator.username}` : `Follow @${video.creator.username}`
+                  }
+                  title={following ? 'Following' : 'Follow'}
+                >
+                  <Icon name={following ? 'check' : 'plus'} size={13} strokeWidth={2.6} />
+                </button>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              className={`feed-rail__btn${liked ? ' is-liked' : ''}`}
+              onClick={toggleLike}
+              aria-pressed={liked}
+              aria-label={liked ? `Unlike post, ${likeCount} likes` : `Like post, ${likeCount} likes`}
+            >
+              <span className="feed-rail__icon">
+                <Icon name="heart" size={22} filled={liked} />
+              </span>
+              <span className="feed-rail__count">{compactNumber(likeCount)}</span>
+            </button>
+
+            <button
+              type="button"
+              className="feed-rail__btn"
+              onClick={() => setCommentsOpen(true)}
+              aria-label={`Open comments, ${commentCount} comments`}
+            >
+              <span className="feed-rail__icon">
+                <Icon name="comment" size={21} />
+              </span>
+              <span className="feed-rail__count">{compactNumber(commentCount)}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`feed-rail__btn${saved ? ' is-liked' : ''}`}
+              onClick={toggleSave}
+              aria-pressed={saved}
+              aria-label={saved ? 'Remove from saved' : 'Save post'}
+            >
+              <span className="feed-rail__icon">
+                <Icon name="bookmark" size={21} filled={saved} />
+              </span>
+              <span className="feed-rail__count">{saved ? 'Saved' : 'Save'}</span>
+            </button>
+
+            <button type="button" className="feed-rail__btn" onClick={share} aria-label="Share post">
+              <span className="feed-rail__icon">
+                <Icon name="share" size={21} />
+              </span>
+              <span className="feed-rail__count">Share</span>
+            </button>
+          </div>
         </div>
-
-        <div className="feed-actions">
-          <button
-            type="button"
-            className={`action${liked ? ' is-active is-liked' : ''}${pulse ? ' is-liked' : ''}`}
-            onClick={toggleLike}
-            aria-pressed={liked}
-            aria-label={liked ? `Unlike post, ${likeCount} likes` : `Like post, ${likeCount} likes`}
-          >
-            <Icon name="heart" size={19} filled={liked} />
-            <span className="action__count">{compactNumber(likeCount)}</span>
-            <span className="action__label">{liked ? 'Liked' : 'Like'}</span>
-          </button>
-          <button
-            type="button"
-            className="action"
-            onClick={() => setCommentsOpen(true)}
-            aria-label={`Open comments, ${commentCount} comments`}
-          >
-            <Icon name="comment" size={19} />
-            <span className="action__count">{compactNumber(commentCount)}</span>
-            <span className="action__label">Comments</span>
-          </button>
-          <button type="button" className="action" onClick={share} aria-label="Share video">
-            <Icon name="share" size={19} />
-            <span className="action__label">Share</span>
-          </button>
-          <button
-            type="button"
-            className={`action${saved ? ' is-active' : ''}`}
-            onClick={toggleSave}
-            aria-pressed={saved}
-            aria-label={saved ? 'Remove from saved' : 'Save post'}
-          >
-            <Icon name="bookmark" size={19} filled={saved} />
-            <span className="action__label">{saved ? 'Saved' : 'Save'}</span>
-          </button>
-        </div>
-
-        {video.credit ? (
-          <p className="feed-credit">Sample clip · {video.credit}</p>
-        ) : null}
       </div>
 
       {commentsOpen ? (
