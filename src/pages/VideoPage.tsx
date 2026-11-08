@@ -188,6 +188,10 @@ export function VideoPage() {
                 src={video.videoUrl}
                 poster={video.posterUrl}
                 active
+                // A like already saved is feedback only, not another write.
+                onDoubleTap={() => {
+                  if (!liked) void toggleLike();
+                }}
                 onWatch={(stats) => {
                   api
                     .post(`/api/videos/${video.id}/events`, {
