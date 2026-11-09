@@ -180,6 +180,9 @@ export function VideoPage() {
                 caption={video.caption}
                 eager
                 gated={video.status !== 'approved'}
+                onDoubleTap={() => {
+                  if (!liked) void toggleLike();
+                }}
               />
             ) : video.status !== 'approved' ? (
               <AuthorizedPlayer src={video.videoUrl} active />

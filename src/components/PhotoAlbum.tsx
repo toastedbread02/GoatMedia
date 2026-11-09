@@ -10,7 +10,16 @@ interface PhotoAlbumProps {
   eager?: boolean;
   /** Pending, rejected or removed posts need the session token to load. */
   gated?: boolean;
+  /**
+   * Called on a double tap. A photo has no single-tap action, so the second tap
+   * can like straight away instead of waiting out a window the way a video's
+   * tap has to.
+   */
+  onDoubleTap?: () => void;
 }
+
+/** Two taps closer together than this, on the same photo, are one double tap. */
+const DOUBLE_TAP_MS = 280;
 
 function Slide({
   photo,
@@ -87,8 +96,14 @@ export function PhotoAlbum({
   className = '',
   eager = false,
   gated = false,
+  onDoubleTap,
 }: PhotoAlbumProps) {
   const track = useRef<HTMLDivElement | null>(null);
+  const burstLayer = useRef<HTMLDivElement | null>(null);
+  const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const burstTimers = useRef<number[]>([]);
+  const lastTap = useRef<{ time: number; scroll: number } | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
   const [index, setIndex] = useState(0);
   const wheelDelta = useRef(0);
   const wheelResetTimer = useRef(0);
@@ -106,6 +121,49 @@ export function PhotoAlbum({
     },
     [photos.length],
   );
+
+  useEffect(() => {
+    return () => {
+      burstTimers.current.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
+
+  // Double tap to like. Turning a page is a drag or a wheel gesture, never a
+  // tap, so both are kept out: a swipe that ends on the photo still fires a
+  // click, and two quick swipes must not read as one double tap.
+  const handleTap = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onDoubleTap) return;
+    // A click raised from the keyboard carries no pointer position.
+    if (event.detail === 0) return;
+    const start = pressStart.current;
+    pressStart.current = null;
+    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) {
+      lastTap.current = null;
+      return;
+    }
+    const scrollLeft = track.current ? track.current.scrollLeft : 0;
+    const now = Date.now();
+    const previous = lastTap.current;
+    if (
+      previous &&
+      now - previous.time <= DOUBLE_TAP_MS &&
+      Math.abs(previous.scroll - scrollLeft) < 2
+    ) {
+      lastTap.current = null;
+      const layer = burstLayer.current;
+      const rect = (layer ?? event.currentTarget).getBoundingClientRect();
+      const id = Date.now() + Math.random();
+      setBursts((current) => [...current, { id, x: event.clientX - rect.left, y: event.clientY - rect.top }]);
+      burstTimers.current.push(
+        window.setTimeout(() => {
+          setBursts((current) => current.filter((burst) => burst.id !== id));
+        }, 820),
+      );
+      onDoubleTap();
+      return;
+    }
+    lastTap.current = { time: now, scroll: scrollLeft };
+  };
 
   useEffect(() => {
     const node = track.current;
@@ -195,6 +253,10 @@ export function PhotoAlbum({
       <div
         className="album__track"
         ref={track}
+        onPointerDown={(event) => {
+          pressStart.current = { x: event.clientX, y: event.clientY };
+        }}
+        onClick={handleTap}
         tabIndex={multiple ? 0 : -1}
         role={multiple ? 'group' : 'img'}
         aria-label={
@@ -214,6 +276,16 @@ export function PhotoAlbum({
               gated={gated}
             />
           </figure>
+        ))}
+      </div>
+
+      {/* Above the photos and outside the scrolling track, so a heart lands
+          where the finger did and stays put instead of sliding away. */}
+      <div className="album__bursts" ref={burstLayer} aria-hidden="true">
+        {bursts.map((burst) => (
+          <span key={burst.id} className="stage-burst" style={{ left: burst.x, top: burst.y }}>
+            <Icon name="heart" size={92} filled />
+          </span>
         ))}
       </div>
 

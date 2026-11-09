@@ -146,6 +146,10 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             caption={caption}
             eager={active}
             className="feed-stage album"
+            onDoubleTap={() => {
+              // Already liked? Then the tap is just feedback, not another write.
+              if (!liked) void toggleLike();
+            }}
           />
         ) : shouldMount && video.videoUrl ? (
           <Player

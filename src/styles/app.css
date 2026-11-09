@@ -5026,6 +5026,17 @@ ol {
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   outline-offset: -3px;
+  /* A double tap is a like, so it must not zoom the page while sideways
+     swipes keep working. */
+  touch-action: manipulation;
+}
+
+/* Hearts land on the album's own box, above the scrolling track, so one never
+   slides away with the next photo. */
+.album__bursts {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .album__track::-webkit-scrollbar {
