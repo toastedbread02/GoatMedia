@@ -8,7 +8,6 @@ import { getCachedFeed, patchCachedFeed, setCachedFeed } from '../lib/feedCache.
 import { useToast } from '../lib/toast.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { FeedItem } from '../components/FeedItem.tsx';
-import { Loader } from '../components/Loader.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { FeedSkeleton } from '../components/Skeleton.tsx';
 import { CreatorSuggestions } from '../components/CreatorSuggestions.tsx';
@@ -512,7 +511,7 @@ export function FeedPage({ tab }: FeedPageProps) {
 
       {loadingMore ? (
         <div className="feed-more" role="status">
-          <Loader />
+          <div className="spinner" />
         </div>
       ) : null}
     </div>

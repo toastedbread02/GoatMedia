@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { SoundLibraryItem, VideoDTO } from '../../shared/types.ts';
-import { Loader } from '../components/Loader.tsx';
 import { api, ApiError, uploadVideo, uploadWithProgress } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { useConfig } from '../lib/config.tsx';
@@ -408,7 +407,7 @@ export function UploadPage() {
     return (
       <div className="page">
         <div className="feed-empty">
-          <Loader dark />
+          <div className="spinner spinner--dark" />
         </div>
       </div>
     );

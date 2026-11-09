@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Icon, type IconName } from './Icon.tsx';
-import { Loader } from './Loader.tsx';
 import { Player, type WatchStats } from './Player.tsx';
 import { useAuthorizedMedia } from '../lib/media.ts';
 
@@ -31,7 +30,7 @@ export function AuthorizedPlayer({
     return (
       <div className="feed-stage">
         <div className="stage-loading" role="status" aria-label="Loading video">
-          <Loader />
+          <div className="spinner" />
         </div>
       </div>
     );

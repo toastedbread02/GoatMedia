@@ -995,62 +995,18 @@ ol {
   pointer-events: none;
 }
 
-/* Loading: two dots hold still next to each other and a third circles them.
-   One linear rotation, so the loop joins itself without a seam or an easing
-   curve. The --loader-* variables let a tight space shrink the whole thing. */
-.loader {
-  --loader-dot: 6px;
-  --loader-gap: 3px;
-  --loader-orbit: 12px;
-  position: relative;
-  display: inline-block;
-  flex: none;
-  width: calc(var(--loader-orbit) * 2 + var(--loader-dot));
-  height: calc(var(--loader-orbit) * 2 + var(--loader-dot));
-  color: var(--stage-ink);
-}
-
-/* On paper surfaces the light ink would vanish, so use the accent instead. */
-.loader--dark {
-  color: var(--accent);
-}
-
-.loader__dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: var(--loader-dot);
-  height: var(--loader-dot);
-  margin: calc(var(--loader-dot) / -2) 0 0 calc(var(--loader-dot) / -2);
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid rgba(255, 253, 248, 0.25);
+  border-top-color: rgba(255, 253, 248, 0.95);
   border-radius: 50%;
-  background: currentColor;
+  animation: spin 720ms linear infinite;
 }
 
-/* The pair sits either side of the centre, inside the orbit. */
-.loader__dot--a {
-  left: calc(50% - (var(--loader-dot) + var(--loader-gap)) / 2);
-}
-
-.loader__dot--b {
-  left: calc(50% + (var(--loader-dot) + var(--loader-gap)) / 2);
-}
-
-/* The wrapper's half-size is the orbit radius, so rotating it carries the dot
-   around the pair and moves nothing else. */
-.loader__orbit {
-  position: absolute;
-  inset: calc(var(--loader-dot) / 2);
-  animation: loader-orbit 1.4s linear infinite;
-}
-
-.loader__orbit .loader__dot {
-  top: 0;
-}
-
-@keyframes loader-orbit {
-  to {
-    transform: rotate(1turn);
-  }
+.spinner--dark {
+  border-color: var(--line-strong);
+  border-top-color: var(--accent);
 }
 
 .stage-center {
@@ -2713,11 +2669,6 @@ ol {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-
-  /* Keep the three dots as a still mark rather than snapping a rotation. */
-  .loader__orbit {
-    animation: none;
   }
 }
 
@@ -4733,10 +4684,10 @@ ol {
   z-index: 5;
 }
 
-.feed-more .loader {
-  --loader-dot: 4px;
-  --loader-gap: 2px;
-  --loader-orbit: 8px;
+.feed-more .spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
 }
 
 /* animations */
