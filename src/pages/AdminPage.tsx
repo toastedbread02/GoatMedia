@@ -7,6 +7,7 @@ import type {
   ModerationEventDTO,
   ReportDTO,
 } from '../../shared/types.ts';
+import { Loader } from '../components/Loader.tsx';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { useConfig } from '../lib/config.tsx';
@@ -291,7 +292,7 @@ export function AdminPage() {
               </Link>
             </>
           ) : !config ? (
-            <div className="spinner spinner--dark" />
+            <Loader dark />
           ) : config.adminClaimable ? (
             <>
               <p>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PhotoRef } from '../../shared/types.ts';
 import { Icon } from './Icon.tsx';
+import { Loader } from './Loader.tsx';
 import { useAuthorizedMedia } from '../lib/media.ts';
 
 interface PhotoAlbumProps {
@@ -68,7 +69,7 @@ function Slide({
   if (!src) {
     return (
       <div className="album__failed" role="status" aria-label="Loading photo">
-        <div className="spinner" />
+        <Loader />
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon.tsx';
+import { Loader } from './Loader.tsx';
 
 export interface WatchStats {
   watchSeconds: number;
@@ -322,7 +323,7 @@ export function Player({
 
       {waiting && !error ? (
         <div className="stage-loading">
-          <div className="spinner" />
+          <Loader />
         </div>
       ) : null}
 
