@@ -22,6 +22,10 @@ interface PlayerProps {
    * the clip.
    */
   onDoubleTap?: () => void;
+  /** Seconds watched last time, so the clip can carry on where it stopped. */
+  resumeAt?: number | null;
+  /** Reports the playhead every few seconds and on pause, for resume later. */
+  onProgress?: (seconds: number, duration: number) => void;
 }
 
 const MUTE_KEY = 'goatmedia:muted';
@@ -46,6 +50,8 @@ export function Player({
   onWatch,
   warm = false,
   onDoubleTap,
+  resumeAt = null,
+  onProgress,
 }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -68,6 +74,12 @@ export function Player({
   const autoMuted = useRef(false);
   const onWatchRef = useRef(onWatch);
   onWatchRef.current = onWatch;
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
+  const resumeRef = useRef(resumeAt);
+  resumeRef.current = resumeAt;
+  const resumeApplied = useRef(false);
+  const progressSent = useRef(0);
 
   const sendStats = useCallback(() => {
     // Only report videos that actually became the active slide. Adjacent
@@ -166,6 +178,12 @@ export function Player({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    // The playhead is written back at most every five seconds: often enough
+    // to resume, rare enough not to cost anything.
+    const reportProgress = (node: HTMLVideoElement) => {
+      if (!wasActive.current || !node.duration || node.currentTime <= 0) return;
+      onProgressRef.current?.(node.currentTime, node.duration);
+    };
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       if (!video.paused) {
@@ -174,6 +192,10 @@ export function Player({
         lastTime.current = video.currentTime;
       }
       if (video.duration && video.currentTime >= video.duration - 0.35) completed.current = true;
+      if (wasActive.current && Date.now() - progressSent.current > 5000 && video.currentTime > 0) {
+        progressSent.current = Date.now();
+        onProgressRef.current?.(video.currentTime, video.duration || 0);
+      }
     };
     const handlePlay = () => {
       setPlaying(true);
@@ -183,12 +205,14 @@ export function Player({
     const handlePause = () => {
       setPlaying(false);
       sendStats();
+      reportProgress(video);
     };
     const handleEnded = () => {
       completed.current = true;
       endedOnce.current = true;
       setPlaying(false);
       sendStats();
+      reportProgress(video);
     };
     const handleWaiting = () => setWaiting(true);
     const handlePlaying = () => {
@@ -196,7 +220,18 @@ export function Player({
       setStarted(true);
       lastTime.current = video.currentTime;
     };
-    const handleMetadata = () => setDuration(video.duration || 0);
+    const handleMetadata = () => {
+      const length = video.duration || 0;
+      setDuration(length);
+      const saved = resumeRef.current ?? 0;
+      // Anything in the last five seconds is the end, not a place to return to.
+      if (!resumeApplied.current && saved > 3 && (!length || saved < length - 5)) {
+        resumeApplied.current = true;
+        video.currentTime = saved;
+        lastTime.current = saved;
+        setCurrentTime(saved);
+      }
+    };
     // A dropped range is usually a busier moment at the database, not a bad
     // file, so the first failure reconnects quietly before telling anyone.
     const handleError = () => {

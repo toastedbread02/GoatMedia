@@ -40,6 +40,52 @@ interface PhotoChoice {
   name: string;
 }
 
+const DRAFT_KEY = 'goatmedia:upload-draft';
+const DRAFT_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+/** The parts of an upload that are small enough to keep between visits. */
+interface UploadDraft {
+  kind: Kind;
+  caption: string;
+  category: string;
+  soundMode: SoundMode;
+  selectedSound: SoundLibraryItem | null;
+  soundTitle: string;
+  savedAt: number;
+}
+
+function readDraft(): UploadDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as UploadDraft;
+    if (!value || typeof value !== 'object' || !value.savedAt) return null;
+    if (Date.now() - value.savedAt > DRAFT_MAX_AGE) {
+      localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(draft: UploadDraft) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    /* private browsing, or a sound too big for the quota */
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* private browsing */
+  }
+}
+
 export function UploadPage() {
   useDocumentTitle('Upload');
   const { user, loading } = useAuth();
@@ -109,6 +155,40 @@ export function UploadPage() {
   useEffect(() => {
     return () => compressionAbort.current?.abort();
   }, []);
+
+  // The caption, category and sound choice survive a refresh. The file cannot,
+  // so a restored draft says so instead of pretending it was kept.
+  useEffect(() => {
+    const saved = readDraft();
+    if (!saved) return;
+    setKind(saved.kind ?? 'video');
+    setCaption(saved.caption ?? '');
+    setCategory(saved.category ?? '');
+    setSoundMode(saved.soundMode ?? 'none');
+    setSelectedSound(saved.selectedSound ?? null);
+    setSoundTitle(saved.soundTitle ?? '');
+    clearDraft();
+    setFileError('Draft restored. Pick your file again to finish it.');
+  }, []);
+
+  // Saving is debounced: typing a caption should not write to storage on every
+  // keystroke, and a half-typed word is not worth keeping.
+  useEffect(() => {
+    if (phase !== 'idle') return;
+    if (!caption && !category && !selectedSound) return;
+    const timer = window.setTimeout(() => {
+      writeDraft({
+        kind,
+        caption,
+        category,
+        soundMode,
+        selectedSound,
+        soundTitle,
+        savedAt: Date.now(),
+      });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [kind, caption, category, soundMode, selectedSound, soundTitle, phase]);
 
   useEffect(() => {
     if (kind !== 'photos' || soundMode !== 'library') return;
@@ -377,6 +457,7 @@ export function UploadPage() {
   };
 
   const reset = () => {
+    clearDraft();
     probeId.current += 1;
     compressionAbort.current?.abort();
     compressionAbort.current = null;
@@ -547,6 +628,7 @@ export function UploadPage() {
         setLastUpload(data.video ?? data.post);
       }
       setPhase('success');
+      clearDraft();
       if (video) URL.revokeObjectURL(video.previewUrl);
       for (const photo of photos) URL.revokeObjectURL(photo.previewUrl);
       setVideo(null);

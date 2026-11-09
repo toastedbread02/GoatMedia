@@ -556,6 +556,7 @@ interface CommentRow {
   created_at: number;
   user_id: string;
   parent_id: string | null;
+  pinned: number;
   username: string;
   display_name: string;
   avatar_version: number;
@@ -566,7 +567,7 @@ interface CommentRow {
 }
 
 const COMMENT_SELECT = (viewerId: string | null) => `
-  SELECT c.id, c.body, c.created_at, c.user_id, c.parent_id,
+  SELECT c.id, c.body, c.created_at, c.user_id, c.parent_id, c.pinned,
          u.username, u.display_name, u.avatar_version, u.role,
          (u.avatar_bytes IS NOT NULL) AS has_avatar,
          (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id = c.id) AS like_count,
@@ -574,7 +575,15 @@ const COMMENT_SELECT = (viewerId: string | null) => `
                  WHERE cl.comment_id = c.id AND cl.user_id = ${viewerId ? '?' : 'NULL'}) AS liked
     FROM comments c JOIN users u ON u.id = c.user_id`;
 
-function commentItem(origin: string, row: CommentRow, viewer: { id: string; role: string } | null) {
+function commentItem(
+  origin: string,
+  row: CommentRow,
+  viewer: { id: string; role: string } | null,
+  postOwnerId: string | null,
+) {
+  const isOwnerOrMod = Boolean(
+    viewer && (viewer.id === postOwnerId || viewer.role === 'admin'),
+  );
   return {
     id: row.id,
     body: row.body,
@@ -582,6 +591,9 @@ function commentItem(origin: string, row: CommentRow, viewer: { id: string; role
     parentId: row.parent_id,
     likeCount: row.like_count,
     liked: Boolean(row.liked),
+    pinned: Boolean(row.pinned),
+    isPostAuthor: Boolean(postOwnerId && row.user_id === postOwnerId),
+    canPin: isOwnerOrMod && !row.parent_id,
     author: {
       id: row.user_id,
       username: row.username,
@@ -599,6 +611,7 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
   const viewer = await currentUser(req, env);
   const viewerId = viewer?.id ?? null;
   const { offset, page } = pageOf(url.searchParams.get('page'), limits.commentsPageSize);
+  const sort = url.searchParams.get('sort') === 'top' ? 'top' : 'new';
   const post = await env.DB.prepare('SELECT status, owner_id FROM posts WHERE id = ?')
     .bind(id)
     .first<{ status: string; owner_id: string }>();
@@ -611,7 +624,9 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
   const roots = await env.DB.prepare(
     `${COMMENT_SELECT(viewerId)}
       WHERE c.post_id = ? AND c.status = 'visible' AND c.parent_id IS NULL
-      ORDER BY c.created_at DESC
+      ORDER BY ${
+        sort === 'top' ? 'c.pinned DESC, like_count DESC, c.created_at DESC' : 'c.created_at DESC'
+      }
       LIMIT ? OFFSET ?`,
   )
     .bind(...(viewerId ? [viewerId] : []), id, limits.commentsPageSize + 1, offset)
@@ -639,7 +654,12 @@ export async function listComments(req: Request, env: Env, url: URL, id: string)
     .first<{ n: number }>();
   const origin = new URL(req.url).origin;
   const items = [...pageRows, ...(replies.results || [])].map((row) =>
-    commentItem(origin, row, viewer ? { id: viewer.id, role: viewer.role } : null),
+    commentItem(
+      origin,
+      row,
+      viewer ? { id: viewer.id, role: viewer.role } : null,
+      post.owner_id,
+    ),
   );
   // `comments` stays as an alias for older clients; the app reads items/total.
   return json({ items, comments: items, total: count?.n ?? items.length, hasMore, page });
@@ -745,6 +765,9 @@ export async function addComment(req: Request, env: Env, id: string) {
           isModerator: user.role === 'admin',
         },
         canDelete: true,
+        pinned: false,
+        isPostAuthor: post.owner_id === user.id,
+        canPin: post.owner_id === user.id && !parentId,
       },
     },
     201,
@@ -1052,4 +1075,30 @@ export async function myPosts(req: Request, env: Env, origin: string, url: URL, 
     page,
     counts: isSelf ? countMap : null,
   });
+}
+
+/**
+ * Pinning belongs to the post owner, not the commenter: it is a way to hold one
+ * answer above the rest. One pinned comment per post, and only top-level ones.
+ */
+export async function pinComment(req: Request, env: Env, id: string, pinned: boolean) {
+  const user = await requireActive(req, env);
+  const row = await env.DB.prepare(
+    `SELECT c.id, c.post_id, c.parent_id, p.owner_id
+       FROM comments c JOIN posts p ON p.id = c.post_id
+      WHERE c.id = ?`,
+  )
+    .bind(id)
+    .first<{ id: string; post_id: string; parent_id: string | null; owner_id: string }>();
+  if (!row) throw missing('That comment is not here.');
+  if (row.owner_id !== user.id && user.role !== 'admin') {
+    throw denied('Only the post owner can pin a comment.');
+  }
+  if (row.parent_id) throw bad('Replies cannot be pinned. Pin the comment it belongs to.');
+
+  await env.DB.batch([
+    env.DB.prepare('UPDATE comments SET pinned = 0 WHERE post_id = ?').bind(row.post_id),
+    env.DB.prepare('UPDATE comments SET pinned = ? WHERE id = ?').bind(pinned ? 1 : 0, id),
+  ]);
+  return json({ ok: true, pinned });
 }

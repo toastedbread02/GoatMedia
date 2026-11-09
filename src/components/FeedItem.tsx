@@ -157,6 +157,15 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             poster={video.posterUrl}
             active={active}
             warm={index === activeIndex + 1}
+            resumeAt={video.watchProgress}
+            onProgress={(seconds) => {
+              api
+                .post(`/api/videos/${video.id}/progress`, {
+                  positionMs: Math.round(seconds * 1000),
+                  durationMs: Math.round((video.duration || 0) * 1000),
+                })
+                .catch(() => {});
+            }}
             onDoubleTap={() => {
               // Already liked? Then the tap is just feedback, not another write.
               if (!liked) void toggleLike();
@@ -283,7 +292,11 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             <p className="feed-caption">
               {caption.split(/(#[\w]{2,24})/g).map((part, partIndex) =>
                 part.startsWith('#') ? (
-                  <Link key={`${part}-${partIndex}`} className="taglink" to={`/search?q=${encodeURIComponent(part)}`}>
+                  <Link
+                    key={`${part}-${partIndex}`}
+                    className="taglink"
+                    to={`/tag/${encodeURIComponent(part.slice(1))}`}
+                  >
                     {part}
                   </Link>
                 ) : (

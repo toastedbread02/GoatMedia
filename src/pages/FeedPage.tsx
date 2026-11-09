@@ -11,6 +11,7 @@ import { FeedItem } from '../components/FeedItem.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { FeedSkeleton } from '../components/Skeleton.tsx';
 import { CreatorSuggestions } from '../components/CreatorSuggestions.tsx';
+import { InterestPicker } from '../components/InterestPicker.tsx';
 
 type Tab = 'foryou' | 'trending' | 'following';
 
@@ -46,6 +47,7 @@ export function FeedPage({ tab }: FeedPageProps) {
   });
   const watchedAsGuest = useRef<Set<string>>(new Set());
   const [highlights, setHighlights] = useState<VideoDTO[] | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const [invite, setInvite] = useState<{ comments: number } | null>(null);
   const askedHighlights = useRef(false);
   const location = useLocation();
@@ -172,6 +174,42 @@ export function FeedPage({ tab }: FeedPageProps) {
     setLoading(true);
     void load(1, true);
   }, [cacheKey, authLoading, user, tab, load]);
+
+  // A new account has no signal yet, so For You opens with a choice instead of
+  // a guess. Skipping is remembered; choosing reloads the feed with weights.
+  useEffect(() => {
+    if (!user || tab !== 'foryou') return;
+    try {
+      if (localStorage.getItem('gm-interest-picker') === 'skipped') return;
+    } catch {
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ interests?: unknown[]; items?: unknown[] }>('/api/me/interests')
+      .then((data) => {
+        if (cancelled) return;
+        if (!(data.interests ?? data.items ?? []).length) setShowPicker(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user, tab]);
+
+  const closePicker = (saved: boolean) => {
+    setShowPicker(false);
+    try {
+      if (!saved) localStorage.setItem('gm-interest-picker', 'skipped');
+    } catch {
+      /* private browsing */
+    }
+    if (saved) {
+      loadedKey.current = null;
+      setLoading(true);
+      void load(1, true);
+    }
+  };
 
   const loadMore = useCallback(() => {
     if (loadingMoreRef.current || !hasMoreRef.current || needsSignIn) return;
@@ -513,6 +551,10 @@ export function FeedPage({ tab }: FeedPageProps) {
         <div className="feed-more" role="status">
           <div className="spinner" />
         </div>
+      ) : null}
+
+      {showPicker ? (
+        <InterestPicker onSkip={() => closePicker(false)} onSaved={() => closePicker(true)} />
       ) : null}
     </div>
   );

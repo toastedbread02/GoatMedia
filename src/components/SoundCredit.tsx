@@ -77,7 +77,9 @@ export function SoundCredit({ sound, active = true, gated = false, className = '
       >
         <Icon name={playing ? 'pause' : 'play'} size={12} filled strokeWidth={0} />
       </button>
-      <span className="sound-credit__title">{unavailable ? 'Sound unavailable' : sound.title}</span>
+      <Link className="sound-credit__title" to={`/sound/${sound.id}`}>
+        {unavailable ? 'Sound unavailable' : sound.title}
+      </Link>
       <Link className="sound-credit__owner" to={`/u/${sound.owner.username}`}>
         @{sound.owner.username}
       </Link>

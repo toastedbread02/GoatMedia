@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { CreatorStatsDTO } from '../../shared/types.ts';
+import type { CreatorStatsDTO, StatsTimelineDTO } from '../../shared/types.ts';
 import { api } from '../lib/api.ts';
 import { compactNumber, plural } from '../lib/format.ts';
 
@@ -26,6 +26,7 @@ function deltaText(value: number, before: number) {
  */
 export function CreatorStats() {
   const [stats, setStats] = useState<CreatorStatsDTO | null>(null);
+  const [timeline, setTimeline] = useState<StatsTimelineDTO | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -43,6 +44,21 @@ export function CreatorStats() {
     };
   }, []);
 
+  // The week next to last week answers "is this working now?". The longer
+  // line answers "is this working at all?", which totals cannot.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<StatsTimelineDTO>('/api/me/stats/timeline?days=28')
+      .then((data) => {
+        if (!cancelled) setTimeline(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (failed) return null;
 
   const week = stats?.week;
@@ -50,6 +66,14 @@ export function CreatorStats() {
   const daily = stats?.daily ?? [];
   const peak = Math.max(1, ...daily);
   const weekTotal = daily.reduce((sum, value) => sum + value, 0);
+  const timelineMax = Math.max(1, ...(timeline?.series.map((point) => point.views) ?? [1]));
+  const sparkPoints = (timeline?.series ?? [])
+    .map((point, index) => {
+      const length = Math.max(1, (timeline?.series.length ?? 1) - 1);
+      const x = (index / length) * 280;
+      return `${x.toFixed(1)},${(44 - (point.views / timelineMax) * 40).toFixed(1)}`;
+    })
+    .join(' ');
 
   return (
     <section className="creator-stats" aria-labelledby="creator-stats-title">
@@ -93,6 +117,21 @@ export function CreatorStats() {
             ))}
           </div>
           <p className="stats__chart-label">{weekTotal ? `${weekTotal} views this week` : 'No views yet this week'}</p>
+          {timeline && timeline.series.length > 1 ? (
+            <figure className="stats__timeline">
+              <svg
+                viewBox="0 0 280 48"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label={`Views per day over the last ${timeline.days} days`}
+              >
+                <polyline className="stats__spark" points={sparkPoints} />
+              </svg>
+              <figcaption className="stats__chart-label">
+                {compactNumber(timeline.total)} views in {timeline.days} days
+              </figcaption>
+            </figure>
+          ) : null}
         </>
       )}
 

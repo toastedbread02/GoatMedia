@@ -105,3 +105,48 @@ export async function creatorStats(req: Request, env: Env) {
     },
   });
 }
+
+/**
+ * Views per day over a longer stretch than the week panel shows, signed in and
+ * signed out together. This is what gives the numbers a shape.
+ */
+export async function statsTimeline(req: Request, env: Env, url: URL) {
+  const user = await requireActive(req, env);
+  const parsed = Number(url.searchParams.get('days') || 28);
+  const days = Number.isFinite(parsed) ? Math.min(90, Math.max(7, Math.floor(parsed))) : 28;
+  const start = now() - days * DAY;
+
+  const [signedIn, guests] = await Promise.all([
+    env.DB.prepare(
+      `SELECT CAST((? - e.created_at) / ${DAY} AS INTEGER) AS bucket, COUNT(*) AS n
+         FROM post_events e JOIN posts p ON p.id = e.post_id
+        WHERE p.owner_id = ? AND e.kind = 'view' AND e.created_at >= ?
+        GROUP BY bucket`,
+    )
+      .bind(now(), user.id, start)
+      .all<{ bucket: number; n: number }>(),
+    env.DB.prepare(
+      `SELECT CAST((? - g.created_at) / ${DAY} AS INTEGER) AS bucket, COUNT(*) AS n
+         FROM guest_views g JOIN posts p ON p.id = g.post_id
+        WHERE p.owner_id = ? AND g.created_at >= ?
+        GROUP BY bucket`,
+    )
+      .bind(now(), user.id, start)
+      .all<{ bucket: number; n: number }>(),
+  ]);
+
+  const series = Array.from({ length: days }, (_, index) => ({
+    date: new Date(now() - (days - 1 - index) * DAY).toISOString().slice(0, 10),
+    views: 0,
+  }));
+  for (const row of [...(signedIn.results || []), ...(guests.results || [])]) {
+    const index = days - 1 - Number(row.bucket);
+    if (index >= 0 && index < days) series[index].views += Number(row.n);
+  }
+
+  return json({
+    days,
+    total: series.reduce((sum, point) => sum + point.views, 0),
+    series,
+  });
+}

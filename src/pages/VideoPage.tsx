@@ -191,6 +191,15 @@ export function VideoPage() {
                 src={video.videoUrl}
                 poster={video.posterUrl}
                 active
+                resumeAt={video.watchProgress}
+                onProgress={(seconds) => {
+                  api
+                    .post(`/api/videos/${video.id}/progress`, {
+                      positionMs: Math.round(seconds * 1000),
+                      durationMs: Math.round((video.duration || 0) * 1000),
+                    })
+                    .catch(() => {});
+                }}
                 // A like already saved is feedback only, not another write.
                 onDoubleTap={() => {
                   if (!liked) void toggleLike();
@@ -248,7 +257,7 @@ export function VideoPage() {
           {video.hashtags.length ? (
             <p className="video-tags">
               {video.hashtags.map((tag) => (
-                <Link key={tag} className="taglink" to={`/search?q=%23${tag}`}>
+                <Link key={tag} className="taglink" to={`/tag/${encodeURIComponent(tag)}`}>
                   #{tag}
                 </Link>
               ))}

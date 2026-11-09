@@ -140,7 +140,8 @@ export async function hydratePosts(
   const ids = rows.map((r) => r.id);
   const placeholders = ids.map(() => '?').join(',');
 
-  const [photoRes, soundRes, likeRes, hiddenRes, followRes, blockRes, saveRes] = await Promise.all([
+  const [photoRes, soundRes, likeRes, hiddenRes, followRes, blockRes, saveRes, progressRes] =
+    await Promise.all([
     env.DB.prepare(
       `SELECT id, post_id, position, width, height FROM post_photos
         WHERE post_id IN (${placeholders}) ORDER BY post_id, position`,
@@ -191,6 +192,14 @@ export async function hydratePosts(
           .bind(viewerId, ...ids)
           .all<{ post_id: string }>()
       : Promise.resolve({ results: [] as { post_id: string }[] }),
+    viewerId
+      ? env.DB.prepare(
+          `SELECT post_id, position_ms FROM post_progress
+            WHERE user_id = ? AND post_id IN (${placeholders})`,
+        )
+          .bind(viewerId, ...ids)
+          .all<{ post_id: string; position_ms: number }>()
+      : Promise.resolve({ results: [] as { post_id: string; position_ms: number }[] }),
   ]);
 
   const photosByPost = new Map<string, PostDTO['photos']>();
@@ -211,6 +220,9 @@ export async function hydratePosts(
   const following = new Set((followRes.results || []).map((r) => r.following_id));
   const blocked = new Set((blockRes.results || []).map((r) => r.blocked_id));
   const savedSet = new Set((saveRes.results || []).map((r) => r.post_id));
+  const progressMap = new Map(
+    (progressRes.results || []).map((r) => [r.post_id, r.position_ms] as const),
+  );
 
   return rows.map((row) => {
     const category = categoryById.get(row.category);
@@ -248,7 +260,12 @@ export async function hydratePosts(
       width: row.width ?? photos[0]?.width ?? null,
       height: row.height ?? photos[0]?.height ?? null,
       credit: null,
-      watchProgress: null,
+      // Seconds watched, so the player can offer to carry on. A glance under
+      // three seconds is not worth resuming and reads as new.
+      watchProgress:
+        (progressMap.get(row.id) ?? 0) >= 3000
+          ? Math.round((progressMap.get(row.id) ?? 0) / 100) / 10
+          : null,
       photos,
       sound: sound
         ? {

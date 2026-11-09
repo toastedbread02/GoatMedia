@@ -91,6 +91,12 @@ export interface CommentDTO {
     isModerator: boolean;
   };
   canDelete: boolean;
+  /** The post owner may pin one top-level comment. */
+  pinned: boolean;
+  /** True when the commenter is the creator of the post being commented on. */
+  isPostAuthor: boolean;
+  /** The post owner and moderators may pin this comment. */
+  canPin: boolean;
 }
 
 export interface PublicUser {
@@ -341,11 +347,17 @@ export interface CreatorStatsDTO {
   totals: { posts: number; views: number; likes: number };
 }
 
+export type SearchType = 'all' | 'videos' | 'photos' | 'creators';
+export type SearchSort = 'recent' | 'popular';
+
 export interface SearchResults {
   videos: VideoDTO[];
   creators: PublicUser[];
   hashtag: string | null;
   query: string;
+  photos?: VideoDTO[];
+  type?: SearchType;
+  sort?: SearchSort;
 }
 
 export interface StorageRow {
@@ -428,4 +440,70 @@ export interface TrafficDTO {
     /** Those who appeared on two or more different days in that week. */
     returning: number;
   };
+}
+
+export interface TagPageDTO {
+  tag: string;
+  items: VideoDTO[];
+  hasMore: boolean;
+  page: number;
+  total: number;
+}
+
+export interface SoundPageDTO {
+  sound: SoundRef & { postCount: number };
+  items: VideoDTO[];
+  hasMore: boolean;
+  page: number;
+}
+
+export interface HistoryDTO {
+  items: VideoDTO[];
+  hasMore: boolean;
+  page: number;
+}
+
+export interface InterestCatalogDTO {
+  categories: Category[];
+  hashtags: { tag: string; posts: number }[];
+}
+
+export interface DmUser {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+export interface DmThreadDTO {
+  id: string;
+  user: DmUser;
+  lastAt: number;
+  lastBody: string;
+  lastFromMe: boolean;
+  unread: number;
+}
+
+export interface DmMessageDTO {
+  id: string;
+  body: string;
+  createdAt: number;
+  mine: boolean;
+}
+
+export interface DmInboxDTO {
+  threads: DmThreadDTO[];
+  unread: number;
+}
+
+export interface DmThreadViewDTO {
+  thread: DmThreadDTO;
+  messages: DmMessageDTO[];
+  hasMore: boolean;
+}
+
+export interface StatsTimelineDTO {
+  days: number;
+  total: number;
+  series: { date: string; views: number }[];
 }

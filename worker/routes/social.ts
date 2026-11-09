@@ -1,8 +1,9 @@
-import { Env, bad, forbidden, json, missing, now, rateLimit, uid } from '../lib';
+import { Env, bad, forbidden, json, missing, now, rateLimit, readJson, uid } from '../lib';
 import { currentUser, requireActive } from '../session';
 import { hydratePosts, PostRow, POST_SELECT, publicUser, USER_SELECT, UserRow } from '../models';
 import { applySignal } from '../interests';
 import { firstFollowerMilestone } from '../milestones';
+import { categories, categoryById } from '../config';
 
 export async function follow(req: Request, env: Env, username: string, on: boolean) {
   const user = await requireActive(req, env);
@@ -148,45 +149,85 @@ export async function search(req: Request, env: Env, origin: string, url: URL) {
   const raw = (url.searchParams.get('q') || '').trim().slice(0, 60);
   const q = raw.toLowerCase();
   const tag = q.startsWith('#') ? q.slice(1) : null;
-  if (!q) return json({ posts: [], creators: [], hashtag: null, query: '' });
+
+  // A search can be narrowed to one kind of result, and ordered by what is
+  // new or by what did well. Both are answered here so the browser only ever
+  // makes one request per query.
+  const requested = url.searchParams.get('type');
+  const type: 'all' | 'videos' | 'photos' | 'creators' =
+    requested === 'videos' || requested === 'photos' || requested === 'creators'
+      ? requested
+      : 'all';
+  const sort: 'recent' | 'popular' =
+    url.searchParams.get('sort') === 'popular' ? 'popular' : 'recent';
+
+  if (!q) {
+    return json({
+      posts: [],
+      videos: [],
+      photos: [],
+      creators: [],
+      hashtag: null,
+      query: '',
+      type,
+      sort,
+    });
+  }
 
   const like = `%${q}%`;
+  const kindClause =
+    type === 'videos' ? "AND p.kind = 'video'" : type === 'photos' ? "AND p.kind = 'photos'" : '';
+  const order =
+    sort === 'popular'
+      ? 'ORDER BY p.like_count DESC, p.view_count DESC, p.published_at DESC'
+      : 'ORDER BY p.published_at DESC';
+  const wantsPosts = type !== 'creators';
+  const wantsCreators = type === 'all' || type === 'creators';
+
   const [postRows, userRows] = await Promise.all([
-    env.DB.prepare(
-      `${POST_SELECT}
-        LEFT JOIN sounds s ON s.id = p.sound_id
-        WHERE p.status = 'approved' AND u.status = 'active'
-          AND (
-            LOWER(p.caption) LIKE ?
-            OR LOWER(p.hashtags) LIKE ?
-            OR LOWER(s.title) LIKE ?
-            ${tag ? "OR LOWER(p.hashtags) LIKE ?" : ''}
-          )
-        ORDER BY p.published_at DESC
-        LIMIT 30`,
-    )
-      .bind(...(tag ? [like, `%${tag}%`, like, `%"${tag}"%`] : [like, like, like]))
-      .all<PostRow>(),
-    env.DB.prepare(
-      `${USER_SELECT(viewer?.id ?? null)}
-        WHERE u.status = 'active' AND u.searchable = 1
-          AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)
-        ORDER BY follower_count DESC
-        LIMIT 8`,
-    )
-      .bind(...(viewer ? [viewer.id, viewer.id] : []), like, like)
-      .all<UserRow>(),
+    wantsPosts
+      ? env.DB.prepare(
+          `${POST_SELECT}
+            LEFT JOIN sounds s ON s.id = p.sound_id
+            WHERE p.status = 'approved' AND u.status = 'active' ${kindClause}
+              AND (
+                LOWER(p.caption) LIKE ?
+                OR LOWER(p.hashtags) LIKE ?
+                OR LOWER(s.title) LIKE ?
+              )
+            ${order}
+            LIMIT 30`,
+        )
+          .bind(like, tag ? `%${tag}%` : like, like)
+          .all<PostRow>()
+      : Promise.resolve({ results: [] as PostRow[] }),
+    wantsCreators
+      ? env.DB.prepare(
+          `${USER_SELECT(viewer?.id ?? null)}
+            WHERE u.status = 'active' AND u.searchable = 1
+              AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)
+            ORDER BY follower_count DESC
+            LIMIT 8`,
+        )
+          .bind(...(viewer ? [viewer.id, viewer.id] : []), like, like)
+          .all<UserRow>()
+      : Promise.resolve({ results: [] as UserRow[] }),
   ]);
 
   const posts = await hydratePosts(env, origin, viewer?.id ?? null, postRows.results || []);
-  const creators = (userRows.results || []).map((row) => publicUser(origin, row, viewer?.id ?? null));
+  const creators = wantsCreators
+    ? (userRows.results || []).map((row) => publicUser(origin, row, viewer?.id ?? null))
+    : [];
   return json({
     posts,
     creators,
     videos: posts,
+    photos: posts.filter((post) => post.kind === 'photos'),
     people: creators,
     hashtag: tag,
     query: raw,
+    type,
+    sort,
   });
 }
 
@@ -342,6 +383,72 @@ export async function resetInterests(req: Request, env: Env) {
     env.DB.prepare('DELETE FROM hidden_posts WHERE user_id = ?').bind(user.id),
   ]);
   return json({ ok: true });
+}
+
+/**
+ * What a new account can pick from: the fixed categories, plus the hashtags
+ * that actually exist on approved posts, most used first. A hashtag nobody
+ * posts would only promise content that is not there.
+ */
+export async function interestCatalog(_req: Request, env: Env) {
+  const rows = await env.DB.prepare(
+    `SELECT LOWER(j.value) AS tag, COUNT(*) AS posts
+       FROM posts p, json_each(p.hashtags) j
+      WHERE p.status = 'approved'
+      GROUP BY tag
+      ORDER BY posts DESC
+      LIMIT 12`,
+  ).all<{ tag: string; posts: number }>();
+  return json(
+    { categories, hashtags: rows.results || [] },
+    200,
+    { 'cache-control': 'public, max-age=300' },
+  );
+}
+
+/**
+ * Seeds the feed model from an explicit choice. This is the only path that
+ * writes interest weights without a watch: everything else is earned.
+ */
+export async function seedInterests(req: Request, env: Env) {
+  const user = await requireActive(req, env);
+  const body = await readJson<Record<string, unknown>>(req);
+  const pickedCategories = Array.isArray(body.categories)
+    ? body.categories
+        .filter((value): value is string => typeof value === 'string' && categoryById.has(value))
+        .slice(0, 12)
+    : [];
+  const pickedTags = Array.isArray(body.hashtags)
+    ? body.hashtags
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.replace(/^#/, '').toLowerCase())
+        .filter((value) => /^[a-z0-9_]{2,24}$/.test(value))
+        .slice(0, 12)
+    : [];
+  if (!pickedCategories.length && !pickedTags.length) {
+    throw bad('Pick at least one thing you like.');
+  }
+
+  const at = now();
+  await env.DB.batch([
+    ...pickedCategories.map((category) =>
+      env.DB.prepare(
+        `INSERT INTO interests (user_id, kind, value, weight, updated_at)
+         VALUES (?, 'category', ?, 8, ?)
+         ON CONFLICT(user_id, kind, value) DO UPDATE SET
+           weight = MAX(weight, 8), updated_at = excluded.updated_at`,
+      ).bind(user.id, category, at),
+    ),
+    ...pickedTags.map((tag) =>
+      env.DB.prepare(
+        `INSERT INTO interests (user_id, kind, value, weight, updated_at)
+         VALUES (?, 'hashtag', ?, 5, ?)
+         ON CONFLICT(user_id, kind, value) DO UPDATE SET
+           weight = MAX(weight, 5), updated_at = excluded.updated_at`,
+      ).bind(user.id, tag, at),
+    ),
+  ]);
+  return json({ ok: true, categories: pickedCategories.length, hashtags: pickedTags.length });
 }
 
 export async function hiddenPosts(req: Request, env: Env, origin: string) {

@@ -327,6 +327,16 @@ export function ProfilePage() {
             </>
           ) : (
             <>
+              <Link
+                className="btn btn--quiet"
+                to={
+                  user
+                    ? `/messages?to=${profile.username}`
+                    : `/login?next=${encodeURIComponent(`/messages?to=${profile.username}`)}`
+                }
+              >
+                <Icon name="comment" size={16} /> Message
+              </Link>
               <button
                 type="button"
                 className={`btn ${profile.isFollowing ? 'btn--quiet is-following' : 'btn--primary'}`}

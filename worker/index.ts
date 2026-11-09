@@ -47,6 +47,7 @@ import {
   toggleCommentLike,
   toggleSave,
   setNotInterested,
+  pinComment,
   soundLibrary,
   toggleLike,
   updatePost,
@@ -57,12 +58,14 @@ import {
   follow,
   followList,
   hiddenPosts,
+  interestCatalog,
   interests,
   markNotificationsRead,
   notifications,
   reportUser,
   resetInterests,
   search,
+  seedInterests,
   suggestedCreators,
 } from './routes/social';
 import * as admin from './routes/admin';
@@ -73,8 +76,18 @@ import { recordVisit, traffic } from './routes/traffic';
 import { purge as storagePurge, usage as storageUsage } from './routes/storage';
 import { adminAppeals, decideAppeal, readAppeal, submitAppeal, warnUser } from './routes/appeals';
 import { changePassword, usernameAvailable } from './routes/auth';
-import { creatorStats } from './routes/stats';
+import { creatorStats, statsTimeline } from './routes/stats';
 import { daily, highlights, setDaily } from './routes/daily';
+import { tagPage, soundPage } from './routes/browse';
+import { watchHistory, clearHistory, saveProgress } from './routes/history';
+import {
+  inbox,
+  markThreadRead,
+  openThread,
+  sendMessage,
+  threadMessages,
+  unreadCount,
+} from './routes/dm';
 import { weeklyDigest } from './milestones';
 
 const CONFIG_CACHE = 'public, max-age=300';
@@ -214,11 +227,17 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (second === 'avatar' && method === 'DELETE') return deleteAvatar(req, env, origin);
     if (second === 'interests' && !third && method === 'GET') return interests(req, env);
     if (second === 'interests' && third === 'reset' && method === 'POST') return resetInterests(req, env);
+    if (second === 'interests' && third === 'seed' && method === 'POST') return seedInterests(req, env);
     if (second === 'reset-interests' && method === 'POST') return resetInterests(req, env);
     if (second === 'hidden' && !third && method === 'GET') return hiddenPosts(req, env, origin);
     if (second === 'hidden' && third && method === 'DELETE') return setNotInterested(req, env, third, false);
     if (second === 'blocked' && method === 'GET') return blockedUsers(req, env, origin);
     if (second === 'saved' && !third && method === 'GET') return savedPosts(req, env, origin, url);
+    if (second === 'history' && !third && method === 'GET') return watchHistory(req, env, origin, url);
+    if (second === 'history' && method === 'DELETE') return clearHistory(req, env);
+    if (second === 'stats' && third === 'timeline' && method === 'GET') {
+      return statsTimeline(req, env, url);
+    }
     if (second === 'stats' && !third && method === 'GET') return creatorStats(req, env);
     if (second === 'suggestions' && method === 'GET') return suggestedCreators(req, env, origin, url);
     if (second === 'creators' && method === 'GET') return suggestedCreators(req, env, origin, url);
@@ -244,6 +263,11 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
   if (root === 'daily' && method === 'GET') return daily(req, env, origin);
   if (root === 'category' && second && method === 'GET') return categoryPosts(req, env, origin, url, second);
   if (root === 'search' && method === 'GET') return search(req, env, origin, url);
+  if (root === 'interests' && method === 'GET') return interestCatalog(req, env);
+  if (root === 'tags' && second && method === 'GET') return tagPage(req, env, origin, url, second);
+  if (root === 'sounds' && second && parts.length === 3 && method === 'GET') {
+    return soundPage(req, env, origin, url, second);
+  }
   if (root === 'sounds' && method === 'GET') return soundLibrary(req, env, url);
   if (root === 'creators' && method === 'GET') return suggestedCreators(req, env, origin, url);
 
@@ -270,6 +294,7 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
       if (third === 'save' && method === 'DELETE') return toggleSave(req, env, second);
       if (third === 'comments' && method === 'GET') return listComments(req, env, url, second);
       if (third === 'comments' && method === 'POST') return addComment(req, env, second);
+      if (third === 'progress' && method === 'POST') return saveProgress(req, env, second);
       if (third === 'events' && method === 'POST') return postEvent(req, env, second);
       if (third === 'report' && method === 'POST') return reportPost(req, env, second);
       if (third === 'not-interested' && method === 'POST') return setNotInterested(req, env, second, true);
@@ -282,6 +307,8 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
 
   if (root === 'comments' && second) {
     if (method === 'DELETE' && parts.length === 3) return deleteComment(req, env, second);
+    if (third === 'pin' && method === 'POST') return pinComment(req, env, second, true);
+    if (third === 'pin' && method === 'DELETE') return pinComment(req, env, second, false);
     if (third === 'like' && method === 'POST') return toggleCommentLike(req, env, second, true);
     if (third === 'like' && method === 'DELETE') return toggleCommentLike(req, env, second, false);
     if (third === 'report' && method === 'POST') return reportComment(req, env, second);
@@ -303,6 +330,21 @@ async function route(req: Request, env: Env, url: URL, origin: string): Promise<
     if (third === 'block' && method === 'POST') return block(req, env, second, true);
     if (third === 'block' && method === 'DELETE') return block(req, env, second, false);
     if (third === 'report' && method === 'POST') return reportUser(req, env, second);
+    return json({ error: 'Not found.' }, 404);
+  }
+
+  // ---- direct messages ---------------------------------------------------
+  if (root === 'dm') {
+    if (second === 'unread' && method === 'GET') return unreadCount(req, env);
+    if (second === 'threads' && !third) {
+      if (method === 'GET') return inbox(req, env);
+      if (method === 'POST') return openThread(req, env);
+    }
+    if (second === 'threads' && third) {
+      if (!fourth && method === 'GET') return threadMessages(req, env, third);
+      if (fourth === 'messages' && method === 'POST') return sendMessage(req, env, third);
+      if (fourth === 'read' && method === 'POST') return markThreadRead(req, env, third);
+    }
     return json({ error: 'Not found.' }, 404);
   }
 

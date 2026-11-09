@@ -34,14 +34,17 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [reportTarget, setReportTarget] = useState<CommentDTO | null>(null);
+  const [sort, setSort] = useState<'new' | 'top'>('new');
+  const [pinPending, setPinPending] = useState<string | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setPage(1);
     api
       .get<{ items?: CommentDTO[]; comments?: CommentDTO[]; hasMore: boolean; total?: number }>(
-        `/api/videos/${video.id}/comments`,
+        `/api/videos/${video.id}/comments?sort=${sort}`,
       )
       .then((data) => {
         if (cancelled) return;
@@ -57,7 +60,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
     return () => {
       cancelled = true;
     };
-  }, [video.id]);
+  }, [video.id, sort]);
 
   const close = () => {
     if (inline) return;
@@ -120,7 +123,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
         comments?: CommentDTO[];
         hasMore: boolean;
         total?: number;
-      }>(`/api/videos/${video.id}/comments?page=${next}`);
+      }>(`/api/videos/${video.id}/comments?page=${next}&sort=${sort}`);
       setItems((current) => [...(current ?? []), ...(data.items ?? data.comments ?? [])]);
       setHasMore(data.hasMore);
       setPage(next);
@@ -154,6 +157,27 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
     } catch {
       setComment(comment.id, { liked: comment.liked, likeCount: comment.likeCount });
       toast.notify('That like did not save.', { tone: 'error' });
+    }
+  };
+
+  const togglePin = async (comment: CommentDTO) => {
+    if (pinPending) return;
+    const next = !comment.pinned;
+    setPinPending(comment.id);
+    setItems((current) =>
+      current?.map((item) => {
+        if (item.id === comment.id) return { ...item, pinned: next };
+        return next && item.pinned ? { ...item, pinned: false } : item;
+      }) ?? null,
+    );
+    try {
+      if (next) await api.post(`/api/comments/${comment.id}/pin`);
+      else await api.delete(`/api/comments/${comment.id}/pin`);
+      toast.notify(next ? 'Comment pinned.' : 'Comment unpinned.');
+    } catch {
+      toast.notify('That pin did not save.', { tone: 'error' });
+    } finally {
+      setPinPending(null);
     }
   };
 
@@ -237,6 +261,10 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
           <Link to={`/u/${comment.author.username}`} className="comment__name" onClick={close}>
             {comment.author.displayName}
           </Link>
+          {comment.pinned ? (
+            <span className="comment__badge comment__badge--pin">Pinned</span>
+          ) : null}
+          {comment.isPostAuthor ? <span className="comment__badge">Creator</span> : null}
           <span className="comment__handle-line">
             <Link to={`/u/${comment.author.username}`} className="comment__handle" onClick={close}>
               @{comment.author.username}
@@ -264,6 +292,16 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
           <button type="button" className="comment__link" onClick={() => startReply(comment)}>
             {replyTo?.id === comment.id ? 'Replying' : 'Reply'}
           </button>
+          {comment.canPin ? (
+            <button
+              type="button"
+              className="comment__link"
+              onClick={() => togglePin(comment)}
+              disabled={pinPending === comment.id}
+            >
+              {comment.pinned ? 'Unpin' : 'Pin'}
+            </button>
+          ) : null}
           {comment.canDelete ? (
             <button type="button" className="comment__link is-danger" onClick={() => remove(comment)}>
               Delete
@@ -295,6 +333,24 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
         <header className="comments-panel__head">
           <span className="comments-panel__title">Comments</span>
           <span className="comments-panel__count">{total}</span>
+          <div className="comments-panel__sort" role="group" aria-label="Sort comments">
+            <button
+              type="button"
+              className={`comment__link${sort === 'top' ? ' is-on' : ''}`}
+              aria-pressed={sort === 'top'}
+              onClick={() => setSort('top')}
+            >
+              Top
+            </button>
+            <button
+              type="button"
+              className={`comment__link${sort === 'new' ? ' is-on' : ''}`}
+              aria-pressed={sort === 'new'}
+              onClick={() => setSort('new')}
+            >
+              Newest
+            </button>
+          </div>
           {!inline ? (
             <button
               type="button"

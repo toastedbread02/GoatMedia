@@ -288,6 +288,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
   const [unread, setUnread] = useState(user?.unreadNotifications ?? 0);
+  const [dmUnread, setDmUnread] = useState(0);
 
   useEffect(() => {
     setUnread(user?.unreadNotifications ?? 0);
@@ -298,6 +299,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     api
       .get<{ unread: number }>('/api/notifications')
       .then((data) => setUnread(data.unread))
+      .catch(() => {});
+  }, [user?.id, location.pathname]);
+
+  // Messages keep their own count: a conversation is not a notification, and
+  // the badge clears when the thread is opened, not when one is read.
+  useEffect(() => {
+    if (!user) return;
+    api
+      .get<{ unread: number }>('/api/dm/unread')
+      .then((data) => setDmUnread(data.unread))
       .catch(() => {});
   }, [user?.id, location.pathname]);
 
@@ -338,6 +349,30 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="navlink__label">{item.label}</span>
             </NavLink>
           ))}
+          {user ? (
+            <NavLink
+              to="/messages"
+              className={({ isActive }) => `navlink${isActive ? ' is-active' : ''}`}
+              title="Messages"
+              aria-label={dmUnread > 0 ? `Messages, ${dmUnread} unread` : 'Messages'}
+            >
+              <span className="navlink__icon">
+                <Icon name="comment" size={20} />
+                {dmUnread > 0 ? <span className="navlink__dot" aria-hidden="true" /> : null}
+              </span>
+              <span className="navlink__label">Messages</span>
+            </NavLink>
+          ) : null}
+          {user ? (
+            <NavLink
+              to="/history"
+              className={({ isActive }) => `navlink${isActive ? ' is-active' : ''}`}
+              title="History"
+            >
+              <Icon name="play" size={20} />
+              <span className="navlink__label">History</span>
+            </NavLink>
+          ) : null}
           <NavLink
             to={user ? `/u/${user.username}` : `/login?next=${encodeURIComponent('/')}`}
             className={({ isActive }) => `navlink${isActive ? ' is-active' : ''}`}
@@ -362,6 +397,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link to="/search" className="iconbtn" aria-label="Search">
               <Icon name="search" size={21} />
             </Link>
+            {user ? (
+              <Link
+                to="/messages"
+                className="iconbtn"
+                aria-label={dmUnread > 0 ? `Messages, ${dmUnread} unread` : 'Messages'}
+                title="Messages"
+              >
+                <Icon name="comment" size={20} />
+                {dmUnread > 0 ? <span className="navlink__dot" aria-hidden="true" /> : null}
+              </Link>
+            ) : null}
             <Link to="/contact" className="iconbtn" aria-label="Contact and reports" title="Contact and reports">
               <Icon name="flag" size={20} />
             </Link>
