@@ -159,6 +159,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             warm={index === activeIndex + 1}
             resumeAt={video.watchProgress}
             onProgress={(seconds) => {
+              if (!user) return;
               api
                 .post(`/api/videos/${video.id}/progress`, {
                   positionMs: Math.round(seconds * 1000),

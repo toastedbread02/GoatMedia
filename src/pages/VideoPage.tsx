@@ -193,6 +193,7 @@ export function VideoPage() {
                 active
                 resumeAt={video.watchProgress}
                 onProgress={(seconds) => {
+                  if (!user) return;
                   api
                     .post(`/api/videos/${video.id}/progress`, {
                       positionMs: Math.round(seconds * 1000),
