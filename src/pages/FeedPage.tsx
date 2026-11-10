@@ -12,7 +12,7 @@ import { Icon } from '../components/Icon.tsx';
 import { FeedSkeleton } from '../components/Skeleton.tsx';
 import { CreatorSuggestions } from '../components/CreatorSuggestions.tsx';
 import { InterestPicker } from '../components/InterestPicker.tsx';
-import { EGG_VIDEO, countRefresh, eggUnlocked, isEgg } from '../lib/easterEgg.ts';
+import { EGG_VIDEO, countRefresh, isEgg } from '../lib/easterEgg.ts';
 
 type Tab = 'foryou' | 'trending' | 'following';
 
@@ -82,7 +82,8 @@ export function FeedPage({ tab }: FeedPageProps) {
   const pullRef = useRef(0);
   const refreshingRef = useRef(false);
   const refreshRef = useRef<() => void>(() => {});
-  const eggRef = useRef(eggUnlocked());
+  // Never restored from storage: a reload must not put the post on screen.
+  const eggRef = useRef(false);
 
   useDocumentTitle(TITLES[tab]);
 

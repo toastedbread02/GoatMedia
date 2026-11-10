@@ -8,8 +8,6 @@ import { timeAgo } from './format.ts';
  */
 
 const REFRESH_TARGET = 15;
-const COUNT_KEY = 'gm-feed-pulls';
-const SEEN_KEY = 'gm-feed-odd';
 
 const DAYS_OLD = 1298;
 const CREATOR_ID = 'usr_0000000000000000';
@@ -93,35 +91,18 @@ export function postAge(video: VideoDTO): string {
   return isEgg(video.id) ? `${DAYS_OLD}d ago` : timeAgo(video.publishedAt ?? video.createdAt);
 }
 
-export function eggUnlocked(): boolean {
-  try {
-    return localStorage.getItem(SEEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function pulls(): number {
-  try {
-    const value = Number(localStorage.getItem(COUNT_KEY));
-    return Number.isFinite(value) && value > 0 ? value : 0;
-  } catch {
-    return 0;
-  }
-}
+/**
+ * Counted in memory and never stored. A reload starts the count over and, more
+ * importantly, cannot reveal the post on its own: it only ever arrives from a
+ * refresh gesture made in the session that earned it. Navigating to another
+ * feed tab mounts a fresh feed, so the post does not tag along there either.
+ */
+let pulls = 0;
 
 /** Records one refresh gesture; true on the one that unlocks the post. */
 export function countRefresh(): boolean {
-  const next = pulls() + 1;
-  try {
-    if (next >= REFRESH_TARGET) {
-      localStorage.setItem(SEEN_KEY, '1');
-      localStorage.setItem(COUNT_KEY, '0');
-      return true;
-    }
-    localStorage.setItem(COUNT_KEY, String(next));
-  } catch {
-    /* private browsing: the post simply never unlocks */
-  }
-  return false;
+  pulls += 1;
+  if (pulls < REFRESH_TARGET) return false;
+  pulls = 0;
+  return true;
 }
