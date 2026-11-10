@@ -16,6 +16,14 @@ import { EGG_VIDEO, countRefresh, eggUnlocked, isEgg } from '../lib/easterEgg.ts
 
 type Tab = 'foryou' | 'trending' | 'following';
 
+/* Pull-to-refresh travel in pixels: how far the feed can be dragged, the point
+   that fires a refresh, where the indicator rests while loading, and the floor
+   for how long that loading state stays readable. */
+const PULL_MAX = 96;
+const PULL_TRIGGER = 64;
+const PULL_HOLD = 52;
+const REFRESH_MIN_MS = 800;
+
 const TITLES: Record<Tab, string> = {
   foryou: 'For You',
   trending: 'Trending',
@@ -37,6 +45,7 @@ export function FeedPage({ tab }: FeedPageProps) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [pull, setPull] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
@@ -235,10 +244,19 @@ export function FeedPage({ tab }: FeedPageProps) {
   const refresh = useCallback(async () => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
+    setPulling(false);
     setRefreshing(true);
+    setPull(PULL_HOLD);
     if (countRefresh()) eggRef.current = true;
+    const startedAt = performance.now();
     await load(1, true);
+    // A fast response must not blink past: the label is here to be read.
+    const elapsed = performance.now() - startedAt;
+    if (elapsed < REFRESH_MIN_MS) {
+      await new Promise((resolve) => setTimeout(resolve, REFRESH_MIN_MS - elapsed));
+    }
     setRefreshing(false);
+    setPull(0);
     refreshingRef.current = false;
   }, [load]);
 
@@ -317,6 +335,10 @@ export function FeedPage({ tab }: FeedPageProps) {
         gestureUsed.current = false;
         wheelDelta.current = 0;
         refreshPull.current = 0;
+        if (!refreshingRef.current) {
+          setPulling(false);
+          setPull(0);
+        }
       }, 300);
       if (gestureUsed.current) return;
 
@@ -327,15 +349,23 @@ export function FeedPage({ tab }: FeedPageProps) {
       // Scrolling up from the first post asks for new posts rather than a post
       // that is not there, once the gesture has travelled far enough.
       if (delta < 0 && element.scrollTop <= 1) {
-        refreshPull.current += -delta;
-        if (refreshPull.current >= 140) {
+        refreshPull.current = Math.min(PULL_MAX, refreshPull.current + -delta * 0.35);
+        setPulling(true);
+        setPull(Math.round(refreshPull.current));
+        if (refreshPull.current >= PULL_TRIGGER) {
           refreshPull.current = 0;
           gestureUsed.current = true;
           refreshRef.current();
         }
         return;
       }
-      refreshPull.current = 0;
+      if (refreshPull.current) {
+        refreshPull.current = 0;
+        if (!refreshingRef.current) {
+          setPulling(false);
+          setPull(0);
+        }
+      }
       wheelDelta.current += delta;
       if (Math.abs(wheelDelta.current) < 30) return;
       const direction = wheelDelta.current > 0 ? 1 : -1;
@@ -350,16 +380,18 @@ export function FeedPage({ tab }: FeedPageProps) {
     };
     const onTouchMove = (event: TouchEvent) => {
       if (!touchStart) return;
-      const distance = Math.max(0, Math.min(96, event.touches[0].clientY - touchStart));
+      const distance = Math.max(0, Math.min(PULL_MAX, (event.touches[0].clientY - touchStart) * 0.55));
       pullRef.current = distance;
-      setPull(distance);
+      setPulling(true);
+      setPull(Math.round(distance));
     };
     const onTouchEnd = () => {
       const distance = pullRef.current;
       pullRef.current = 0;
       touchStart = 0;
-      setPull(0);
-      if (distance >= 64) refreshRef.current();
+      setPulling(false);
+      if (distance >= PULL_TRIGGER) refreshRef.current();
+      else setPull(0);
     };
 
     element.addEventListener('wheel', onWheel, { passive: false });
@@ -481,14 +513,26 @@ export function FeedPage({ tab }: FeedPageProps) {
   }
 
   return (
-    <div className="feed-page">
-      {refreshing || pull > 8 ? (
-        <div className={`feed-refresh${refreshing ? ' is-busy' : ''}`} role="status">
-          {refreshing ? 'Refreshing…' : pull >= 64 ? 'Release to refresh' : 'Pull to refresh'}
-        </div>
-      ) : null}
+    <div className={`feed-page${pulling ? ' is-pulling' : ''}`}>
+      <div
+        className={`feed-pull${refreshing ? ' is-busy' : ''}`}
+        style={{
+          transform: `translate(-50%, ${pull - PULL_HOLD}px)`,
+          opacity: pull > 2 ? 1 : 0,
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          className="feed-pull__ring"
+          style={{ transform: `rotate(${Math.round(pull * 3.5)}deg)` }}
+          aria-hidden="true"
+        />
+        <span>{refreshing ? 'Refreshing…' : pull >= PULL_TRIGGER ? 'Release to refresh' : 'Pull to refresh'}</span>
+      </div>
       <div
         className="feed-scroller"
+        style={{ transform: pull ? `translateY(${pull}px)` : undefined }}
         ref={scroller}
         onScroll={handleScroll}
         tabIndex={0}

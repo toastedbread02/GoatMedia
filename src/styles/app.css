@@ -7021,26 +7021,72 @@ ol {
   color: var(--paper);
 }
 
-/* Pull-to-refresh hint. Sits under the top bar and only appears while the feed
-   is being pulled or reloaded, so it never covers a post at rest. */
-.feed-refresh {
-  position: fixed;
-  top: 72px;
+/* Pull-to-refresh. The feed itself travels with the gesture, a ring turns as it
+   goes, and the label stays put long enough to be read while it loads. */
+.feed-pull {
+  position: absolute;
+  top: 0;
   left: 50%;
-  z-index: 12;
-  transform: translateX(-50%);
-  padding: 6px 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
   border-radius: 999px;
-  background: rgba(21, 19, 16, 0.82);
+  background: rgba(21, 19, 16, 0.88);
   color: var(--stage-ink);
-  font-size: 0.76rem;
-  letter-spacing: 0.02em;
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
   pointer-events: none;
-  transition: opacity 160ms ease;
+  will-change: transform, opacity;
+  transition:
+    transform 260ms cubic-bezier(0.22, 0.9, 0.3, 1),
+    opacity 180ms ease;
 }
 
-.feed-refresh.is-busy {
-  opacity: 0.92;
+/* While a finger or wheel is driving it, the indicator tracks without easing. */
+.feed-page.is-pulling .feed-pull {
+  transition: opacity 120ms linear;
+}
+
+.feed-pull__ring {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(246, 240, 228, 0.3);
+  border-top-color: var(--stage-ink);
+  will-change: transform;
+}
+
+.feed-pull.is-busy .feed-pull__ring {
+  animation: feed-pull-spin 640ms linear infinite;
+  border-top-color: var(--accent-soft);
+}
+
+@keyframes feed-pull-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.feed-scroller {
+  transition: transform 260ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+.feed-page.is-pulling .feed-scroller {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-pull,
+  .feed-scroller {
+    transition: none;
+  }
+
+  .feed-pull.is-busy .feed-pull__ring {
+    animation: none;
+  }
 }
 
 /* Actions the odd post does not offer. */
