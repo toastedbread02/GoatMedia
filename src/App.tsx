@@ -26,6 +26,7 @@ import {
 } from './pages/DocsPages.tsx';
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
 import { recordVisit } from './lib/api.ts';
+import { OddProfile } from './pages/OddProfile.tsx';
 
 function AppFrame() {
   const location = useLocation();
@@ -51,6 +52,11 @@ function AppFrame() {
     const main = document.getElementById('main');
     if (main) main.scrollTop = 0;
   }, [location.pathname]);
+
+  // The odd account's profile is deliberately bare: no shell, no chrome, no
+  // request. The router decodes the pathname, so this is checked as a pattern
+  // rather than a route.
+  if (/^\/u\/(\?|%3F)$/i.test(location.pathname)) return <OddProfile />;
 
   return (
     <AppShell>

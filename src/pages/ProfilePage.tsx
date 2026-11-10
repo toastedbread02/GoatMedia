@@ -5,6 +5,7 @@ import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { useToast } from '../lib/toast.tsx';
 import { monthYear, plural } from '../lib/format.ts';
+import { shareLink } from '../lib/share.ts';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { Avatar } from '../components/Avatar.tsx';
 import { Icon } from '../components/Icon.tsx';
@@ -361,7 +362,7 @@ export function ProfilePage() {
                       className="menu-item"
                       onClick={() => {
                         close();
-                        void navigator.clipboard.writeText(`${window.location.origin}/u/${profile.username}`).then(
+                        void navigator.clipboard.writeText(shareLink(`u/${profile.username}`, 'profile')).then(
                           () => notify('Profile link copied.'),
                           () => notify('Could not copy the link.', { tone: 'error' }),
                         );

@@ -4,6 +4,7 @@ import { api } from '../lib/api.ts';
 import { compactNumber } from '../lib/format.ts';
 import { Icon } from './Icon.tsx';
 import { Skeleton } from './Skeleton.tsx';
+import { CHANNEL_LABELS } from '../lib/share.ts';
 
 const WINDOWS = [7, 14, 30];
 
@@ -14,7 +15,7 @@ function dayDate(iso: string) {
 function readableSource(source: string) {
   if (source === 'direct') return 'Direct or unknown';
   if (source === 'internal') return 'Already on the site';
-  return source;
+  return CHANNEL_LABELS[source] ?? source;
 }
 
 /**
@@ -231,8 +232,8 @@ export function TrafficPanel() {
                   </ul>
                 ) : (
                   <p className="traffic__note">
-                    No outside referrers yet. Links from Reddit, chat apps and search will appear
-                    here by host.
+                    No outside referrers yet. Links shared from the site arrive tagged with
+                    the channel that sent them; other traffic appears by referring host.
                   </p>
                 )}
               </div>

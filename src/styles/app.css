@@ -7020,3 +7020,54 @@ ol {
   border-color: var(--ink);
   color: var(--paper);
 }
+
+/* Pull-to-refresh hint. Sits under the top bar and only appears while the feed
+   is being pulled or reloaded, so it never covers a post at rest. */
+.feed-refresh {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  z-index: 12;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(21, 19, 16, 0.82);
+  color: var(--stage-ink);
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.feed-refresh.is-busy {
+  opacity: 0.92;
+}
+
+/* Actions the odd post does not offer. */
+.feed-rail__btn:disabled,
+.comment__like:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Menu entries the odd post does not offer. */
+.menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The profile behind the odd account: nothing but white and the character. */
+.odd-profile {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #1c1915;
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  font-size: clamp(56px, 14vw, 140px);
+  font-weight: 300;
+  line-height: 1;
+  user-select: none;
+}

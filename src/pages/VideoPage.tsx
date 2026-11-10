@@ -7,6 +7,7 @@ import { useCategories, useConfig } from '../lib/config.tsx';
 import { useToast } from '../lib/toast.tsx';
 import { removeVideoFromCaches } from '../lib/feedCache.ts';
 import { compactNumber, formatDate, timeAgo } from '../lib/format.ts';
+import { shareLink } from '../lib/share.ts';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { Player } from '../components/Player.tsx';
 import { AuthorizedPlayer } from '../components/AuthorizedMedia.tsx';
@@ -131,7 +132,7 @@ export function VideoPage() {
 
   const share = async () => {
     if (!video) return;
-    const url = `${window.location.origin}${import.meta.env.BASE_URL}v/${video.id}`;
+    const url = shareLink(`v/${video.id}`, 'share' in navigator ? 'native' : 'copy');
     try {
       if (navigator.share) await navigator.share({ title: video.caption || 'GoatMedia', url });
       else {

@@ -9,6 +9,7 @@ import { compactNumber, timeAgo } from '../lib/format.ts';
 import { Avatar } from './Avatar.tsx';
 import { Icon } from './Icon.tsx';
 import { ReportDialog } from './ReportDialog.tsx';
+import { EGG_COMMENTS, isEgg, profilePath } from '../lib/easterEgg.ts';
 
 interface CommentsPanelProps {
   video: VideoDTO;
@@ -39,9 +40,17 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLElement>(null);
 
+  const odd = isEgg(video.id);
+
   useEffect(() => {
     let cancelled = false;
     setPage(1);
+    if (isEgg(video.id)) {
+      setItems(EGG_COMMENTS);
+      setHasMore(false);
+      setTotal(video.commentCount);
+      return;
+    }
     api
       .get<{ items?: CommentDTO[]; comments?: CommentDTO[]; hasMore: boolean; total?: number }>(
         `/api/videos/${video.id}/comments?sort=${sort}`,
@@ -115,6 +124,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   }, [inline]);
 
   const loadMore = async () => {
+    if (odd) return;
     setLoadingMore(true);
     try {
       const next = page + 1;
@@ -140,6 +150,13 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   };
 
   const like = async (comment: CommentDTO) => {
+    if (odd) {
+      setComment(comment.id, {
+        liked: !comment.liked,
+        likeCount: Math.max(0, comment.likeCount + (comment.liked ? -1 : 1)),
+      });
+      return;
+    }
     if (!user) {
       navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
       return;
@@ -248,7 +265,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
 
   const renderComment = (comment: CommentDTO, isReply: boolean) => (
     <li key={comment.id} className={`comment${isReply ? ' comment--reply' : ''}`}>
-      <Link to={`/u/${comment.author.username}`} onClick={close} aria-label={`${comment.author.displayName} profile`}>
+      <Link to={profilePath(comment.author.username)} onClick={close} aria-label={`${comment.author.displayName} profile`}>
         <Avatar
           displayName={comment.author.displayName}
           username={comment.author.username}
@@ -258,7 +275,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
       </Link>
       <div className="comment__body">
         <div className="comment__head">
-          <Link to={`/u/${comment.author.username}`} className="comment__name" onClick={close}>
+          <Link to={profilePath(comment.author.username)} className="comment__name" onClick={close}>
             {comment.author.displayName}
           </Link>
           {comment.pinned ? (
@@ -266,7 +283,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
           ) : null}
           {comment.isPostAuthor ? <span className="comment__badge">Creator</span> : null}
           <span className="comment__handle-line">
-            <Link to={`/u/${comment.author.username}`} className="comment__handle" onClick={close}>
+            <Link to={profilePath(comment.author.username)} className="comment__handle" onClick={close}>
               @{comment.author.username}
             </Link>
             {comment.author.isModerator ? (
@@ -283,6 +300,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
             type="button"
             className={`comment__like${comment.liked ? ' is-liked' : ''}`}
             onClick={() => like(comment)}
+            disabled={odd}
             aria-pressed={comment.liked}
             aria-label={`${comment.liked ? 'Unlike' : 'Like'} comment, ${comment.likeCount} likes`}
           >
@@ -404,7 +422,11 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
         </div>
 
         <div className="comments-panel__foot">
-          {user ? (
+          {odd ? (
+            <div className="comment-signin">
+              <span>Comments are closed on this post.</span>
+            </div>
+          ) : user ? (
             <>
               {replyTo ? (
                 <div className="comment-form__replying">

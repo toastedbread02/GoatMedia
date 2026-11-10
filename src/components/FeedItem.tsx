@@ -5,7 +5,9 @@ import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { useConfig } from '../lib/config.tsx';
 import { useToast } from '../lib/toast.tsx';
-import { compactNumber, timeAgo } from '../lib/format.ts';
+import { compactNumber } from '../lib/format.ts';
+import { shareLink } from '../lib/share.ts';
+import { isEgg, postAge, profilePath } from '../lib/easterEgg.ts';
 import { Avatar } from './Avatar.tsx';
 import { Icon } from './Icon.tsx';
 import { Popover } from './Popover.tsx';
@@ -38,8 +40,9 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   const [reportOpen, setReportOpen] = useState(false);
 
   const active = index === activeIndex;
+  // Interactions on the odd post stay in this tab; the API has never heard of it.
+  const eggPost = isEgg(video.id);
   const shouldMount = Math.abs(index - activeIndex) <= 1;
-  const shareUrl = `${window.location.origin}${import.meta.env.BASE_URL}v/${video.id}`;
 
   useEffect(() => {
     if (!active || video.kind === 'video') return;
@@ -54,6 +57,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const toggleLike = async () => {
+    if (eggPost) return;
     if (!requireAuth()) return;
     const next = !liked;
     setLiked(next);
@@ -70,6 +74,10 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const toggleFollow = async () => {
+    if (eggPost) {
+      setFollowing(!following);
+      return;
+    }
     if (!requireAuth()) return;
     const next = !following;
     setFollowing(next);
@@ -89,12 +97,14 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const share = async () => {
+    if (eggPost) return;
+    const url = shareLink(`v/${video.id}`, 'share' in navigator ? 'native' : 'copy');
     try {
       if (navigator.share) {
-        await navigator.share({ title: video.caption || 'GoatMedia', url: shareUrl });
+        await navigator.share({ title: video.caption || 'GoatMedia', url });
         return;
       }
-      await navigator.clipboard.writeText(shareUrl);
+      await navigator.clipboard.writeText(url);
       notify('Link copied.', { actionLabel: 'Open video', onAction: () => navigate(`/v/${video.id}`) });
     } catch {
       /* the user dismissed the share sheet */
@@ -102,8 +112,9 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const copyLink = async () => {
+    if (eggPost) return;
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      await navigator.clipboard.writeText(shareLink(`v/${video.id}`, 'copy'));
       notify('Link copied.');
     } catch {
       notify('Could not copy the link.', { tone: 'error' });
@@ -111,16 +122,19 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const openShareTarget = (target: 'x' | 'whatsapp' | 'reddit') => {
+    if (eggPost) return;
     const text = video.caption || 'A goat video on GoatMedia';
+    const link = shareLink(`v/${video.id}`, target === 'x' ? 'twitter' : target);
     const urls = {
-      x: `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
-      whatsapp: `https://wa.me/?text=${encodeURIComponent(`${text} ${shareUrl}`)}`,
-      reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(text)}`,
+      x: `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(link)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(`${text} ${link}`)}`,
+      reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(link)}&title=${encodeURIComponent(text)}`,
     };
     window.open(urls[target], '_blank', 'noopener,noreferrer');
   };
 
   const toggleSave = async () => {
+    if (eggPost) return;
     if (!requireAuth()) return;
     const next = !saved;
     setSaved(next);
@@ -135,7 +149,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const caption = video.caption || 'Untitled goat post';
-  const profileHref = `/u/${video.creator.username}`;
+  const profileHref = profilePath(video.creator.username);
 
   return (
     <article className="feed-item" aria-label={`Post by ${video.creator.displayName}`}>
@@ -148,7 +162,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             className="feed-stage album"
             onDoubleTap={() => {
               // Already liked? Then the tap is just feedback, not another write.
-              if (!liked) void toggleLike();
+              if (!liked && !eggPost) void toggleLike();
             }}
           />
         ) : shouldMount && video.videoUrl ? (
@@ -159,7 +173,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             warm={index === activeIndex + 1}
             resumeAt={video.watchProgress}
             onProgress={(seconds) => {
-              if (!user) return;
+              if (!user || eggPost) return;
               api
                 .post(`/api/videos/${video.id}/progress`, {
                   positionMs: Math.round(seconds * 1000),
@@ -169,9 +183,10 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             }}
             onDoubleTap={() => {
               // Already liked? Then the tap is just feedback, not another write.
-              if (!liked) void toggleLike();
+              if (!liked && !eggPost) void toggleLike();
             }}
             onWatch={(stats: WatchStats) => {
+              if (eggPost) return;
               api
                 .post(`/api/videos/${video.id}/events`, {
                   watchSeconds: stats.watchSeconds,
@@ -205,49 +220,59 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
           >
             {(close) => (
               <>
-                <Link to={`/v/${video.id}`} className="menu-item" onClick={close}>
-                  <Icon name="eye" size={17} /> Open post
-                </Link>
-                <button
-                  type="button"
-                  className="menu-item"
-                  onClick={() => {
-                    close();
-                    void copyLink();
-                  }}
-                >
-                  <Icon name="link" size={17} /> Copy link
-                </button>
-                <button
-                  type="button"
-                  className="menu-item"
-                  onClick={() => {
-                    close();
-                    openShareTarget('x');
-                  }}
-                >
-                  <Icon name="share" size={17} /> Share to X
-                </button>
-                <button
-                  type="button"
-                  className="menu-item"
-                  onClick={() => {
-                    close();
-                    openShareTarget('whatsapp');
-                  }}
-                >
-                  <Icon name="share" size={17} /> Share to WhatsApp
-                </button>
-                <button
-                  type="button"
-                  className="menu-item"
-                  onClick={() => {
-                    close();
-                    openShareTarget('reddit');
-                  }}
-                >
-                  <Icon name="share" size={17} /> Share to Reddit
-                </button>
+                {eggPost ? (
+                  <button type="button" className="menu-item" disabled>
+                    <Icon name="eye" size={17} /> Open post
+                  </button>
+                ) : (
+                  <Link to={`/v/${video.id}`} className="menu-item" onClick={close}>
+                    <Icon name="eye" size={17} /> Open post
+                  </Link>
+                )}
+                {eggPost ? null : (
+                  <>
+                    <button
+                      type="button"
+                      className="menu-item"
+                      onClick={() => {
+                        close();
+                        void copyLink();
+                      }}
+                    >
+                      <Icon name="link" size={17} /> Copy link
+                    </button>
+                    <button
+                      type="button"
+                      className="menu-item"
+                      onClick={() => {
+                        close();
+                        openShareTarget('x');
+                      }}
+                    >
+                      <Icon name="share" size={17} /> Share to X
+                    </button>
+                    <button
+                      type="button"
+                      className="menu-item"
+                      onClick={() => {
+                        close();
+                        openShareTarget('whatsapp');
+                      }}
+                    >
+                      <Icon name="share" size={17} /> Share to WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      className="menu-item"
+                      onClick={() => {
+                        close();
+                        openShareTarget('reddit');
+                      }}
+                    >
+                      <Icon name="share" size={17} /> Share to Reddit
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   className="menu-item"
@@ -323,11 +348,11 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             ) : null}
 
             <div className="feed-meta-line">
-              <span>{compactNumber(video.viewCount)} views</span>
+              <span>{eggPost ? video.viewCount : compactNumber(video.viewCount)} views</span>
               <span className="meta-sep" aria-hidden="true">
                 ·
               </span>
-              <span>{timeAgo(video.publishedAt ?? video.createdAt)}</span>
+              <span>{postAge(video)}</span>
               <span className="meta-sep" aria-hidden="true">
                 ·
               </span>
@@ -368,6 +393,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
               type="button"
               className={`feed-rail__btn${liked ? ' is-liked' : ''}`}
               onClick={toggleLike}
+              disabled={eggPost}
               aria-pressed={liked}
               aria-label={liked ? `Unlike post, ${likeCount} likes` : `Like post, ${likeCount} likes`}
             >
@@ -393,6 +419,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
               type="button"
               className={`feed-rail__btn${saved ? ' is-liked' : ''}`}
               onClick={toggleSave}
+              disabled={eggPost}
               aria-pressed={saved}
               aria-label={saved ? 'Remove from saved' : 'Save post'}
             >
@@ -402,7 +429,13 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
               <span className="feed-rail__count">{saved ? 'Saved' : 'Save'}</span>
             </button>
 
-            <button type="button" className="feed-rail__btn" onClick={share} aria-label="Share post">
+            <button
+              type="button"
+              className="feed-rail__btn"
+              onClick={share}
+              disabled={eggPost}
+              aria-label="Share post"
+            >
               <span className="feed-rail__icon">
                 <Icon name="share" size={21} />
               </span>
@@ -421,10 +454,9 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
         title="Report this post"
         subject={caption}
         reasons={config?.reportReasons.video ?? ['Not actually a goat', 'Animal mistreatment', 'Spam or misleading', 'Harassment or hate']}
-        onClose={() => setReportOpen(false)}
-        onSubmit={async (reason, note) => {
-          await api.post(`/api/videos/${video.id}/report`, { reason, note });
-          notify('Report sent to the moderator.');
+        onClose={() => setReportOpen(false)}          onSubmit={async (reason, note) => {
+            if (!eggPost) await api.post(`/api/videos/${video.id}/report`, { reason, note });
+            notify('Report sent to the moderator.');
         }}
       />
     </article>

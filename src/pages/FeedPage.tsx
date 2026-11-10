@@ -12,6 +12,7 @@ import { Icon } from '../components/Icon.tsx';
 import { FeedSkeleton } from '../components/Skeleton.tsx';
 import { CreatorSuggestions } from '../components/CreatorSuggestions.tsx';
 import { InterestPicker } from '../components/InterestPicker.tsx';
+import { EGG_VIDEO, countRefresh, eggUnlocked, isEgg } from '../lib/easterEgg.ts';
 
 type Tab = 'foryou' | 'trending' | 'following';
 
@@ -35,6 +36,8 @@ export function FeedPage({ tab }: FeedPageProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pull, setPull] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
@@ -66,6 +69,11 @@ export function FeedPage({ tab }: FeedPageProps) {
   // A gesture stays "used" until the wheel goes quiet, so a long flick or a
   // held trackpad scroll can never consume more than one post.
   const gestureUsed = useRef(false);
+  const refreshPull = useRef(0);
+  const pullRef = useRef(0);
+  const refreshingRef = useRef(false);
+  const refreshRef = useRef<() => void>(() => {});
+  const eggRef = useRef(eggUnlocked());
 
   useDocumentTitle(TITLES[tab]);
 
@@ -113,7 +121,13 @@ export function FeedPage({ tab }: FeedPageProps) {
       try {
         const data = await api.get<FeedResponse>(`/api/feed?tab=${tab}&page=${nextPage}`);
         const seen = new Set(replace ? [] : itemsRef.current.map((item) => item.id));
-        const nextItems = replace ? data.items : [...itemsRef.current, ...data.items.filter((item) => !seen.has(item.id))];
+        const fresh = replace ? data.items : [...itemsRef.current, ...data.items.filter((item) => !seen.has(item.id))];
+        // Once this browser has seen it, the odd post rides above page one so a
+        // refresh that replaces the list cannot drop it back out.
+        const nextItems =
+          replace && nextPage === 1 && eggRef.current && !fresh.some((item) => isEgg(item.id))
+            ? [EGG_VIDEO, ...fresh]
+            : fresh;
         setItems(nextItems);
         setPage(nextPage);
         setHasMore(data.hasMore);
@@ -218,6 +232,20 @@ export function FeedPage({ tab }: FeedPageProps) {
     void load(pageRef.current + 1, false);
   }, [load, needsSignIn]);
 
+  const refresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    if (countRefresh()) eggRef.current = true;
+    await load(1, true);
+    setRefreshing(false);
+    refreshingRef.current = false;
+  }, [load]);
+
+  refreshRef.current = () => {
+    void refresh();
+  };
+
   const handleScroll = () => {
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
@@ -288,12 +316,26 @@ export function FeedPage({ tab }: FeedPageProps) {
       wheelResetTimer.current = window.setTimeout(() => {
         gestureUsed.current = false;
         wheelDelta.current = 0;
+        refreshPull.current = 0;
       }, 300);
       if (gestureUsed.current) return;
 
       const height = element.clientHeight || 1;
       const delta =
         event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * height : event.deltaY;
+
+      // Scrolling up from the first post asks for new posts rather than a post
+      // that is not there, once the gesture has travelled far enough.
+      if (delta < 0 && element.scrollTop <= 1) {
+        refreshPull.current += -delta;
+        if (refreshPull.current >= 140) {
+          refreshPull.current = 0;
+          gestureUsed.current = true;
+          refreshRef.current();
+        }
+        return;
+      }
+      refreshPull.current = 0;
       wheelDelta.current += delta;
       if (Math.abs(wheelDelta.current) < 30) return;
       const direction = wheelDelta.current > 0 ? 1 : -1;
@@ -302,9 +344,35 @@ export function FeedPage({ tab }: FeedPageProps) {
       step(direction);
     };
 
+    let touchStart = 0;
+    const onTouchStart = (event: TouchEvent) => {
+      touchStart = element.scrollTop <= 1 && event.touches.length === 1 ? event.touches[0].clientY : 0;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (!touchStart) return;
+      const distance = Math.max(0, Math.min(96, event.touches[0].clientY - touchStart));
+      pullRef.current = distance;
+      setPull(distance);
+    };
+    const onTouchEnd = () => {
+      const distance = pullRef.current;
+      pullRef.current = 0;
+      touchStart = 0;
+      setPull(0);
+      if (distance >= 64) refreshRef.current();
+    };
+
     element.addEventListener('wheel', onWheel, { passive: false });
+    element.addEventListener('touchstart', onTouchStart, { passive: true });
+    element.addEventListener('touchmove', onTouchMove, { passive: true });
+    element.addEventListener('touchend', onTouchEnd, { passive: true });
+    element.addEventListener('touchcancel', onTouchEnd, { passive: true });
     return () => {
       element.removeEventListener('wheel', onWheel);
+      element.removeEventListener('touchstart', onTouchStart);
+      element.removeEventListener('touchmove', onTouchMove);
+      element.removeEventListener('touchend', onTouchEnd);
+      element.removeEventListener('touchcancel', onTouchEnd);
       window.clearTimeout(wheelResetTimer.current);
       gestureUsed.current = false;
     };
@@ -323,6 +391,8 @@ export function FeedPage({ tab }: FeedPageProps) {
 
   const handleNotInterested = async (video: VideoDTO) => {
     setHidden((current) => ({ ...current, [video.id]: true }));
+    // The odd post is not in the API, so hiding it stays in this tab too.
+    if (isEgg(video.id)) return;
     try {
       await api.post(`/api/videos/${video.id}/not-interested`);
       notify('Hidden. Your feed will show fewer posts like this.', {
@@ -412,6 +482,11 @@ export function FeedPage({ tab }: FeedPageProps) {
 
   return (
     <div className="feed-page">
+      {refreshing || pull > 8 ? (
+        <div className={`feed-refresh${refreshing ? ' is-busy' : ''}`} role="status">
+          {refreshing ? 'Refreshing…' : pull >= 64 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      ) : null}
       <div
         className="feed-scroller"
         ref={scroller}
