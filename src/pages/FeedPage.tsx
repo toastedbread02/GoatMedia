@@ -17,12 +17,10 @@ import { EGG_VIDEO, countRefresh, isEgg } from '../lib/easterEgg.ts';
 type Tab = 'foryou' | 'trending' | 'following';
 
 /* Pull-to-refresh travel in pixels: how far the feed can be dragged, the point
-   that fires a refresh, where the indicator rests while loading, and the floor
-   for how long that loading state stays readable. */
+   that fires a refresh, and where the indicator rests while it loads. */
 const PULL_MAX = 96;
 const PULL_TRIGGER = 64;
 const PULL_HOLD = 52;
-const REFRESH_MIN_MS = 800;
 
 const TITLES: Record<Tab, string> = {
   foryou: 'For You',
@@ -81,6 +79,7 @@ export function FeedPage({ tab }: FeedPageProps) {
   const refreshPull = useRef(0);
   const pullRef = useRef(0);
   const refreshingRef = useRef(false);
+  const refreshQueued = useRef(false);
   const refreshRef = useRef<() => void>(() => {});
   // Never restored from storage: a reload must not put the post on screen.
   const eggRef = useRef(false);
@@ -243,22 +242,29 @@ export function FeedPage({ tab }: FeedPageProps) {
   }, [load, needsSignIn]);
 
   const refresh = useCallback(async () => {
-    if (refreshingRef.current) return;
+    // Counted per gesture, not per request: a pull that arrives while a reload
+    // is running still counts, even though its reload merges with that one.
+    if (countRefresh()) eggRef.current = true;
+    if (refreshingRef.current) {
+      refreshQueued.current = true;
+      return;
+    }
     refreshingRef.current = true;
     setPulling(false);
     setRefreshing(true);
     setPull(PULL_HOLD);
-    if (countRefresh()) eggRef.current = true;
-    const startedAt = performance.now();
-    await load(1, true);
-    // A fast response must not blink past: the label is here to be read.
-    const elapsed = performance.now() - startedAt;
-    if (elapsed < REFRESH_MIN_MS) {
-      await new Promise((resolve) => setTimeout(resolve, REFRESH_MIN_MS - elapsed));
-    }
+    do {
+      refreshQueued.current = false;
+      await load(1, true);
+    } while (refreshQueued.current);
+    // Hand the feed back exactly where the next pull expects it, rather than
+    // wherever replacing the list left the scroll position.
+    refreshPull.current = 0;
+    gestureUsed.current = false;
+    if (scroller.current) scroller.current.scrollTop = 0;
+    refreshingRef.current = false;
     setRefreshing(false);
     setPull(0);
-    refreshingRef.current = false;
   }, [load]);
 
   refreshRef.current = () => {
@@ -349,13 +355,14 @@ export function FeedPage({ tab }: FeedPageProps) {
 
       // Scrolling up from the first post asks for new posts rather than a post
       // that is not there, once the gesture has travelled far enough.
-      if (delta < 0 && element.scrollTop <= 1) {
-        refreshPull.current = Math.min(PULL_MAX, refreshPull.current + -delta * 0.35);
-        setPulling(true);
-        setPull(Math.round(refreshPull.current));
+      if (delta < 0 && element.scrollTop <= 4) {
+        refreshPull.current = Math.min(PULL_MAX, refreshPull.current + -delta * 0.6);
+        if (!refreshingRef.current) {
+          setPulling(true);
+          setPull(Math.round(refreshPull.current));
+        }
         if (refreshPull.current >= PULL_TRIGGER) {
           refreshPull.current = 0;
-          gestureUsed.current = true;
           refreshRef.current();
         }
         return;
@@ -377,12 +384,13 @@ export function FeedPage({ tab }: FeedPageProps) {
 
     let touchStart = 0;
     const onTouchStart = (event: TouchEvent) => {
-      touchStart = element.scrollTop <= 1 && event.touches.length === 1 ? event.touches[0].clientY : 0;
+      touchStart = element.scrollTop <= 4 && event.touches.length === 1 ? event.touches[0].clientY : 0;
     };
     const onTouchMove = (event: TouchEvent) => {
       if (!touchStart) return;
       const distance = Math.max(0, Math.min(PULL_MAX, (event.touches[0].clientY - touchStart) * 0.55));
       pullRef.current = distance;
+      if (refreshingRef.current) return;
       setPulling(true);
       setPull(Math.round(distance));
     };
