@@ -56,7 +56,9 @@ function AppFrame() {
   // The odd account's profile is deliberately bare: no shell, no chrome, no
   // request. The router decodes the pathname, so this is checked as a pattern
   // rather than a route.
-  if (/^\/u\/(\?|%3F)$/i.test(location.pathname)) return <OddProfile />;
+  // The /GoatMedia prefix is included so the shell never paints for a frame
+  // before the old-link redirect strips it.
+  if (/^(?:\/GoatMedia)?\/u\/(?:\?|%3F)$/i.test(location.pathname)) return <OddProfile />;
 
   return (
     <AppShell>
