@@ -17,6 +17,7 @@ appears anywhere public.
 | `migrations/` | D1 schema (users, posts, videos, photos, sounds, moderation, reports…) |
 | `scripts/api-check.ts` | Runs the real Worker code against a `node:sqlite` D1 shim (183 checks) |
 | `scripts/live-check.mjs` | End-to-end checks against the deployed Worker (31 checks) |
+| `android/` | WebView shell for Android, its icon and a Gradle-free build script |
 | `wrangler.jsonc` | Worker config, D1 binding, allowed site origins |
 
 Photos and audio are stored as blobs in D1 rather than R2, because R2 requires a
@@ -107,6 +108,18 @@ account recovery; guests can use it, and every message notifies the moderator.
 
 Manual moderation is the default at every size. Passing 1,000 accounts does not
 change it; that remains an explicit decision.
+
+## Phone app and offline
+
+`android/` holds a thin WebView shell (`app.goatmedia`) that opens the live site,
+offers camera recording or the file picker for uploads, and handles the back
+button. `bash android/build.sh` builds and signs it with the SDK alone.
+
+The site itself is installable: `public/manifest.webmanifest` describes a
+standalone app with 192/512/maskable icons, and `public/sw.js` keeps a
+build-versioned cache so the shell opens offline. The same manifest declares a
+share target, so videos shared from other Android apps land on the upload page
+with the clip attached.
 
 ## Running the site locally
 

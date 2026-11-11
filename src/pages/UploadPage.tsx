@@ -171,6 +171,44 @@ export function UploadPage() {
     setFileError('Draft restored. Pick your file again to finish it.');
   }, []);
 
+  // Android's share sheet posts the clip to the service worker, which stores it
+  // and redirects here. It is taken out of the cache once, and only for someone
+  // signed in, so a signed-out visitor does not lose it to the login screen.
+  const sharedTaken = useRef(false);
+  useEffect(() => {
+    if (!user || sharedTaken.current) return;
+    if (new URLSearchParams(window.location.search).get('shared') !== '1') return;
+    sharedTaken.current = true;
+    const base = import.meta.env.BASE_URL;
+    void (async () => {
+      try {
+        const cache = await caches.open('goatmedia-share');
+        const captionResponse = await cache.match(`${base}__shared-text`);
+        if (captionResponse) {
+          const info = (await captionResponse.json()) as { title?: string; text?: string };
+          const line = (info.text || info.title || '').trim();
+          if (line) setCaption((current) => current || line.slice(0, limits.maxCaptionLength));
+          await cache.delete(`${base}__shared-text`);
+        }
+        const stored = await cache.match(`${base}__shared-file`);
+        if (!stored) {
+          setFileError('Nothing came through the share sheet. Pick a video below.');
+          return;
+        }
+        const blob = await stored.blob();
+        const name = decodeURIComponent(stored.headers.get('x-file-name') || 'shared.mp4');
+        const type = stored.headers.get('content-type') || blob.type || 'video/mp4';
+        await cache.delete(`${base}__shared-file`);
+        window.history.replaceState({}, '', window.location.pathname);
+        setKind('video');
+        await chooseVideo(new File([blob], name, { type }));
+      } catch {
+        setFileError('That shared video could not be opened. Pick one below instead.');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   // Saving is debounced: typing a caption should not write to storage on every
   // keystroke, and a half-typed word is not worth keeping.
   useEffect(() => {

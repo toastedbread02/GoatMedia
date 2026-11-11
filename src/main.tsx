@@ -23,3 +23,15 @@ createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </React.StrictMode>,
 );
+
+// The worker is only useful in a built site; in development it would cache the
+// dev server's modules and hide every edit.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
+      .catch(() => {
+        /* offline support is optional; the site works without it */
+      });
+  });
+}

@@ -2,11 +2,13 @@ package app.goatmedia;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -62,8 +64,9 @@ public class MainActivity extends Activity {
       }
     });
 
-    // Uploads: the site's <input type="file"> opens the system picker, which can
-    // return several items. The URI array is handed back to the page as-is.
+    // Uploads: the site's <input type="file"> asks the shell where the file comes
+    // from. Recording happens in the camera app and comes back as its own URI, so
+    // a clip never has to exist in storage first.
     web.setWebChromeClient(new WebChromeClient() {
       @Override
       public boolean onShowFileChooser(
@@ -73,21 +76,45 @@ public class MainActivity extends Activity {
         }
         pendingFiles = callback;
 
-        Intent intent;
+        Intent chosen;
         try {
-          intent = params.createIntent();
+          chosen = params.createIntent();
         } catch (Exception error) {
-          intent = new Intent(Intent.ACTION_GET_CONTENT);
-          intent.addCategory(Intent.CATEGORY_OPENABLE);
-          intent.setType("*/*");
+          chosen = new Intent(Intent.ACTION_GET_CONTENT);
+          chosen.addCategory(Intent.CATEGORY_OPENABLE);
+          chosen.setType("*/*");
         }
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try {
-          startActivityForResult(intent, FILE_CHOOSER);
-        } catch (ActivityNotFoundException missing) {
-          pendingFiles = null;
-          return false;
-        }
+        final Intent picker = chosen;
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        final Intent record = new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
+        record.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 1);
+        final boolean canRecord = record.resolveActivity(getPackageManager()) != null;
+
+        final CharSequence[] options = canRecord
+            ? new CharSequence[] { "Record a video", "Choose a file" }
+            : new CharSequence[] { "Choose a file" };
+
+        new AlertDialog.Builder(MainActivity.this)
+            .setTitle("Add a video")
+            .setItems(
+                options,
+                (dialog, which) -> {
+                  boolean recordInstead = canRecord && which == 0;
+                  try {
+                    startActivityForResult(recordInstead ? record : picker, FILE_CHOOSER);
+                  } catch (ActivityNotFoundException missing) {
+                    pendingFiles = null;
+                  }
+                })
+            .setOnCancelListener(
+                dialog -> {
+                  if (pendingFiles != null) {
+                    pendingFiles.onReceiveValue(null);
+                    pendingFiles = null;
+                  }
+                })
+            .show();
         return true;
       }
     });

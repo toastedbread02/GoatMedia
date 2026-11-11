@@ -36,8 +36,9 @@ from the installed SDK.
 ## Limits
 
 - No offline mode and no push: the app is the website.
-- The picker opens the system file browser. Recording with the camera app
-  directly from an upload field is not wired; pick an existing file instead.
+- An upload field offers "Record a video" (the camera app) or "Choose a file".
+  Recording returns the clip straight to the page; nothing is saved to the
+  gallery first unless the camera app does that itself.
 - Updates must be signed with `art/goatmedia.keystore`. It is a local,
   self-signed key committed so the app can be rebuilt; generate your own before
   ever publishing anywhere.

@@ -12,6 +12,7 @@
 // live post. Only the head and the sitemap are static, because those are what a
 // crawler reads before it runs any JavaScript.
 
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -284,6 +285,17 @@ async function main() {
   }
 
   await writeFile(join(DIST, 'sitemap.xml'), sitemap(routes));
+
+  // The worker names its cache after this build, so the previous one is kept
+  // until the new worker activates and then deleted.
+  try {
+    const workerPath = join(DIST, 'sw.js');
+    const worker = await readFile(workerPath, 'utf8');
+    const build = createHash('sha256').update(shell).update(worker).digest('hex').slice(0, 12);
+    await writeFile(workerPath, worker.replace('__BUILD__', build));
+  } catch {
+    // A build without a worker is still a build.
+  }
 
   // Pages answers any path it has no file for with 404.html. Serving the shell
   // there is what lets a path that was typed rather than clicked boot the app
