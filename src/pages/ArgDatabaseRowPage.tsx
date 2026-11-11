@@ -12,9 +12,9 @@ const VIDEO_ID = `pst_1298d000000000${ROW}`;
 
 /**
  * One row of the videos table, followed wherever it goes. The dump lists the
- * deleted post; this is what the table holds for it — a file of zero bytes that
- * was uploaded before the post existed, a note telling somebody to keep the row,
- * and one visit to a page that has never answered.
+ * deleted post; this is what the table holds for it — a file of zero bytes dated
+ * the day after the post, a note telling somebody to keep the row, and one visit
+ * to a page that has never answered.
  *
  * Only the row that has no page resolves. Every other id is just a path.
  */
