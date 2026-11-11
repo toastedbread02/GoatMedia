@@ -103,8 +103,22 @@ export function ArgDatabasePage() {
     // Newest first, ids counting down from the total, the way an autoincrement
     // column reads after a descending select.
     const ua = hash(navigator.userAgent);
-    const visitLines = visits.slice(0, VISITS_SHOWN).map((visit, index) => {
-      const id = Math.max(1, visits.length - index);
+    const rows: Array<{ path: string; at: number }> = visits.slice(0, VISITS_SHOWN);
+
+    // Every other return, the log carries one more row than the reader has made:
+    // a visit to the row that has no page, placed just before their earliest.
+    // It is never written to storage, so it belongs to the table, not to them.
+    const openings = visits.filter((visit) => visit.path.startsWith('/admin/d1')).length;
+    let stranger = false;
+    if (openings >= 2 && openings % 2 === 0) {
+      const oldest = visits[visits.length - 1]?.at ?? now;
+      rows.push({ path: '/v/pst_1298d00000000016', at: oldest - 47 * 60_000 });
+      stranger = true;
+    }
+
+    const total = visits.length + (stranger ? 1 : 0);
+    const visitLines = rows.map((visit, index) => {
+      const id = Math.max(1, total - index);
       return `${pad(id, 6)}${pad(visit.path, 40)}${pad(fmt(visit.at), 22)}${ua}`;
     });
 
