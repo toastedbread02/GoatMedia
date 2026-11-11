@@ -2,17 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="app.goatmedia">
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
-  <!-- Android 11+ hides other packages behind package visibility, which made the
-       camera check in MainActivity see no video camera at all. -->
-  <queries>
-    <intent>
-      <action android:name="android.media.action.VIDEO_CAPTURE" />
-    </intent>
-    <intent>
-      <action android:name="android.intent.action.GET_CONTENT" />
-      <data android:mimeType="*/*" />
-    </intent>
-  </queries>
   <application
     android:allowBackup="true"
     android:icon="@mipmap/ic_launcher"

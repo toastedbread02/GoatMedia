@@ -89,22 +89,32 @@ public class MainActivity extends Activity {
 
         final Intent record = new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
         record.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 1);
-        final boolean canRecord = record.resolveActivity(getPackageManager()) != null;
 
-        final CharSequence[] options = canRecord
-            ? new CharSequence[] { "Record a video", "Choose a file" }
-            : new CharSequence[] { "Choose a file" };
+        // Both choices are always offered. If the phone has no camera app, or the
+        // camera refuses to start, the file browser opens instead of the upload
+        // stalling on a chooser that never returns.
+        final CharSequence[] options = new CharSequence[] { "Record a video", "Choose a file" };
 
         new AlertDialog.Builder(MainActivity.this)
             .setTitle("Add a video")
             .setItems(
                 options,
                 (dialog, which) -> {
-                  boolean recordInstead = canRecord && which == 0;
                   try {
-                    startActivityForResult(recordInstead ? record : picker, FILE_CHOOSER);
+                    startActivityForResult(which == 0 ? record : picker, FILE_CHOOSER);
                   } catch (ActivityNotFoundException missing) {
-                    pendingFiles = null;
+                    if (which == 0) {
+                      try {
+                        startActivityForResult(picker, FILE_CHOOSER);
+                        return;
+                      } catch (ActivityNotFoundException alsoMissing) {
+                        // Nothing on this phone handles either intent.
+                      }
+                    }
+                    if (pendingFiles != null) {
+                      pendingFiles.onReceiveValue(null);
+                      pendingFiles = null;
+                    }
                   }
                 })
             .setOnCancelListener(
