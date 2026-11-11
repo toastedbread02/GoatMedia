@@ -19,6 +19,13 @@ const SESSION_BEAT = 8000;
 const QUIET_AFTER = 5000;
 /** The other browser in the log. Always the same eight characters. */
 const OUTSIDE_UA = '2b9d0a41';
+/** Pages that browser reads, which this one may not have opened yet. */
+const OTHER_PATHS = [
+  '/admin/d1/16?t=0640',
+  '/v/pst_1298d00000000007',
+  '/u/priya.builds',
+  '/v/pst_1298d00000000010?t=0640',
+];
 
 /**
  * Not a post. The tables behind the trail, laid out the way a database client
@@ -206,11 +213,15 @@ export function ArgDatabasePage() {
       ua,
     }));
 
-    // The readings from the gap. The most recent one is the other browser, which
-    // is how it looks when someone was here just before you came back.
+    // The readings from the gap. The most recent one is the other browser, and
+    // it is on a page this reader has never opened, so the two logs stop
+    // agreeing about what was read here.
+    const seenPaths = new Set(visits.map((visit) => visit.path.split('?')[0]));
+    const elsewhere =
+      OTHER_PATHS.find((path) => !seenPaths.has(path.split('?')[0])) ?? '/admin/d1?t=0640';
     gapRows.forEach((at, index) => {
       const last = index === gapRows.length - 1;
-      entries.push({ path: '/admin/d1?t=0640', at, ua: last ? OUTSIDE_UA : ua });
+      entries.push({ path: last ? elsewhere : '/admin/d1?t=0640', at, ua: last ? OUTSIDE_UA : ua });
     });
 
     // Every other return, a visit to the row that has no page, just before the
