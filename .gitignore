@@ -10,3 +10,6 @@ screenshots
 .data-smoke-*
 .secrets/
 .old-ui/
+# Android build output and sideloadable packages
+android/build/
+*.apk
