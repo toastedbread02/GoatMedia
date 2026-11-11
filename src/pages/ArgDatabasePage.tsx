@@ -100,6 +100,7 @@ export function ArgDatabasePage() {
     const files: Array<[string, number, string, string]> = [
       ['000000000007.mp4', 1048576, 'video/mp4', 'kept after removal'],
       ['000000000016.mp4', 0, 'video/mp4', 'never uploaded'],
+      ['000000000016.rec.mp4', 263480, 'video/mp4', 'recovered; not served'],
       ['arg/1000017640.jpg', 675592, 'image/jpeg', ''],
       ['arg/1000017641.mp4', 4015112, 'video/mp4', ''],
       ['arg/1000017642.jpg', 295928, 'image/jpeg', ''],
@@ -121,9 +122,42 @@ export function ArgDatabasePage() {
         `${pad(id, 24)}${pad(caption, 40)}${pad(status, 8)}${created}`,
     );
 
+    // A recovery that was started on the empty file and never finished. The
+    // bytes it claims are the bytes of a post that is still on the site.
+    const recoveryLines = (
+      [
+        ['1', 'pst_1298d00000000016', '000000000016.rec.mp4', 263480, stamp(1293), 'pending'],
+      ] as Array<[string, string, string, number, string, string]>
+    ).map(
+      ([id, videoId, file, bytes, restored, status]) =>
+        `${pad(id, 4)}${pad(videoId, 24)}${pad(file, 24)}${num(bytes, 9)}  ${pad(
+          restored,
+          21,
+        )}${status}`,
+    );
+
     // Newest first, ids counting down from the total, the way an autoincrement
     // column reads after a descending select.
     const ua = hash(navigator.userAgent);
+
+    // The session the visits belong to. Signed out, and still counting.
+    const sessionLines = [
+      [
+        '4',
+        fmt(visits[visits.length - 1]?.at ?? now),
+        fmt(now),
+        String(visits.length),
+        ua,
+        'NULL',
+      ],
+    ].map(
+      ([id, started, seen, paths, agent, auth]) =>
+        `${pad(id, 4)}${pad(started, 22)}${pad(seen, 22)}${num(paths, 6)}  ${pad(
+          agent,
+          10,
+        )}${auth}`,
+    );
+
     const rows: Array<{ path: string; at: number }> = visits.slice(0, VISITS_SHOWN);
 
     // Every other return, the log carries one more row than the reader has made:
@@ -145,7 +179,7 @@ export function ArgDatabasePage() {
 
     return [
       'sqlite> .tables',
-      'accounts  drafts  files  notes  schema_migrations  videos  visits',
+      'accounts  drafts  files  notes  recovery  schema_migrations  sessions  videos  visits',
       '',
       'sqlite> select id, kind, status, views, likes, comments, created_at, note from videos order by created_at;',
       `${pad('id', 24)}${pad('kind', 8)}${pad('status', 10)}${num('views', 9)}${num('likes', 7)}${num(
@@ -171,6 +205,20 @@ export function ArgDatabasePage() {
       'sqlite> select id, caption, status, created_at from drafts;',
       `${pad('id', 24)}${pad('caption', 40)}${pad('status', 8)}created_at`,
       ...draftLines,
+      '',
+      "sqlite> select * from recovery where video_id = 'pst_1298d00000000016';",
+      `${pad('id', 4)}${pad('video_id', 24)}${pad('file', 24)}${num('bytes', 9)}  ${pad(
+        'restored_at',
+        21,
+      )}status`,
+      ...recoveryLines,
+      '',
+      'sqlite> select * from sessions;',
+      `${pad('id', 4)}${pad('started_at', 22)}${pad('last_seen_at', 22)}${num(
+        'paths',
+        6,
+      )}  ${pad('ua', 10)}auth`,
+      ...sessionLines,
       '',
       'sqlite> select * from visits order by seen_at desc limit 5;',
       `${pad('id', 6)}${pad('path', 40)}${pad('seen_at', 22)}ua`,
