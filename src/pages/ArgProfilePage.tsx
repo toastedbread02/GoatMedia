@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Avatar } from '../components/Avatar.tsx';
 import { VideoCard } from '../components/VideoCard.tsx';
@@ -5,6 +6,7 @@ import { ArgTraceMark } from '../components/ArgTrace.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { monthYear } from '../lib/format.ts';
 import { argPost, argProfile } from '../lib/easterEgg.ts';
+import { playProfileGlitch } from '../lib/argSound.ts';
 
 /**
  * A profile for one of the accounts in the thread. It uses the same header and
@@ -17,14 +19,28 @@ export function ArgProfilePage({ username }: { username: string }) {
     entry ? `${entry.user.displayName} (@${entry.user.username})` : 'Profile',
   );
 
+  // The click that opens this page is the gesture the sound needs, so both
+  // start together: the page tears for a moment and the tone goes with it.
+  const tears = username === 'marlowe_farm';
+  const [glitching, setGlitching] = useState(false);
+
+  useEffect(() => {
+    if (!tears) return;
+    setGlitching(true);
+    playProfileGlitch();
+    const timer = window.setTimeout(() => setGlitching(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [tears]);
+
   if (!entry) return null;
   const { user } = entry;
+
   const posts = entry.postIds
     .map((id) => argPost(id)?.video)
     .filter((video): video is NonNullable<typeof video> => Boolean(video));
 
   return (
-    <div className="page">
+    <div className={`page arg-profile${glitching ? ' is-glitching' : ''}`}>
       <header className="profile-head">
         <Avatar
           displayName={user.displayName}
