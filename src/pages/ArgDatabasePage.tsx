@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { NotFoundPage } from './AuthPages.tsx';
 import { ArgTraceMark } from '../components/ArgTrace.tsx';
@@ -10,6 +10,8 @@ const DAY = 86_400_000;
 const KEY = '0640';
 /** The table prints the newest few; the rest are still stored. */
 const VISITS_SHOWN = 5;
+/** How often the session row moves on while the dump is open. */
+const SESSION_BEAT = 8000;
 
 /**
  * Not a post. The tables behind the trail, laid out the way a database client
@@ -24,6 +26,16 @@ export function ArgDatabasePage() {
   const { search, pathname } = useLocation();
   const unlocked = new URLSearchParams(search).get('t') === KEY;
   useDocumentTitle(unlocked ? 'd1 · goatmedia' : 'Not found');
+
+  // The session is not a snapshot. Every few seconds the row moves on by itself:
+  // last_seen_at catches up with the clock and the request count with it, which
+  // is what a session table does while somebody is still reading.
+  const [beat, setBeat] = useState(0);
+  useEffect(() => {
+    if (!unlocked) return;
+    const timer = window.setInterval(() => setBeat((count) => count + 1), SESSION_BEAT);
+    return () => window.clearInterval(timer);
+  }, [unlocked]);
 
   // Read once per opening. The current page is prepended when the trail has not
   // caught up yet, which is what makes a return visit add its own row.
@@ -146,7 +158,7 @@ export function ArgDatabasePage() {
         '4',
         fmt(visits[visits.length - 1]?.at ?? now),
         fmt(now),
-        String(visits.length),
+        String(visits.length + beat),
         ua,
         'NULL',
       ],
@@ -224,7 +236,7 @@ export function ArgDatabasePage() {
       `${pad('id', 6)}${pad('path', 40)}${pad('seen_at', 22)}ua`,
       ...visitLines,
     ].join('\n');
-  }, [visits]);
+  }, [visits, beat]);
 
   if (!unlocked) return <NotFoundPage />;
 
