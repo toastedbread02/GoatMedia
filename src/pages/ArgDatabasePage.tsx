@@ -12,6 +12,8 @@ const KEY = '0640';
 const VISITS_SHOWN = 5;
 /** How often the session row moves on while the dump is open. */
 const SESSION_BEAT = 8000;
+/** How long the reader has to be still before the log starts keeping up. */
+const QUIET_AFTER = 5000;
 
 /**
  * Not a post. The tables behind the trail, laid out the way a database client
@@ -35,6 +37,24 @@ export function ArgDatabasePage() {
     if (!unlocked) return;
     const timer = window.setInterval(() => setBeat((count) => count + 1), SESSION_BEAT);
     return () => window.clearInterval(timer);
+  }, [unlocked]);
+
+  // Stillness is the trigger: a few seconds without a pointer, key or scroll,
+  // and the visits table starts writing the page the reader is sitting on.
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (!unlocked) return;
+    let timer = window.setTimeout(() => setIdle(true), QUIET_AFTER);
+    const restart = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setIdle(true), QUIET_AFTER);
+    };
+    const events = ['pointerdown', 'keydown', 'wheel', 'scroll', 'touchstart'] as const;
+    events.forEach((name) => window.addEventListener(name, restart, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((name) => window.removeEventListener(name, restart));
+    };
   }, [unlocked]);
 
   // Read once per opening. The current page is prepended when the trail has not
@@ -184,10 +204,22 @@ export function ArgDatabasePage() {
     }
 
     const total = visits.length + (stranger ? 1 : 0);
-    const visitLines = rows.map((visit, index) => {
+    const trailLines = rows.map((visit, index) => {
       const id = Math.max(1, total - index);
       return `${pad(id, 6)}${pad(visit.path, 40)}${pad(fmt(visit.at), 22)}${ua}`;
     });
+
+    // Once the reader has been still long enough, the log catches up with the
+    // session above it: one row per beat, for the page they have not left.
+    const current = `${pathname}${search}`;
+    const lagLines = Array.from({ length: idle ? beat : 0 }, (_, index) =>
+      `${pad(visits.length + beat - index, 6)}${pad(current, 40)}${pad(
+        fmt(now - index * SESSION_BEAT),
+        22,
+      )}${ua}`,
+    );
+
+    const visitLines = [...lagLines, ...trailLines];
 
     return [
       'sqlite> .tables',
@@ -236,7 +268,7 @@ export function ArgDatabasePage() {
       `${pad('id', 6)}${pad('path', 40)}${pad('seen_at', 22)}ua`,
       ...visitLines,
     ].join('\n');
-  }, [visits, beat]);
+  }, [visits, beat, idle]);
 
   if (!unlocked) return <NotFoundPage />;
 
