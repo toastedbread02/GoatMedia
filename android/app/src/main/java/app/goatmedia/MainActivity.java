@@ -16,6 +16,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.util.Locale;
+
 /**
  * The site in a WebView. Everything — feeds, the reel, uploads, the moderator
  * tools — is the same web app; this shell only supplies the window, the back
@@ -87,6 +89,17 @@ public class MainActivity extends Activity {
         final Intent picker = chosen;
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
+        // A photo or audio field opens its own picker.
+        if (!acceptsVideo(params)) {
+          try {
+            startActivityForResult(picker, FILE_CHOOSER);
+          } catch (ActivityNotFoundException missing) {
+            pendingFiles.onReceiveValue(null);
+            pendingFiles = null;
+          }
+          return true;
+        }
+
         final Intent record = new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
         record.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 1);
 
@@ -135,6 +148,19 @@ public class MainActivity extends Activity {
     } else {
       web.loadUrl(HOME);
     }
+  }
+
+  // A field that names only images or audio has no use for the camera entry, so
+  // it goes straight to the system picker. An unrestricted field still may.
+  private static boolean acceptsVideo(WebChromeClient.FileChooserParams params) {
+    String[] types = params.getAcceptTypes();
+    if (types == null || types.length == 0) return true;
+    for (String type : types) {
+      if (type == null) continue;
+      String value = type.trim().toLowerCase(Locale.ROOT);
+      if (value.isEmpty() || value.equals("*/*") || value.startsWith("video/")) return true;
+    }
+    return false;
   }
 
   @Override
