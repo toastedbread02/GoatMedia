@@ -578,6 +578,52 @@ const SEVENTH = buildVideo({
   duration: 8.66,
 });
 
+const EXPORT_THREAD: SeedComment[] = [
+  {
+    name: 'June',
+    handle: 'june_b',
+    body: 'the edge is showing',
+    after: 20,
+    likes: 5,
+  },
+  {
+    name: 'Priya',
+    handle: 'priya.builds',
+    body: 'this is a render test. every editor does this',
+    after: 44,
+    likes: 11,
+  },
+  {
+    name: 'Marlowe',
+    handle: MARLOWE,
+    body: 'i know',
+    after: 52,
+    likes: 2,
+    creator: true,
+    replyTo: 1,
+  },
+  {
+    name: 'danny',
+    handle: 'dannyov',
+    body: 'so the field is a plate',
+    after: 70,
+    likes: 7,
+  },
+];
+
+const EXPORT = buildVideo({
+  id: 'pst_1298d00000000015',
+  caption: 'the export. i turned the key off so you can see where the clip ends.',
+  creator: marlowe,
+  createdAt: PUBLISHED_AT + 3 * DAY_MS,
+  viewCount: 12,
+  likeCount: 1,
+  commentCount: 4,
+  videoFile: 'arg/export_09.mp4',
+  posterFile: 'arg/export_09_poster.jpg',
+  duration: 12,
+});
+
 export const EGG_POSTS: Record<string, ArgEntry> = {
   [DAY_NINE.id]: {
     video: DAY_NINE,
@@ -605,13 +651,19 @@ export const EGG_POSTS: Record<string, ArgEntry> = {
     video: CARD,
     comments: buildThread('129b0', CARD.createdAt, CARD_THREAD),
     trace: { label: 'day 11', note: 'five plates, no goats' },
-    ghosts: [`/v/${SEVENTH.id}`],
+    ghosts: [`/v/${SEVENTH.id}`, `/v/${EXPORT.id}`],
   },
   [SEVENTH.id]: {
     video: SEVENTH,
     comments: buildThread('129c0', SEVENTH.createdAt, SEVENTH_THREAD),
     trace: { label: 'day 7', note: 'the file, not the post' },
     ghosts: [`/u/${MARLOWE}`],
+  },
+  [EXPORT.id]: {
+    video: EXPORT,
+    comments: buildThread('129d0', EXPORT.createdAt, EXPORT_THREAD),
+    trace: { label: 'export', note: 'the edge is at 0:11' },
+    ghosts: [`/v/${DAY_NINE.id}`],
   },
   [CAMERA_ROLL.id]: {
     video: CAMERA_ROLL,
@@ -666,8 +718,8 @@ export const EGG_PROFILES: Record<string, ArgProfile> = {
     followers: 118,
     following: 41,
     videoCount: 46,
-    postIds: [DAY_NINE.id, DAY_EIGHT.id, CARD.id, SEVENTH.id],
-    trace: { label: 'marlowe', note: '46 posts, four visible' },
+    postIds: [DAY_NINE.id, DAY_EIGHT.id, CARD.id, SEVENTH.id, EXPORT.id],
+    trace: { label: 'marlowe', note: '46 posts, five visible' },
   }),
   june_b: profile({
     username: 'june_b',
