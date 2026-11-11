@@ -6,9 +6,10 @@ import { timeAgo } from './format.ts';
  * fifteen times. Nothing about it is served by the API, so it can never appear
  * in a feed request, a search, a sitemap or the moderation queue.
  *
- * It is deliberately unremarkable: a normal account, a normal caption, a normal
- * comment thread. Everything odd about it is a thing a reader could also explain
- * away, which is the point.
+ * Nothing here announces itself. The caption is a man talking about a gate, the
+ * thread is half people debunking it, and the wrongness is in small things that
+ * do not line up: a reply about yesterday, a timestamp nobody can find, the same
+ * handle wearing a different name, an account that is not there when you look.
  */
 
 const REFRESH_TARGET = 15;
@@ -35,7 +36,8 @@ const asset = (file: string) => `${import.meta.env.BASE_URL}${file}`;
 export const EGG_VIDEO: VideoDTO = {
   id: EGG_ID,
   kind: 'video',
-  caption: "day 9 of the gate being open. it's shut again by the time i get back with the camera.",
+  caption:
+    "day 9. gate is open every morning. it's shut by the time i get back with the camera. i'm not walking back for it any more.",
   category: 'farm-life',
   categoryLabel: 'Farm life',
   hashtags: [],
@@ -70,14 +72,19 @@ interface SeededComment {
   /** Minutes after the post went up. */
   after: number;
   likes: number;
+  /** Written by the account that posted the video. */
   creator?: boolean;
   pinned?: boolean;
+  /** Index of the comment this one answers. */
+  replyTo?: number;
 }
 
+const commentId = (index: number) => `cmt_1298d${String(index).padStart(3, '0')}`;
+
 /**
- * The thread is the puzzle. Nothing here says "ARG"; some readers notice the
- * likes and comments line up, or that the account is gone, and argue about it
- * with the ones who think it is just an old repost.
+ * The thread is where it gets uncomfortable. The sceptics are reasonable and
+ * loud; the things that do not add up are small enough to argue away, and every
+ * one of them is answered by somebody who has a perfectly normal explanation.
  */
 const THREAD: SeededComment[] = [
   {
@@ -106,9 +113,42 @@ const THREAD: SeededComment[] = [
   {
     name: 'danny',
     handle: 'dannyov',
+    body: 'then why is the account gone',
+    after: 120,
+    likes: 31,
+    replyTo: 2,
+  },
+  {
+    name: 'Priya',
+    handle: 'priya.builds',
+    body: 'accounts get deleted. people stop keeping goats. it is not a mystery',
+    after: 128,
+    likes: 44,
+    replyTo: 2,
+  },
+  {
+    name: 'danny',
+    handle: 'dannyov',
     body: 'ok but the likes and the comments are the exact same number',
     after: 143,
     likes: 67,
+  },
+  {
+    name: 'Marlowe',
+    handle: 'marlowe_farm',
+    body: 'they were not yesterday.',
+    after: 149,
+    likes: 18,
+    creator: true,
+    replyTo: 5,
+  },
+  {
+    name: 'Ade',
+    handle: 'ade.rt',
+    body: 'same. it was the first video the first time too',
+    after: 150,
+    likes: 12,
+    replyTo: 1,
   },
   {
     name: 'Bea',
@@ -116,6 +156,23 @@ const THREAD: SeededComment[] = [
     body: 'day 9 of what though',
     after: 210,
     likes: 39,
+  },
+  {
+    name: 'Marlowe',
+    handle: 'marlowe_farm',
+    body: 'of the gate.',
+    after: 214,
+    likes: 9,
+    creator: true,
+    replyTo: 8,
+  },
+  {
+    name: 'Bea',
+    handle: 'bea_goats',
+    body: 'you said that the last time',
+    after: 240,
+    likes: 57,
+    replyTo: 8,
   },
   {
     name: 'tom h',
@@ -132,11 +189,43 @@ const THREAD: SeededComment[] = [
     likes: 22,
   },
   {
-    name: 'Ade',
-    handle: 'ade.rt',
-    body: 'i have reloaded like ten times and it keeps coming back to this one',
-    after: 512,
-    likes: 9,
+    name: 'danny',
+    handle: 'dannyov',
+    body: 'that is what i mean',
+    after: 395,
+    likes: 8,
+    replyTo: 12,
+  },
+  {
+    name: 'June',
+    handle: 'june_b',
+    body: 'what is the shape in the doorway at 0:11',
+    after: 430,
+    likes: 26,
+  },
+  {
+    name: 'Marlowe',
+    handle: 'marlowe_farm',
+    body: 'which one',
+    after: 436,
+    likes: 41,
+    creator: true,
+    replyTo: 14,
+  },
+  {
+    name: 'June',
+    handle: 'june_b',
+    body: 'there is only one doorway',
+    after: 452,
+    likes: 19,
+    replyTo: 14,
+  },
+  {
+    name: 'm.',
+    handle: 'marlowe_farm',
+    body: 'please stop posting this',
+    after: 475,
+    likes: 2,
   },
   {
     name: 'June',
@@ -144,6 +233,15 @@ const THREAD: SeededComment[] = [
     body: 'sound is dead on mine, is that just me',
     after: 640,
     likes: 6,
+  },
+  {
+    name: 'Marlowe',
+    handle: 'marlowe_farm',
+    body: 'no.',
+    after: 644,
+    likes: 11,
+    creator: true,
+    replyTo: 18,
   },
   {
     name: 'Priya',
@@ -155,10 +253,10 @@ const THREAD: SeededComment[] = [
 ];
 
 export const EGG_COMMENTS: CommentDTO[] = THREAD.map((seed, index) => ({
-  id: `cmt_1298d${String(index).padStart(3, '0')}`,
+  id: commentId(index),
   body: seed.body,
   createdAt: PUBLISHED_AT + seed.after * 60_000,
-  parentId: null,
+  parentId: seed.replyTo === undefined ? null : commentId(seed.replyTo),
   likeCount: seed.likes,
   liked: false,
   author: {
