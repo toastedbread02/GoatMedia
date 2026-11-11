@@ -40,7 +40,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   const [reportOpen, setReportOpen] = useState(false);
 
   const active = index === activeIndex;
-  // Interactions on the odd post stay in this tab; the API has never heard of it.
+  // This post has no server side, so its interactions stay in this tab.
   const eggPost = isEgg(video.id);
   const shouldMount = Math.abs(index - activeIndex) <= 1;
 
@@ -57,7 +57,12 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const toggleLike = async () => {
-    if (eggPost) return;
+    if (eggPost) {
+      // Nothing is stored for this post, so the count only exists in this tab.
+      setLiked(!liked);
+      setLikeCount((count) => Math.max(0, count + (liked ? -1 : 1)));
+      return;
+    }
     if (!requireAuth()) return;
     const next = !liked;
     setLiked(next);
@@ -97,7 +102,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const share = async () => {
-    if (eggPost) return;
     const url = shareLink(`v/${video.id}`, 'share' in navigator ? 'native' : 'copy');
     try {
       if (navigator.share) {
@@ -112,7 +116,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const copyLink = async () => {
-    if (eggPost) return;
     try {
       await navigator.clipboard.writeText(shareLink(`v/${video.id}`, 'copy'));
       notify('Link copied.');
@@ -122,7 +125,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const openShareTarget = (target: 'x' | 'whatsapp' | 'reddit') => {
-    if (eggPost) return;
     const text = video.caption || 'A goat video on GoatMedia';
     const link = shareLink(`v/${video.id}`, target === 'x' ? 'twitter' : target);
     const urls = {
@@ -134,7 +136,11 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
   };
 
   const toggleSave = async () => {
-    if (eggPost) return;
+    if (eggPost) {
+      setSaved(!saved);
+      notify(saved ? 'Removed from saved.' : 'Saved to your profile.');
+      return;
+    }
     if (!requireAuth()) return;
     const next = !saved;
     setSaved(next);
@@ -162,7 +168,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             className="feed-stage album"
             onDoubleTap={() => {
               // Already liked? Then the tap is just feedback, not another write.
-              if (!liked && !eggPost) void toggleLike();
+              if (!liked) void toggleLike();
             }}
           />
         ) : shouldMount && video.videoUrl ? (
@@ -183,7 +189,7 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
             }}
             onDoubleTap={() => {
               // Already liked? Then the tap is just feedback, not another write.
-              if (!liked && !eggPost) void toggleLike();
+              if (!liked) void toggleLike();
             }}
             onWatch={(stats: WatchStats) => {
               if (eggPost) return;
@@ -220,16 +226,10 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
           >
             {(close) => (
               <>
-                {eggPost ? (
-                  <button type="button" className="menu-item" disabled>
-                    <Icon name="eye" size={17} /> Open post
-                  </button>
-                ) : (
-                  <Link to={`/v/${video.id}`} className="menu-item" onClick={close}>
-                    <Icon name="eye" size={17} /> Open post
-                  </Link>
-                )}
-                {eggPost ? null : (
+                <Link to={`/v/${video.id}`} className="menu-item" onClick={close}>
+                  <Icon name="eye" size={17} /> Open post
+                </Link>
+                {(
                   <>
                     <button
                       type="button"
@@ -393,7 +393,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
               type="button"
               className={`feed-rail__btn${liked ? ' is-liked' : ''}`}
               onClick={toggleLike}
-              disabled={eggPost}
               aria-pressed={liked}
               aria-label={liked ? `Unlike post, ${likeCount} likes` : `Like post, ${likeCount} likes`}
             >
@@ -419,7 +418,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
               type="button"
               className={`feed-rail__btn${saved ? ' is-liked' : ''}`}
               onClick={toggleSave}
-              disabled={eggPost}
               aria-pressed={saved}
               aria-label={saved ? 'Remove from saved' : 'Save post'}
             >
@@ -433,7 +431,6 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
               type="button"
               className="feed-rail__btn"
               onClick={share}
-              disabled={eggPost}
               aria-label="Share post"
             >
               <span className="feed-rail__icon">

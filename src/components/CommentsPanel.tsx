@@ -300,7 +300,6 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
             type="button"
             className={`comment__like${comment.liked ? ' is-liked' : ''}`}
             onClick={() => like(comment)}
-            disabled={odd}
             aria-pressed={comment.liked}
             aria-label={`${comment.liked ? 'Unlike' : 'Like'} comment, ${comment.likeCount} likes`}
           >
@@ -424,7 +423,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
         <div className="comments-panel__foot">
           {odd ? (
             <div className="comment-signin">
-              <span>Comments are closed on this post.</span>
+              <span>This post is archived. Comments are closed.</span>
             </div>
           ) : user ? (
             <>

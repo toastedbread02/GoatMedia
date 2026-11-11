@@ -7096,24 +7096,8 @@ ol {
   cursor: default;
 }
 
-/* Menu entries the odd post does not offer. */
 .menu-item:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-/* The profile behind the odd account: nothing but white and the character. */
-.odd-profile {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: grid;
-  place-items: center;
-  background: #fff;
-  color: #1c1915;
-  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
-  font-size: clamp(56px, 14vw, 140px);
-  font-weight: 300;
-  line-height: 1;
-  user-select: none;
-}
