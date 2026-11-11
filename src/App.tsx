@@ -27,6 +27,7 @@ import { recordVisit } from './lib/api.ts';
 import { recordTrail } from './lib/argTrail.ts';
 import { ProfileRoute, VideoRoute } from './pages/ArgRoutes.tsx';
 import { ArgDatabasePage } from './pages/ArgDatabasePage.tsx';
+import { ArgDatabaseRowPage } from './pages/ArgDatabaseRowPage.tsx';
 
 function AppFrame() {
   const location = useLocation();
@@ -98,6 +99,7 @@ export default function App() {
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/messages" element={<MessagesPage />} />
         <Route path="/admin/d1" element={<ArgDatabasePage />} />
+        <Route path="/admin/d1/:id" element={<ArgDatabaseRowPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="*" element={<NotFoundPage />} />

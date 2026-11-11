@@ -1,26 +1,15 @@
 import { useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { NotFoundPage } from './AuthPages.tsx';
 import { ArgTraceMark } from '../components/ArgTrace.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { readTrail, type TrailEntry } from '../lib/argTrail.ts';
+import { hash, num, pad } from '../lib/argDumpFormat.ts';
 
 const DAY = 86_400_000;
 const KEY = '0640';
 /** The table prints the newest few; the rest are still stored. */
 const VISITS_SHOWN = 5;
-
-function hash(text: string) {
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
-
-const pad = (value: string | number, width: number) => String(value).padEnd(width);
-const num = (value: string | number, width: number) => String(value).padStart(width);
 
 /**
  * Not a post. The tables behind the trail, laid out the way a database client
@@ -88,6 +77,9 @@ export function ArgDatabasePage() {
       ['4', 'pst_1298d00000000010', '9'],
       ['5', 'visits', `visit ${visits.length}`],
       ['6', 'visits', `first path ${visits[visits.length - 1]?.path ?? 'NULL'}`],
+      ['7', 'files', '000000000007.mp4 kept after removal'],
+      ['8', 'files', '000000000016.mp4 is 0 bytes'],
+      ['9', 'pst_1298d00000000016', 'never uploaded. keep the row.'],
     ].map(([id, videoId, body]) => `${pad(id, 4)}${pad(videoId, 24)}${body}`);
 
     const migrations = [
@@ -98,7 +90,36 @@ export function ArgDatabasePage() {
       ['0008_visits', '2023-01-19 08:00:00'],
       ['0009_gate', stamp(1298)],
       ['0010_the_card', 'pending'],
+      ['0011_files', stamp(1297)],
+      ['0012_day12', 'pending'],
     ].map(([name, applied]) => `${pad(name, 20)}${applied}`);
+
+    // The sizes are the ones on disk, so they can be checked against the files
+    // that are served. The first two rows are not served at all, and one of
+    // them is empty.
+    const files: Array<[string, number, string, string]> = [
+      ['000000000007.mp4', 1048576, 'video/mp4', 'kept after removal'],
+      ['000000000016.mp4', 0, 'video/mp4', 'never uploaded'],
+      ['arg/1000017640.jpg', 675592, 'image/jpeg', ''],
+      ['arg/1000017641.mp4', 4015112, 'video/mp4', ''],
+      ['arg/1000017642.jpg', 295928, 'image/jpeg', ''],
+      ['arg/1000017643.jpg', 329429, 'image/jpeg', ''],
+      ['arg/1000017644.jpg', 408123, 'image/jpeg', ''],
+      ['arg/1000017645.jpg', 108796, 'image/jpeg', ''],
+      ['arg/export_09.mp4', 263480, 'video/mp4', ''],
+      ['arg/export_09_poster.jpg', 19542, 'image/jpeg', ''],
+    ];
+    const fileLines = files.map(
+      ([path, bytes, mime, note]) => `${pad(path, 24)}${num(bytes, 9)}  ${pad(mime, 11)}${note}`,
+    );
+
+    // A caption written before the day it belongs to exists.
+    const draftLines = [
+      ['pst_1298d00000000017', 'day 12. it is not shut.', 'draft', stamp(-1)],
+    ].map(
+      ([id, caption, status, created]) =>
+        `${pad(id, 24)}${pad(caption, 40)}${pad(status, 8)}${created}`,
+    );
 
     // Newest first, ids counting down from the total, the way an autoincrement
     // column reads after a descending select.
@@ -124,7 +145,7 @@ export function ArgDatabasePage() {
 
     return [
       'sqlite> .tables',
-      'accounts  notes  schema_migrations  videos  visits',
+      'accounts  drafts  files  notes  schema_migrations  videos  visits',
       '',
       'sqlite> select id, kind, status, views, likes, comments, created_at, note from videos order by created_at;',
       `${pad('id', 24)}${pad('kind', 8)}${pad('status', 10)}${num('views', 9)}${num('likes', 7)}${num(
@@ -143,6 +164,14 @@ export function ArgDatabasePage() {
       'sqlite> select name, applied_at from schema_migrations;',
       ...migrations,
       '',
+      'sqlite> select path, bytes, mime, note from files order by path;',
+      `${pad('path', 24)}${num('bytes', 9)}  ${pad('mime', 11)}note`,
+      ...fileLines,
+      '',
+      'sqlite> select id, caption, status, created_at from drafts;',
+      `${pad('id', 24)}${pad('caption', 40)}${pad('status', 8)}created_at`,
+      ...draftLines,
+      '',
       'sqlite> select * from visits order by seen_at desc limit 5;',
       `${pad('id', 6)}${pad('path', 40)}${pad('seen_at', 22)}ua`,
       ...visitLines,
@@ -154,6 +183,10 @@ export function ArgDatabasePage() {
   return (
     <div className="page arg-db-page">
       <ArgTraceMark trace={{ label: 'd1', note: 'the account was deleted before it posted' }} />
+      {/* The row that has no page still has a row view, if you ask for the right one. */}
+      <Link className="arg-ghost" to="/admin/d1/16?t=0640" tabIndex={-1} aria-hidden="true">
+        .
+      </Link>
       <pre className="arg-db">{dump}</pre>
     </div>
   );
