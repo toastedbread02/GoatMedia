@@ -1,28 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { NotFoundPage } from './AuthPages.tsx';
 import { ArgTraceMark } from '../components/ArgTrace.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { readTrail, type TrailEntry } from '../lib/argTrail.ts';
+import { noteGap } from '../lib/argGap.ts';
 import { hash, num, pad } from '../lib/argDumpFormat.ts';
 
 const DAY = 86_400_000;
 const KEY = '0640';
 /** The table prints the newest few; the rest are still stored. */
 const VISITS_SHOWN = 5;
+/** How many visit rows reach the page at once. */
+const ROW_LIMIT = 8;
 /** How often the session row moves on while the dump is open. */
 const SESSION_BEAT = 8000;
 /** How long the reader has to be still before the log starts keeping up. */
 const QUIET_AFTER = 5000;
+/** The other browser in the log. Always the same eight characters. */
+const OUTSIDE_UA = '2b9d0a41';
 
 /**
  * Not a post. The tables behind the trail, laid out the way a database client
  * prints them. Everything here can be checked against the pages, and a few rows
  * cannot be made to agree with them.
  *
- * The visits table is the only part that is real: it reads back the paths this
- * browser has actually been on, including every earlier opening of this page,
- * so the dump shows the reader their own trail and adds a row when they return.
+ * The visits table is mostly real: it reads back the paths this browser has
+ * actually been on. The rest is the page writing about itself — the readings
+ * taken while nobody was here, from a browser that is not this one, and the
+ * rows it adds while the reader sits still.
  */
 export function ArgDatabasePage() {
   const { search, pathname } = useLocation();
@@ -66,6 +72,12 @@ export function ArgDatabasePage() {
     if (latest && latest.path === current) return trail;
     return [{ path: current, at: Date.now() }, ...trail].slice(0, 12);
   });
+
+  // What the page was doing while the reader was elsewhere. Collected once; the
+  // ref keeps a re-render from consuming the gap twice.
+  const gap = useRef<number[] | null>(null);
+  if (gap.current === null) gap.current = noteGap().rows;
+  const gapRows = gap.current;
 
   const dump = useMemo(() => {
     const now = Date.now();
@@ -127,8 +139,7 @@ export function ArgDatabasePage() {
     ].map(([name, applied]) => `${pad(name, 20)}${applied}`);
 
     // The sizes are the ones on disk, so they can be checked against the files
-    // that are served. The first two rows are not served at all, and one of
-    // them is empty.
+    // that are served. The first rows are not served at all, and one is empty.
     const files: Array<[string, number, string, string]> = [
       ['000000000007.mp4', 1048576, 'video/mp4', 'kept after removal'],
       ['000000000016.mp4', 0, 'video/mp4', 'never uploaded'],
@@ -168,60 +179,68 @@ export function ArgDatabasePage() {
         )}${status}`,
     );
 
-    // Newest first, ids counting down from the total, the way an autoincrement
-    // column reads after a descending select.
     const ua = hash(navigator.userAgent);
 
-    // The session the visits belong to. Signed out, and still counting.
+    // The session the visits belong to. Signed out, and still counting. When
+    // there is a gap, a second session is listed: same site, other browser.
     const sessionLines = [
-      [
-        '4',
-        fmt(visits[visits.length - 1]?.at ?? now),
+      `${pad('4', 4)}${pad(fmt(visits[visits.length - 1]?.at ?? now), 22)}${pad(
         fmt(now),
-        String(visits.length + beat),
-        ua,
-        'NULL',
-      ],
-    ].map(
-      ([id, started, seen, paths, agent, auth]) =>
-        `${pad(id, 4)}${pad(started, 22)}${pad(seen, 22)}${num(paths, 6)}  ${pad(
-          agent,
-          10,
-        )}${auth}`,
-    );
+        22,
+      )}${num(visits.length + beat, 6)}  ${pad(ua, 10)}NULL`,
+      ...(gapRows.length > 0
+        ? [
+            `${pad('5', 4)}${pad(fmt(gapRows[0]), 22)}${pad(
+              fmt(gapRows[gapRows.length - 1]),
+              22,
+            )}${num(gapRows.length, 6)}  ${pad(OUTSIDE_UA, 10)}NULL`,
+          ]
+        : []),
+    ];
 
-    const rows: Array<{ path: string; at: number }> = visits.slice(0, VISITS_SHOWN);
+    // Everything the log holds for the visits table. It is sorted once, newest
+    // first, and numbered from the top so an id never appears twice.
+    const entries: Array<{ path: string; at: number; ua: string }> = visits.map((visit) => ({
+      path: visit.path,
+      at: visit.at,
+      ua,
+    }));
 
-    // Every other return, the log carries one more row than the reader has made:
-    // a visit to the row that has no page, placed just before their earliest.
-    // It is never written to storage, so it belongs to the table, not to them.
-    const openings = visits.filter((visit) => visit.path.startsWith('/admin/d1')).length;
-    let stranger = false;
-    if (openings >= 2 && openings % 2 === 0) {
-      const oldest = visits[visits.length - 1]?.at ?? now;
-      rows.push({ path: '/v/pst_1298d00000000016', at: oldest - 47 * 60_000 });
-      stranger = true;
-    }
-
-    const base = visits.length + (stranger ? 1 : 0);
-    const trailLines = rows.map((visit, index) => {
-      const id = Math.max(1, base - index);
-      return `${pad(id, 6)}${pad(visit.path, 40)}${pad(fmt(visit.at), 22)}${ua}`;
+    // The readings from the gap. The most recent one is the other browser, which
+    // is how it looks when someone was here just before you came back.
+    gapRows.forEach((at, index) => {
+      const last = index === gapRows.length - 1;
+      entries.push({ path: '/admin/d1?t=0640', at, ua: last ? OUTSIDE_UA : ua });
     });
 
-    // Once the reader has been still long enough, the log catches up with the
-    // session above it: one row per beat, for the page they have not left. The
-    // rows take the ids above the trail, so no row is ever given a number twice.
+    // Every other return, a visit to the row that has no page, just before the
+    // reader's earliest. Never stored; it belongs to the table.
+    const openings = visits.filter((visit) => visit.path.startsWith('/admin/d1')).length;
+    if (openings >= 2 && openings % 2 === 0) {
+      const oldest = visits[visits.length - 1]?.at ?? now;
+      entries.push({ path: '/v/pst_1298d00000000016', at: oldest - 47 * 60_000, ua });
+    }
+
+    // While the page sits open it writes itself, and every third row is the
+    // other browser.
     const current = `${pathname}${search}`;
     const lag = idle ? Math.min(beat, VISITS_SHOWN) : 0;
-    const lagLines = Array.from({ length: lag }, (_, index) =>
-      `${pad(base + lag - index, 6)}${pad(current, 40)}${pad(
-        fmt(now - index * SESSION_BEAT),
-        22,
-      )}${ua}`,
-    );
+    for (let index = 0; index < lag; index += 1) {
+      entries.push({
+        path: current,
+        at: now - index * SESSION_BEAT,
+        ua: index % 3 === 2 ? OUTSIDE_UA : ua,
+      });
+    }
 
-    const visitLines = [...lagLines, ...trailLines];
+    entries.sort((a, b) => b.at - a.at);
+    const total = entries.length;
+    const visitLines = entries
+      .slice(0, ROW_LIMIT)
+      .map(
+        (entry, index) =>
+          `${pad(total - index, 6)}${pad(entry.path, 40)}${pad(fmt(entry.at), 22)}${entry.ua}`,
+      );
 
     return [
       'sqlite> .tables',
@@ -266,11 +285,11 @@ export function ArgDatabasePage() {
       )}  ${pad('ua', 10)}auth`,
       ...sessionLines,
       '',
-      'sqlite> select * from visits order by seen_at desc limit 5;',
+      'sqlite> select * from visits order by seen_at desc limit 8;',
       `${pad('id', 6)}${pad('path', 40)}${pad('seen_at', 22)}ua`,
       ...visitLines,
     ].join('\n');
-  }, [visits, beat, idle]);
+  }, [visits, beat, idle, gapRows, pathname, search]);
 
   if (!unlocked) return <NotFoundPage />;
 
