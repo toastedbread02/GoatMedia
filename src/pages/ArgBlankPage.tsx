@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { markDayTenOpen } from '../lib/argDeep.ts';
 import { useDocumentTitle } from '../lib/hooks.ts';
 
@@ -16,14 +16,18 @@ export function ArgBlankPage() {
   const [taps, setTaps] = useState(0);
   const [done, setDone] = useState(false);
 
+  // Counted from the previous value, so taps that land in the same tick still
+  // add up: five quick clicks have to work as well as five patient ones.
   const tap = () => {
     if (done) return;
-    const next = taps + 1;
-    setTaps(next);
-    if (next < TAPS) return;
+    setTaps((current) => current + 1);
+  };
+
+  useEffect(() => {
+    if (taps < TAPS || done) return;
     setDone(true);
     markDayTenOpen();
-  };
+  }, [taps, done]);
 
   return (
     <div className="arg-blank">
