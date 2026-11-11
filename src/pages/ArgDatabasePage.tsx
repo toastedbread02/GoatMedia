@@ -203,17 +203,19 @@ export function ArgDatabasePage() {
       stranger = true;
     }
 
-    const total = visits.length + (stranger ? 1 : 0);
+    const base = visits.length + (stranger ? 1 : 0);
     const trailLines = rows.map((visit, index) => {
-      const id = Math.max(1, total - index);
+      const id = Math.max(1, base - index);
       return `${pad(id, 6)}${pad(visit.path, 40)}${pad(fmt(visit.at), 22)}${ua}`;
     });
 
     // Once the reader has been still long enough, the log catches up with the
-    // session above it: one row per beat, for the page they have not left.
+    // session above it: one row per beat, for the page they have not left. The
+    // rows take the ids above the trail, so no row is ever given a number twice.
     const current = `${pathname}${search}`;
-    const lagLines = Array.from({ length: idle ? beat : 0 }, (_, index) =>
-      `${pad(visits.length + beat - index, 6)}${pad(current, 40)}${pad(
+    const lag = idle ? Math.min(beat, VISITS_SHOWN) : 0;
+    const lagLines = Array.from({ length: lag }, (_, index) =>
+      `${pad(base + lag - index, 6)}${pad(current, 40)}${pad(
         fmt(now - index * SESSION_BEAT),
         22,
       )}${ua}`,
