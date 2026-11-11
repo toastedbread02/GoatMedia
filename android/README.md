@@ -39,8 +39,11 @@ from the installed SDK.
 - A video field always offers "Record a video" (the camera app) and "Choose a
   file". If the phone has no camera app, recording quietly opens the file
   browser instead. Recording returns the clip straight to the page; nothing is
-  saved to the gallery first unless the camera app does that itself. Photo and
-  audio fields skip the dialog and open the system picker directly.
+  saved to the gallery first unless the camera app does that itself.
+- A photo field offers "Take a photo" or "Choose a photo". A shot is written
+  full size into the app cache through a small content provider and handed to
+  the page as a normal image; nothing is added to the gallery.
+- Audio fields skip the dialog and open the system picker directly.
 - Updates must be signed with `art/goatmedia.keystore`. It is a local,
   self-signed key committed so the app can be rebuilt; generate your own before
   ever publishing anywhere.

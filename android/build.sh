@@ -23,7 +23,7 @@ mkdir -p build/compiled build/gen build/classes build/dex
   build/compiled/res.zip
 
 javac -source 11 -target 11 -nowarn -classpath "$JAR" -d build/classes \
-  app/src/main/java/app/goatmedia/MainActivity.java \
+  $(find app/src/main/java -name '*.java') \
   build/gen/app/goatmedia/R.java
 
 "$BT/d8" --lib "$JAR" --min-api 24 --output build/dex $(find build/classes -name '*.class')

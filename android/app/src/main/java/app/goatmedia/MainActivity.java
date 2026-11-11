@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -16,6 +17,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.io.File;
 import java.util.Locale;
 
 /**
@@ -26,14 +28,25 @@ import java.util.Locale;
 public class MainActivity extends Activity {
   private static final String HOME = "https://toastedbread02.github.io/GoatMedia/";
   private static final int FILE_CHOOSER = 1001;
+  private static final int PHOTO_CAPTURE = 1002;
+
+  private static final int KIND_VIDEO = 1;
+  private static final int KIND_IMAGE = 2;
+  private static final int KIND_OTHER = 3;
 
   private WebView web;
   private ValueCallback<Uri[]> pendingFiles;
+  private Uri pendingPhoto;
 
   @SuppressLint("SetJavaScriptEnabled")
   @Override
   protected void onCreate(Bundle state) {
     super.onCreate(state);
+    if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+      // Only a debuggable build exposes the page to DevTools, so a sideloaded
+      // release app stays closed to a connected computer.
+      WebView.setWebContentsDebuggingEnabled(true);
+    }
     web = new WebView(this);
     web.setBackgroundColor(Color.parseColor("#F5F0E5"));
 
@@ -67,8 +80,8 @@ public class MainActivity extends Activity {
     });
 
     // Uploads: the site's <input type="file"> asks the shell where the file comes
-    // from. Recording happens in the camera app and comes back as its own URI, so
-    // a clip never has to exist in storage first.
+    // from. The dialog follows the field: a clip can be recorded, a photo can be
+    // shot, anything else goes straight to the system picker.
     web.setWebChromeClient(new WebChromeClient() {
       @Override
       public boolean onShowFileChooser(
@@ -89,14 +102,13 @@ public class MainActivity extends Activity {
         final Intent picker = chosen;
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-        // A photo or audio field opens its own picker.
-        if (!acceptsVideo(params)) {
-          try {
-            startActivityForResult(picker, FILE_CHOOSER);
-          } catch (ActivityNotFoundException missing) {
-            pendingFiles.onReceiveValue(null);
-            pendingFiles = null;
-          }
+        final int kind = mediaKind(params);
+        if (kind == KIND_IMAGE) {
+          askForPhoto(picker);
+          return true;
+        }
+        if (kind != KIND_VIDEO) {
+          openPicker(picker);
           return true;
         }
 
@@ -124,19 +136,10 @@ public class MainActivity extends Activity {
                         // Nothing on this phone handles either intent.
                       }
                     }
-                    if (pendingFiles != null) {
-                      pendingFiles.onReceiveValue(null);
-                      pendingFiles = null;
-                    }
+                    answerWithoutFile();
                   }
                 })
-            .setOnCancelListener(
-                dialog -> {
-                  if (pendingFiles != null) {
-                    pendingFiles.onReceiveValue(null);
-                    pendingFiles = null;
-                  }
-                })
+            .setOnCancelListener(dialog -> answerWithoutFile())
             .show();
         return true;
       }
@@ -150,21 +153,87 @@ public class MainActivity extends Activity {
     }
   }
 
-  // A field that names only images or audio has no use for the camera entry, so
-  // it goes straight to the system picker. An unrestricted field still may.
-  private static boolean acceptsVideo(WebChromeClient.FileChooserParams params) {
+  // A field names what it takes through its accept list. An unrestricted field
+  // keeps the video flow, which still offers the system picker.
+  private static int mediaKind(WebChromeClient.FileChooserParams params) {
     String[] types = params.getAcceptTypes();
-    if (types == null || types.length == 0) return true;
+    if (types == null || types.length == 0) return KIND_VIDEO;
+    boolean video = false;
+    boolean image = false;
     for (String type : types) {
       if (type == null) continue;
       String value = type.trim().toLowerCase(Locale.ROOT);
-      if (value.isEmpty() || value.equals("*/*") || value.startsWith("video/")) return true;
+      if (value.isEmpty() || value.equals("*/*")) return KIND_VIDEO;
+      if (value.startsWith("video/")) video = true;
+      else if (value.startsWith("image/")) image = true;
     }
-    return false;
+    if (video) return KIND_VIDEO;
+    if (image) return KIND_IMAGE;
+    return KIND_OTHER;
+  }
+
+  private void askForPhoto(Intent picker) {
+    new AlertDialog.Builder(this)
+        .setTitle("Add a photo")
+        .setItems(
+            new CharSequence[] { "Take a photo", "Choose a photo" },
+            (dialog, which) -> {
+              if (which == 0 && startPhotoCapture()) return;
+              openPicker(picker);
+            })
+        .setOnCancelListener(dialog -> answerWithoutFile())
+        .show();
+  }
+
+  // Without EXTRA_OUTPUT the camera only returns a thumbnail, so it writes full
+  // size into a cache file of ours and hands that URI back instead.
+  private boolean startPhotoCapture() {
+    File dir = new File(getCacheDir(), "captures");
+    if (!dir.isDirectory() && !dir.mkdirs()) return false;
+    Uri output = UploadFiles.uriFor(this, new File(dir, "photo-" + System.currentTimeMillis() + ".jpg"));
+    Intent capture = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+    capture.putExtra(MediaStore.EXTRA_OUTPUT, output);
+    capture.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    try {
+      pendingPhoto = output;
+      startActivityForResult(capture, PHOTO_CAPTURE);
+      return true;
+    } catch (ActivityNotFoundException missing) {
+      pendingPhoto = null;
+      return false;
+    }
+  }
+
+  private void openPicker(Intent picker) {
+    try {
+      startActivityForResult(picker, FILE_CHOOSER);
+    } catch (ActivityNotFoundException missing) {
+      answerWithoutFile();
+    }
+  }
+
+  private void answerWithoutFile() {
+    if (pendingFiles != null) {
+      pendingFiles.onReceiveValue(null);
+      pendingFiles = null;
+    }
   }
 
   @Override
   protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    if (requestCode == PHOTO_CAPTURE) {
+      Uri taken = null;
+      if (resultCode == RESULT_OK && pendingPhoto != null) {
+        File file = UploadFiles.fileFor(this, pendingPhoto);
+        if (file.exists() && file.length() > 0) taken = pendingPhoto;
+      }
+      pendingPhoto = null;
+      if (pendingFiles != null) {
+        pendingFiles.onReceiveValue(taken == null ? null : new Uri[] { taken });
+        pendingFiles = null;
+      }
+      return;
+    }
     if (requestCode != FILE_CHOOSER) {
       super.onActivityResult(requestCode, resultCode, data);
       return;
