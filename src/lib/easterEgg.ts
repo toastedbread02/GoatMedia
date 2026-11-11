@@ -663,7 +663,8 @@ export const EGG_POSTS: Record<string, ArgEntry> = {
     video: EXPORT,
     comments: buildThread('129d0', EXPORT.createdAt, EXPORT_THREAD),
     trace: { label: 'export', note: 'the edge is at 0:11' },
-    ghosts: [`/v/${DAY_NINE.id}`],
+    // One hidden path back to the post, one down into the tables.
+    ghosts: [`/v/${DAY_NINE.id}`, '/admin/d1?t=0640'],
   },
   [CAMERA_ROLL.id]: {
     video: CAMERA_ROLL,

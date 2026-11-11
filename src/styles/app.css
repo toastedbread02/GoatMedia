@@ -7112,6 +7112,24 @@ ol {
   opacity: 0;
 }
 
+/* The dump: what a database client prints, not something the site designs. */
+.arg-db-page {
+  padding: 18px 20px 40px;
+}
+
+.arg-db {
+  margin: 0;
+  padding: 18px 16px;
+  background: #0f0e0c;
+  color: #cbc4b6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow: auto;
+  border-radius: 10px;
+}
+
 .menu-item:disabled {
   opacity: 0.45;
   cursor: default;

@@ -25,6 +25,7 @@ import {
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
 import { recordVisit } from './lib/api.ts';
 import { ProfileRoute, VideoRoute } from './pages/ArgRoutes.tsx';
+import { ArgDatabasePage } from './pages/ArgDatabasePage.tsx';
 
 function AppFrame() {
   const location = useLocation();
@@ -89,6 +90,7 @@ export default function App() {
         <Route path="/sound/:id" element={<SoundPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/messages" element={<MessagesPage />} />
+        <Route path="/admin/d1" element={<ArgDatabasePage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="*" element={<NotFoundPage />} />
