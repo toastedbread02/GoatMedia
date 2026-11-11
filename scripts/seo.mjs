@@ -284,7 +284,17 @@ async function main() {
   }
 
   await writeFile(join(DIST, 'sitemap.xml'), sitemap(routes));
-  console.log(`SEO: prerendered ${routes.length} routes, ${posts.length} posts, sitemap at ${ROOT}sitemap.xml`);
+
+  // Pages answers any path it has no file for with 404.html. Serving the shell
+  // there is what lets a path that was typed rather than clicked boot the app
+  // and route itself, instead of ending on the Pages error page. It is kept out
+  // of search on purpose: these pages are meant to be found, not indexed.
+  const fallback = shell.replace('</head>', '  <meta name="robots" content="noindex">\n  </head>');
+  await writeFile(join(DIST, '404.html'), fallback);
+
+  console.log(
+    `SEO: prerendered ${routes.length} routes, ${posts.length} posts, sitemap at ${ROOT}sitemap.xml`,
+  );
 }
 
 await main();
