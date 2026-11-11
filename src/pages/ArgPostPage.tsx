@@ -11,7 +11,8 @@ import type { ArgEntry } from '../lib/easterEgg.ts';
  * page arrives here already unlocked or not here at all.
  */
 export function ArgPostPage({ entry }: { entry: ArgEntry }) {
-  useDocumentTitle(entry.video.caption.slice(0, 48));
+  // One page is allowed to disagree with its own tab.
+  useDocumentTitle(entry.tabTitle ?? entry.video.caption.slice(0, 48));
 
   return (
     <div className="feed-page">

@@ -317,6 +317,13 @@ const DAY_EIGHT_THREAD: SeedComment[] = [
     replyTo: 1,
   },
   {
+    name: 'June',
+    handle: 'june_b',
+    body: 'i have this on my phone too',
+    after: 120,
+    likes: 4,
+  },
+  {
     name: 'wildfern',
     handle: 'wildfern',
     body: 'where is day 7',
@@ -349,6 +356,13 @@ const CAMERA_ROLL_THREAD: SeedComment[] = [
     after: 140,
     likes: 3,
   },
+  {
+    name: 'Marlowe',
+    handle: MARLOWE,
+    body: 'you were there.',
+    after: 150,
+    likes: 5,
+  },
 ];
 
 export interface ArgTrace {
@@ -364,6 +378,8 @@ export interface ArgEntry {
   trace: ArgTrace;
   /** Paths this post quietly points at, present in the page but invisible. */
   ghosts?: string[];
+  /** What the browser tab calls the page, when it disagrees with the caption. */
+  tabTitle?: string;
   /**
    * When set, the page only exists for a visitor who arrives carrying
    * ?t=<key>. Without it the id is just another post the API has never heard of.
@@ -397,9 +413,11 @@ const DAY_TEN = buildVideo({
   caption: 'day 10. i checked the card. it is empty until tomorrow.',
   creator: marlowe,
   createdAt: PUBLISHED_AT + DAY_MS,
-  viewCount: 3,
+  // Fewer views than comments. Nobody has watched it and three people have
+  // written under it, which is the kind of thing that only lands later.
+  viewCount: 2,
   likeCount: 0,
-  commentCount: 2,
+  commentCount: 3,
 });
 
 const CAMERA_ROLL = buildVideo({
@@ -429,6 +447,13 @@ const DAY_TEN_THREAD: SeedComment[] = [
     creator: true,
     replyTo: 0,
   },
+  {
+    name: 'm.',
+    handle: MARLOWE,
+    body: 'you found it',
+    after: 26,
+    likes: 0,
+  },
 ];
 
 export const EGG_POSTS: Record<string, ArgEntry> = {
@@ -449,9 +474,10 @@ export const EGG_POSTS: Record<string, ArgEntry> = {
   [DAY_TEN.id]: {
     video: DAY_TEN,
     comments: buildThread('129a0', DAY_TEN.createdAt, DAY_TEN_THREAD),
-    trace: { label: 'day 10', note: 'the card is empty until tomorrow' },
+    trace: { label: 'day 10', note: 'the file is dated tomorrow' },
     ghosts: [`/u/${MARLOWE}`],
     key: '0640',
+    tabTitle: '9',
   },
   [CAMERA_ROLL.id]: {
     video: CAMERA_ROLL,
