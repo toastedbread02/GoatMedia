@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { NotFoundPage } from './AuthPages.tsx';
 import { ArgTraceMark } from '../components/ArgTrace.tsx';
@@ -6,6 +6,16 @@ import { useDocumentTitle } from '../lib/hooks.ts';
 
 const DAY = 86_400_000;
 const KEY = '0640';
+const VISITS_KEY = 'gm-arg-visits';
+const MAX_VISITS = 8;
+/** The table prints the newest few; the rest are still stored. */
+const VISITS_SHOWN = 5;
+
+interface Visit {
+  path: string;
+  at: number;
+  ua: string;
+}
 
 function hash(text: string) {
   let h = 2166136261;
@@ -16,6 +26,35 @@ function hash(text: string) {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
+function readVisits(): Visit[] {
+  try {
+    const raw = localStorage.getItem(VISITS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (item): item is Visit =>
+          typeof item === 'object' &&
+          item !== null &&
+          typeof (item as Visit).path === 'string' &&
+          typeof (item as Visit).at === 'number' &&
+          typeof (item as Visit).ua === 'string',
+      )
+      .slice(0, MAX_VISITS);
+  } catch {
+    return [];
+  }
+}
+
+function writeVisits(visits: Visit[]) {
+  try {
+    localStorage.setItem(VISITS_KEY, JSON.stringify(visits));
+  } catch {
+    /* private browsing, or storage is full: the row still renders this once */
+  }
+}
+
 const pad = (value: string | number, width: number) => String(value).padEnd(width);
 const num = (value: string | number, width: number) => String(value).padStart(width);
 
@@ -23,16 +62,39 @@ const num = (value: string | number, width: number) => String(value).padStart(wi
  * Not a post. The tables behind the trail, laid out the way a database client
  * prints them. Everything here can be checked against the pages, and a few rows
  * cannot be made to agree with them.
+ *
+ * The visits table is the only part that is real: each time this page is opened
+ * it writes the path the reader arrived on, so the dump remembers them the way
+ * a server would, and shows them their own trail.
  */
 export function ArgDatabasePage() {
   const { search, pathname } = useLocation();
   const unlocked = new URLSearchParams(search).get('t') === KEY;
   useDocumentTitle(unlocked ? 'd1 · goatmedia' : 'Not found');
 
+  // Recorded once per opening, not per render. Coming back adds a row; opening
+  // the same path twice within two seconds (a reload during a double render)
+  // does not.
+  const [visits] = useState<Visit[]>(() => {
+    const stored = readVisits();
+    if (!unlocked) return stored;
+    const entry: Visit = {
+      path: `${pathname}${search}`,
+      at: Date.now(),
+      ua: hash(navigator.userAgent),
+    };
+    const latest = stored[0];
+    if (latest && latest.path === entry.path && entry.at - latest.at < 2000) return stored;
+    const next = [entry, ...stored].slice(0, MAX_VISITS);
+    writeVisits(next);
+    return next;
+  });
+
   const dump = useMemo(() => {
     const now = Date.now();
     const stamp = (daysAgo: number) =>
       new Date(now - daysAgo * DAY).toISOString().replace('T', ' ').slice(0, 19);
+    const fmt = (timestamp: number) => new Date(timestamp).toISOString().replace('T', ' ').slice(0, 19);
 
     const videos: Array<[string, string, string, number, number, number, number, string]> = [
       ['pst_1298d00000000014', 'video', 'approved', 41, 0, 3, 1300, ''],
@@ -68,6 +130,7 @@ export function ArgDatabasePage() {
       ['2', 'pst_1298d00000000007', 'file kept. do not relink.'],
       ['3', 'pst_1298d00000000015', 'do not approve'],
       ['4', 'pst_1298d00000000010', '9'],
+      ['5', 'visits', `visit ${visits.length}`],
     ].map(([id, videoId, body]) => `${pad(id, 4)}${pad(videoId, 24)}${body}`);
 
     const migrations = [
@@ -80,9 +143,12 @@ export function ArgDatabasePage() {
       ['0010_the_card', 'pending'],
     ].map(([name, applied]) => `${pad(name, 20)}${applied}`);
 
-    const visits = [
-      `${pad('1', 6)}${pad(`${pathname}${search}`, 40)}${pad(stamp(0), 22)}${hash(navigator.userAgent)}`,
-    ];
+    // Newest first, ids counting down from the total, the way an autoincrement
+    // column reads after a descending select.
+    const visitLines = visits.slice(0, VISITS_SHOWN).map((visit, index) => {
+      const id = Math.max(1, visits.length - index);
+      return `${pad(id, 6)}${pad(visit.path, 40)}${pad(fmt(visit.at), 22)}${visit.ua}`;
+    });
 
     return [
       'sqlite> .tables',
@@ -105,11 +171,11 @@ export function ArgDatabasePage() {
       'sqlite> select name, applied_at from schema_migrations;',
       ...migrations,
       '',
-      'sqlite> select * from visits order by seen_at desc limit 1;',
+      'sqlite> select * from visits order by seen_at desc limit 5;',
       `${pad('id', 6)}${pad('path', 40)}${pad('seen_at', 22)}ua`,
-      ...visits,
+      ...visitLines,
     ].join('\n');
-  }, [pathname, search]);
+  }, [visits]);
 
   if (!unlocked) return <NotFoundPage />;
 
