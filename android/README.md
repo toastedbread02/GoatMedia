@@ -29,6 +29,9 @@ from the installed SDK.
 ## What the shell handles
 
 - Back button walks the site's history, then exits.
+- The page is inset by the status bar, the camera cutout and the navigation
+  bar, so the site's own header and tab bar stay clear of the system bars
+  and their buttons stay tappable.
 - Links to other hosts open in the phone's browser.
 - Media plays without an extra tap; the reel's gesture is the site's own.
 - The window background is the site's paper colour, so there is no white flash.

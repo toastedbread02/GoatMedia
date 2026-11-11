@@ -8,14 +8,17 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.webkit.ValueCallback;
+import android.widget.FrameLayout;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.WindowInsets;
 
 import java.io.File;
 import java.util.Locale;
@@ -145,7 +148,50 @@ public class MainActivity extends Activity {
       }
     });
 
-    setContentView(web);
+    // Android 15 draws the window edge to edge, so the page has to be kept clear
+    // of the status bar, the camera cutout and the navigation bar itself. Without
+    // this the site's header sits under the clock and taps land in the
+    // notification shade, and the bottom tab bar sits under the system buttons.
+    if (Build.VERSION.SDK_INT >= 30) {
+      getWindow().setDecorFitsSystemWindows(false);
+    }
+    FrameLayout frame = new FrameLayout(this);
+    frame.setBackgroundColor(Color.parseColor("#F5F0E5"));
+    frame.addView(
+        web,
+        new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+    frame.setOnApplyWindowInsetsListener(
+        (view, insets) -> {
+          int left;
+          int top;
+          int right;
+          int bottom;
+          if (Build.VERSION.SDK_INT >= 30) {
+            android.graphics.Insets bars =
+                insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            left = bars.left;
+            top = bars.top;
+            right = bars.right;
+            bottom = bars.bottom;
+          } else {
+            left = insets.getSystemWindowInsetLeft();
+            top = insets.getSystemWindowInsetTop();
+            right = insets.getSystemWindowInsetRight();
+            bottom = insets.getSystemWindowInsetBottom();
+          }
+          if (view.getPaddingLeft() != left
+              || view.getPaddingTop() != top
+              || view.getPaddingRight() != right
+              || view.getPaddingBottom() != bottom) {
+            view.setPadding(left, top, right, bottom);
+          }
+          return insets;
+        });
+    setContentView(frame);
+    frame.requestApplyInsets();
+
     if (state != null) {
       web.restoreState(state);
     } else {
