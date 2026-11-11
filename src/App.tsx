@@ -24,6 +24,7 @@ import {
 } from './pages/DocsPages.tsx';
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
 import { recordVisit } from './lib/api.ts';
+import { recordTrail } from './lib/argTrail.ts';
 import { ProfileRoute, VideoRoute } from './pages/ArgRoutes.tsx';
 import { ArgDatabasePage } from './pages/ArgDatabasePage.tsx';
 
@@ -51,6 +52,12 @@ function AppFrame() {
     const main = document.getElementById('main');
     if (main) main.scrollTop = 0;
   }, [location.pathname]);
+
+  // The browser keeps its own copy of where it has been, which is what the
+  // dump reads back. Nothing here is sent anywhere.
+  useEffect(() => {
+    recordTrail(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
 
   return (
     <AppShell>
