@@ -7096,6 +7096,22 @@ ol {
   cursor: default;
 }
 
+/* Present in the markup and invisible on screen: the trail leaves these for
+   whoever opens the elements panel. */
+.arg-hidden {
+  display: none;
+}
+
+.arg-ghost {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
 .menu-item:disabled {
   opacity: 0.45;
   cursor: default;

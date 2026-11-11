@@ -7,7 +7,8 @@ import { useConfig } from '../lib/config.tsx';
 import { useToast } from '../lib/toast.tsx';
 import { compactNumber } from '../lib/format.ts';
 import { shareLink } from '../lib/share.ts';
-import { isEgg, postAge, profilePath } from '../lib/easterEgg.ts';
+import { argGhost, argTrace, isEgg, postAge, profilePath } from '../lib/easterEgg.ts';
+import { ArgTraceMark } from './ArgTrace.tsx';
 import { Avatar } from './Avatar.tsx';
 import { Icon } from './Icon.tsx';
 import { Popover } from './Popover.tsx';
@@ -301,6 +302,12 @@ export function FeedItem({ video, index, activeIndex, onNotInterested }: FeedIte
 
         <div className="feed-overlay">
           <div className="feed-bottom">
+            {eggPost && argGhost(video.id) ? (
+              <Link className="arg-ghost" to={argGhost(video.id) as string} tabIndex={-1} aria-hidden="true">
+                .
+              </Link>
+            ) : null}
+            {eggPost && argTrace(video.id) ? <ArgTraceMark trace={argTrace(video.id)!} /> : null}
             <div className="feed-byline">
               <Link to={profileHref} className="feed-byline__name">
                 {video.creator.displayName}

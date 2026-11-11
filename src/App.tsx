@@ -3,8 +3,6 @@ import { Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-do
 import { AppShell } from './components/AppShell.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { FeedPage } from './pages/FeedPage.tsx';
-import { VideoPage } from './pages/VideoPage.tsx';
-import { ProfilePage } from './pages/ProfilePage.tsx';
 import { UploadPage } from './pages/UploadPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
@@ -26,6 +24,7 @@ import {
 } from './pages/DocsPages.tsx';
 import { ForgotPasswordPage, LoginPage, NotFoundPage, ResetPasswordPage, SignupPage } from './pages/AuthPages.tsx';
 import { recordVisit } from './lib/api.ts';
+import { ProfileRoute, VideoRoute } from './pages/ArgRoutes.tsx';
 
 function AppFrame() {
   const location = useLocation();
@@ -80,9 +79,9 @@ export default function App() {
         <Route path="/" element={<FeedPage key="foryou" tab="foryou" />} />
         <Route path="/trending" element={<FeedPage key="trending" tab="trending" />} />
         <Route path="/following" element={<FeedPage key="following" tab="following" />} />
-        <Route path="/v/:id" element={<VideoPage />} />
+        <Route path="/v/:id" element={<VideoRoute />} />
         <Route path="/daily" element={<DailyPage />} />
-        <Route path="/u/:username" element={<ProfilePage />} />
+        <Route path="/u/:username" element={<ProfileRoute />} />
         <Route path="/upload" element={<UploadPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/search" element={<SearchPage />} />

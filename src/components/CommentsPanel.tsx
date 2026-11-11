@@ -9,7 +9,7 @@ import { compactNumber, timeAgo } from '../lib/format.ts';
 import { Avatar } from './Avatar.tsx';
 import { Icon } from './Icon.tsx';
 import { ReportDialog } from './ReportDialog.tsx';
-import { EGG_COMMENTS, isEgg, profilePath } from '../lib/easterEgg.ts';
+import { argComments, isEgg, profilePath } from '../lib/easterEgg.ts';
 
 interface CommentsPanelProps {
   video: VideoDTO;
@@ -46,7 +46,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
     let cancelled = false;
     setPage(1);
     if (isEgg(video.id)) {
-      setItems(EGG_COMMENTS);
+      setItems(argComments(video.id));
       setHasMore(false);
       setTotal(video.commentCount);
       return;
