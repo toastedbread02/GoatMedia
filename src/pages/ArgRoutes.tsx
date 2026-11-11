@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { VideoPage } from './VideoPage.tsx';
 import { ProfilePage } from './ProfilePage.tsx';
 import { ArgPostPage } from './ArgPostPage.tsx';
@@ -12,7 +12,11 @@ import { argPost, argProfile } from '../lib/easterEgg.ts';
  */
 export function VideoRoute() {
   const { id } = useParams();
-  if (argPost(id)) return <ArgPostPage id={id as string} />;
+  const { search } = useLocation();
+  // A keyed page answers only to the visitor carrying its key; anyone else
+  // falls through to the API, which has never heard of it.
+  const entry = argPost(id, search);
+  if (entry) return <ArgPostPage entry={entry} />;
   return <VideoPage />;
 }
 

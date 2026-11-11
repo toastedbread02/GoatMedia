@@ -362,8 +362,13 @@ export interface ArgEntry {
   video: VideoDTO;
   comments: CommentDTO[];
   trace: ArgTrace;
-  /** A path this post quietly points at, present in the page but invisible. */
-  ghost?: string;
+  /** Paths this post quietly points at, present in the page but invisible. */
+  ghosts?: string[];
+  /**
+   * When set, the page only exists for a visitor who arrives carrying
+   * ?t=<key>. Without it the id is just another post the API has never heard of.
+   */
+  key?: string;
 }
 
 const DAY_NINE = buildVideo({
@@ -387,6 +392,16 @@ const DAY_EIGHT = buildVideo({
   commentCount: 96,
 });
 
+const DAY_TEN = buildVideo({
+  id: 'pst_1298d00000000010',
+  caption: 'day 10. i checked the card. it is empty until tomorrow.',
+  creator: marlowe,
+  createdAt: PUBLISHED_AT + DAY_MS,
+  viewCount: 3,
+  likeCount: 0,
+  commentCount: 2,
+});
+
 const CAMERA_ROLL = buildVideo({
   id: 'pst_1298d00000000011',
   caption: 'this was in my camera roll this morning. i have never been to this farm.',
@@ -397,24 +412,52 @@ const CAMERA_ROLL = buildVideo({
   commentCount: 23,
 });
 
+const DAY_TEN_THREAD: SeedComment[] = [
+  {
+    name: 'June',
+    handle: 'june_b',
+    body: 'that is my phone',
+    after: 22,
+    likes: 0,
+  },
+  {
+    name: 'Marlowe',
+    handle: MARLOWE,
+    body: 'i know.',
+    after: 25,
+    likes: 0,
+    creator: true,
+    replyTo: 0,
+  },
+];
+
 export const EGG_POSTS: Record<string, ArgEntry> = {
   [DAY_NINE.id]: {
     video: DAY_NINE,
     comments: buildThread('1298d', DAY_NINE.createdAt, DAY_NINE_THREAD),
     trace: { label: 'day 9', note: 'the gate is open in the morning' },
-    ghost: `/v/${DAY_EIGHT.id}`,
+    ghosts: [`/v/${DAY_EIGHT.id}`],
   },
   [DAY_EIGHT.id]: {
     video: DAY_EIGHT,
     comments: buildThread('1298e', DAY_EIGHT.createdAt, DAY_EIGHT_THREAD),
-    trace: { label: 'day 8', note: 'camera clock is 35 minutes behind' },
-    ghost: '/v/pst_1298d00000000007',
+    // The clock is the only key on the trail, and it is stated here instead of
+    // on the page it opens.
+    trace: { label: 'day 8', note: 'camera clock is 35 minutes behind · 06:40' },
+    ghosts: ['/v/pst_1298d00000000007', `/v/${DAY_TEN.id}?t=0640`],
+  },
+  [DAY_TEN.id]: {
+    video: DAY_TEN,
+    comments: buildThread('129a0', DAY_TEN.createdAt, DAY_TEN_THREAD),
+    trace: { label: 'day 10', note: 'the card is empty until tomorrow' },
+    ghosts: [`/u/${MARLOWE}`],
+    key: '0640',
   },
   [CAMERA_ROLL.id]: {
     video: CAMERA_ROLL,
     comments: buildThread('1298f', CAMERA_ROLL.createdAt, CAMERA_ROLL_THREAD),
     trace: { label: 'day 9', note: 'the file name is 9' },
-    ghost: `/u/${MARLOWE}`,
+    ghosts: [`/u/${MARLOWE}`],
   },
 };
 
@@ -494,8 +537,13 @@ export const EGG_PROFILES: Record<string, ArgProfile> = {
 export const EGG_VIDEO = DAY_NINE;
 export const EGG_COMMENTS = EGG_POSTS[DAY_NINE.id].comments;
 
-export function argPost(id: string | null | undefined): ArgEntry | null {
-  return id ? EGG_POSTS[id] ?? null : null;
+/** With no search, a keyed page does not exist at all. */
+export function argPost(id: string | null | undefined, search = ''): ArgEntry | null {
+  const entry = id ? EGG_POSTS[id] ?? null : null;
+  if (!entry) return null;
+  if (!entry.key) return entry;
+  const params = new URLSearchParams(search.replace(/^\?/, ''));
+  return params.get('t') === entry.key ? entry : null;
 }
 
 export function argComments(id: string): CommentDTO[] {
@@ -506,8 +554,8 @@ export function argTrace(id: string | null | undefined): ArgTrace | null {
   return id ? EGG_POSTS[id]?.trace ?? null : null;
 }
 
-export function argGhost(id: string | null | undefined): string | null {
-  return id ? EGG_POSTS[id]?.ghost ?? null : null;
+export function argGhosts(id: string | null | undefined): string[] {
+  return id ? EGG_POSTS[id]?.ghosts ?? [] : [];
 }
 
 export function argProfile(username: string | null | undefined): ArgProfile | null {
