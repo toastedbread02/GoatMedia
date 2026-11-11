@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { markDayTenOpen } from '../lib/argDeep.ts';
+import { LogoMark } from '../components/Logo.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 
 const TAPS = 5;
 
 /**
- * A white page with the wordmark on it. Nothing else: no feed, no navigation,
- * no way back except the browser's own button.
+ * A white page with the site's mark on it. Nothing else: no feed, no
+ * navigation, no way back except the browser's own button.
  *
- * Five taps on the wordmark and it says what it is. That is also the moment day
- * 10 decides its comments can be written on.
+ * Five taps on the mark and it says what it is. That is also the moment day 10
+ * decides its comments can be written on.
  */
 export function ArgBlankPage() {
   useDocumentTitle('GoatMedia');
@@ -31,8 +32,8 @@ export function ArgBlankPage() {
 
   return (
     <div className="arg-blank">
-      <button type="button" className="arg-blank__logo" onClick={tap}>
-        GoatMedia
+      <button type="button" className="arg-blank__logo" onClick={tap} aria-label="GoatMedia">
+        <LogoMark size={64} />
       </button>
       {done ? <p className="arg-blank__dead">dead end</p> : null}
     </div>
