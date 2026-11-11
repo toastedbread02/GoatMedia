@@ -81,6 +81,10 @@ function buildVideo(entry: {
   viewCount: number;
   likeCount: number;
   commentCount: number;
+  /** Trail posts bring their own file; the feed post uses the one it always had. */
+  videoFile?: string;
+  posterFile?: string;
+  duration?: number;
 }): VideoDTO {
   return {
     id: entry.id,
@@ -89,7 +93,7 @@ function buildVideo(entry: {
     category: 'farm-life',
     categoryLabel: 'Farm life',
     hashtags: [],
-    duration: 16,
+    duration: entry.duration ?? 16,
     createdAt: entry.createdAt,
     publishedAt: entry.createdAt,
     viewCount: entry.viewCount,
@@ -100,8 +104,8 @@ function buildVideo(entry: {
     status: 'approved',
     rejectReason: null,
     removedReason: null,
-    posterUrl: asset('9-poster.jpg'),
-    videoUrl: asset('9.mp4'),
+    posterUrl: asset(entry.posterFile ?? '9-poster.jpg'),
+    videoUrl: asset(entry.videoFile ?? '9.mp4'),
     photos: [],
     sound: null,
     width: 1920,
@@ -111,6 +115,35 @@ function buildVideo(entry: {
     credit: null,
     watchProgress: null,
     notInterested: false,
+  };
+}
+
+/** A photo post: the slide order is the only order it has. */
+function buildPhotos(entry: {
+  id: string;
+  caption: string;
+  creator: CreatorSummary;
+  createdAt: number;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  files: string[];
+}): VideoDTO {
+  const photos = entry.files.map((file, index) => ({
+    id: `${entry.id}_ph${index}`,
+    url: asset(file),
+    width: null,
+    height: null,
+  }));
+  return {
+    ...buildVideo(entry),
+    kind: 'photos',
+    photos,
+    posterUrl: photos[0]?.url ?? null,
+    videoUrl: null,
+    duration: 0,
+    width: null,
+    height: null,
   };
 }
 
@@ -456,6 +489,95 @@ const DAY_TEN_THREAD: SeedComment[] = [
   },
 ];
 
+const CARD_THREAD: SeedComment[] = [
+  {
+    name: 'Priya',
+    handle: 'priya.builds',
+    body: 'these are keying plates. nobody is filming a farm',
+    after: 40,
+    likes: 14,
+  },
+  {
+    name: 'June',
+    handle: 'june_b',
+    body: 'the green one is the colour of the top field',
+    after: 62,
+    likes: 6,
+  },
+  {
+    name: 'Marlowe',
+    handle: MARLOWE,
+    body: 'no.',
+    after: 70,
+    likes: 1,
+    creator: true,
+    replyTo: 1,
+  },
+  {
+    name: 'danny',
+    handle: 'dannyov',
+    body: 'why are there no goats on a goat app',
+    after: 90,
+    likes: 3,
+  },
+];
+
+const SEVENTH_THREAD: SeedComment[] = [
+  {
+    name: 'June',
+    handle: 'june_b',
+    body: 'there is no picture',
+    after: 18,
+    likes: 2,
+  },
+  {
+    name: 'Priya',
+    handle: 'priya.builds',
+    body: 'it is sensor noise. this is what a camera does in the dark',
+    after: 35,
+    likes: 9,
+  },
+  {
+    name: 'Marlowe',
+    handle: MARLOWE,
+    body: 'it is the gate',
+    after: 40,
+    likes: 0,
+    creator: true,
+    replyTo: 1,
+  },
+];
+
+const CARD = buildPhotos({
+  id: 'pst_1298d00000000012',
+  caption: 'day 11. the card was not empty. five files, in this order.',
+  creator: marlowe,
+  createdAt: PUBLISHED_AT + 2 * DAY_MS,
+  viewCount: 6,
+  likeCount: 3,
+  commentCount: 4,
+  files: [
+    'arg/1000017640.jpg',
+    'arg/1000017642.jpg',
+    'arg/1000017643.jpg',
+    'arg/1000017644.jpg',
+    'arg/1000017645.jpg',
+  ],
+});
+
+const SEVENTH = buildVideo({
+  id: 'pst_1298d00000000014',
+  caption: 'the seventh file. the camera stopped by itself. i did not delete it.',
+  creator: marlowe,
+  createdAt: PUBLISHED_AT - 2 * DAY_MS,
+  viewCount: 41,
+  likeCount: 0,
+  commentCount: 3,
+  videoFile: 'arg/1000017641.mp4',
+  posterFile: 'arg/1000017640.jpg',
+  duration: 8.66,
+});
+
 export const EGG_POSTS: Record<string, ArgEntry> = {
   [DAY_NINE.id]: {
     video: DAY_NINE,
@@ -475,9 +597,21 @@ export const EGG_POSTS: Record<string, ArgEntry> = {
     video: DAY_TEN,
     comments: buildThread('129a0', DAY_TEN.createdAt, DAY_TEN_THREAD),
     trace: { label: 'day 10', note: 'the file is dated tomorrow' },
-    ghosts: [`/u/${MARLOWE}`],
+    ghosts: [`/u/${MARLOWE}`, `/v/${CARD.id}`],
     key: '0640',
     tabTitle: '9',
+  },
+  [CARD.id]: {
+    video: CARD,
+    comments: buildThread('129b0', CARD.createdAt, CARD_THREAD),
+    trace: { label: 'day 11', note: 'five plates, no goats' },
+    ghosts: [`/v/${SEVENTH.id}`],
+  },
+  [SEVENTH.id]: {
+    video: SEVENTH,
+    comments: buildThread('129c0', SEVENTH.createdAt, SEVENTH_THREAD),
+    trace: { label: 'day 7', note: 'the file, not the post' },
+    ghosts: [`/u/${MARLOWE}`],
   },
   [CAMERA_ROLL.id]: {
     video: CAMERA_ROLL,
@@ -532,8 +666,8 @@ export const EGG_PROFILES: Record<string, ArgProfile> = {
     followers: 118,
     following: 41,
     videoCount: 46,
-    postIds: [DAY_NINE.id, DAY_EIGHT.id],
-    trace: { label: 'marlowe', note: '46 posts, two visible' },
+    postIds: [DAY_NINE.id, DAY_EIGHT.id, CARD.id, SEVENTH.id],
+    trace: { label: 'marlowe', note: '46 posts, four visible' },
   }),
   june_b: profile({
     username: 'june_b',
