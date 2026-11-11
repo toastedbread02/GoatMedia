@@ -28,6 +28,8 @@ import { recordTrail } from './lib/argTrail.ts';
 import { ProfileRoute, VideoRoute } from './pages/ArgRoutes.tsx';
 import { ArgDatabasePage } from './pages/ArgDatabasePage.tsx';
 import { ArgDatabaseRowPage } from './pages/ArgDatabaseRowPage.tsx';
+import { ArgSysLoginPage } from './pages/ArgSysLoginPage.tsx';
+import { ArgBlankPage } from './pages/ArgBlankPage.tsx';
 
 function AppFrame() {
   const location = useLocation();
@@ -83,6 +85,8 @@ export default function App() {
       <Route path="/copyright" element={<CopyrightPage />} />
       <Route path="/about" element={<AboutPage />} />
       <Route path="/appeal/:token" element={<AppealPage />} />
+      <Route path="/sys/login" element={<ArgSysLoginPage />} />
+      <Route path="/sys/blank" element={<ArgBlankPage />} />
 
       <Route element={<AppFrame />}>
         <Route path="/" element={<FeedPage key="foryou" tab="foryou" />} />

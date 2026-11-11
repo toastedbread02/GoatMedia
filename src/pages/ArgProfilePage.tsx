@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Avatar } from '../components/Avatar.tsx';
 import { VideoCard } from '../components/VideoCard.tsx';
@@ -5,6 +6,7 @@ import { ArgTraceMark } from '../components/ArgTrace.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
 import { monthYear } from '../lib/format.ts';
 import { argPost, argProfile } from '../lib/easterEgg.ts';
+import { ARG_CODE } from '../lib/argDeep.ts';
 
 /**
  * A profile for one of the accounts in the thread. It uses the same header and
@@ -16,6 +18,14 @@ export function ArgProfilePage({ username }: { username: string }) {
   useDocumentTitle(
     entry ? `${entry.user.displayName} (@${entry.user.username})` : 'Profile',
   );
+
+  // Marlowe's page carries a code, but only for someone who stays on it.
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    if (username !== 'marlowe_farm') return;
+    const timer = window.setTimeout(() => setWaited(true), 5 * 60_000);
+    return () => window.clearTimeout(timer);
+  }, [username]);
 
   if (!entry) return null;
   const { user } = entry;
@@ -55,6 +65,7 @@ export function ArgProfilePage({ username }: { username: string }) {
             </span>
           </p>
           <p className="profile-joined">Joined {monthYear(user.createdAt)}</p>
+          {waited ? <p className="arg-code">{ARG_CODE}</p> : null}
         </div>
       </header>
 

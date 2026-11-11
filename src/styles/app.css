@@ -7135,3 +7135,73 @@ ol {
   cursor: default;
 }
 
+
+
+/* The last stretch of the trail: a prompt that counts taps, a code, a login
+   with no design, and a white page that says what it is. */
+.arg-sqlite {
+  cursor: default;
+}
+
+.arg-code {
+  margin: 0.75rem 0 0;
+  font: 500 0.82rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.22em;
+  color: var(--muted, #6b6b6b);
+}
+
+.arg-sys {
+  min-height: 100vh;
+  background: #fff;
+  color: #111;
+  padding: 12vh 24px;
+  font-family: serif;
+}
+
+.arg-sys form {
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+.arg-sys input {
+  font: inherit;
+  padding: 1px 2px;
+}
+
+.arg-sys button {
+  font: inherit;
+  padding: 1px 6px;
+}
+
+.arg-sys__error {
+  color: #b00020;
+  font-family: serif;
+}
+
+.arg-blank {
+  min-height: 100vh;
+  background: #fff;
+  color: #111;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 2.25rem;
+}
+
+.arg-blank__logo {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: 600 clamp(1.6rem, 4vw, 2.4rem) / 1 system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.035em;
+  color: #111;
+}
+
+.arg-blank__dead {
+  margin: 0;
+  font: 500 1rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.34em;
+  text-transform: lowercase;
+  color: #3e635a;
+}

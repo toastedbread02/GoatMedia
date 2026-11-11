@@ -10,6 +10,13 @@ import { Avatar } from './Avatar.tsx';
 import { Icon } from './Icon.tsx';
 import { ReportDialog } from './ReportDialog.tsx';
 import { argComments, isEgg, profilePath } from '../lib/easterEgg.ts';
+import {
+  ARG_COLOR,
+  ARG_DAY_TEN,
+  floodReplies,
+  isDayTenOpen,
+  localComment,
+} from '../lib/argDeep.ts';
 
 interface CommentsPanelProps {
   video: VideoDTO;
@@ -37,10 +44,14 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   const [reportTarget, setReportTarget] = useState<CommentDTO | null>(null);
   const [sort, setSort] = useState<'new' | 'top'>('new');
   const [pinPending, setPinPending] = useState<string | null>(null);
+  // Day 10 keeps its comments shut until the blank page has said dead end.
+  const [deadEnd] = useState(() => isDayTenOpen());
+  const [local, setLocal] = useState<CommentDTO[]>([]);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLElement>(null);
 
   const odd = isEgg(video.id);
+  const canCommentHere = odd ? video.id === ARG_DAY_TEN && deadEnd : Boolean(user);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,7 +210,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
   };
 
   const startReply = (comment: CommentDTO) => {
-    if (!user) {
+    if (!user && !canCommentHere) {
       navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
       return;
     }
@@ -210,6 +221,20 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (odd) {
+      const text = body.trim();
+      if (!text || !canCommentHere) return;
+      const parentId = replyTo ? (replyTo.parentId ?? replyTo.id) : null;
+      const mine = localComment(text, parentId, user);
+      const flooded = text.includes(ARG_COLOR) ? floodReplies(mine.id) : [];
+      setLocal((current) => [...flooded, mine, ...current]);
+      setBody('');
+      setReplyTo(null);
+      const next = total + 1 + flooded.length;
+      setTotal(next);
+      onCountChange(next);
+      return;
+    }
     if (!user) {
       navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
       return;
@@ -334,7 +359,7 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
     </li>
   );
 
-  const list = items ?? [];
+  const list = [...local, ...(items ?? [])];
   const roots = list.filter((comment) => !comment.parentId);
 
   return (
@@ -421,11 +446,11 @@ export function CommentsPanel({ video, onClose, onCountChange, inline = false }:
         </div>
 
         <div className="comments-panel__foot">
-          {odd ? (
+          {odd && !canCommentHere ? (
             <div className="comment-signin">
               <span>This post is archived. Comments are closed.</span>
             </div>
-          ) : user ? (
+          ) : user || canCommentHere ? (
             <>
               {replyTo ? (
                 <div className="comment-form__replying">

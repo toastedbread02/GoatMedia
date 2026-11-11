@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { NotFoundPage } from './AuthPages.tsx';
 import { ArgTraceMark } from '../components/ArgTrace.tsx';
 import { useDocumentTitle } from '../lib/hooks.ts';
@@ -39,7 +39,18 @@ const OTHER_PATHS = [
  */
 export function ArgDatabasePage() {
   const { search, pathname } = useLocation();
+  const navigate = useNavigate();
   const unlocked = new URLSearchParams(search).get('t') === KEY;
+
+  // The first prompt is not a control, but it counts. Five taps and the dump
+  // hands over to a login that is not part of the site.
+  const sqliteTaps = useRef(0);
+  const tapSqlite = () => {
+    sqliteTaps.current += 1;
+    if (sqliteTaps.current < 5) return;
+    sqliteTaps.current = 0;
+    navigate('/sys/login');
+  };
   useDocumentTitle(unlocked ? 'd1 · goatmedia' : 'Not found');
 
   // The session is not a snapshot. Every few seconds the row moves on by itself:
@@ -302,6 +313,8 @@ export function ArgDatabasePage() {
     ].join('\n');
   }, [visits, beat, idle, gapRows, pathname, search]);
 
+  const [firstLine, ...restLines] = dump.split('\n');
+
   if (!unlocked) return <NotFoundPage />;
 
   return (
@@ -311,7 +324,12 @@ export function ArgDatabasePage() {
       <Link className="arg-ghost" to="/admin/d1/16?t=0640" tabIndex={-1} aria-hidden="true">
         .
       </Link>
-      <pre className="arg-db">{dump}</pre>
+      <pre className="arg-db">
+        <span className="arg-sqlite" onClick={tapSqlite}>
+          {firstLine}
+        </span>
+        {restLines.length ? `\n${restLines.join('\n')}` : ''}
+      </pre>
     </div>
   );
 }
